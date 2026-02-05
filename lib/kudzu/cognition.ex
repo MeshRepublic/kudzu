@@ -4,14 +4,38 @@ defmodule Kudzu.Cognition do
 
   Transforms hologram state + stimulus into thoughts and actions.
   The hologram's traces and peer awareness become context for reasoning.
+
+  ## Configuration
+
+  Ollama endpoint can be configured per-call, per-hologram, or globally:
+
+      # Per-call
+      Cognition.think(state, stimulus, ollama_url: "http://remote:11434")
+
+      # In application config (config/config.exs)
+      config :kudzu, :ollama_url, "http://remote:11434"
+
+      # Per-hologram (stored in state)
+      spawn_hologram(purpose: :x, ollama_url: "http://other:11434")
+
+  This enables distributed setups where different agents use different LLM instances.
   """
 
   alias Kudzu.{Trace, VectorClock}
   alias Kudzu.Cognition.PromptBuilder
 
-  @ollama_url "http://localhost:11434"
+  @default_ollama_url "http://localhost:11434"
   @default_model "mistral:latest"
   @timeout 120_000
+
+  @doc """
+  Get the Ollama URL from options, state, or application config.
+  """
+  def get_ollama_url(opts \\ [], state \\ %{}) do
+    Keyword.get(opts, :ollama_url) ||
+      Map.get(state, :ollama_url) ||
+      Application.get_env(:kudzu, :ollama_url, @default_ollama_url)
+  end
 
   @type action ::
           {:record_trace, purpose :: atom(), hints :: map()}
@@ -38,10 +62,11 @@ defmodule Kudzu.Cognition do
   def think(state, stimulus, opts \\ []) do
     model = Keyword.get(opts, :model, @default_model)
     temperature = Keyword.get(opts, :temperature, 0.7)
+    ollama_url = get_ollama_url(opts, state)
 
     prompt = PromptBuilder.build(state, stimulus)
 
-    case call_ollama(model, prompt, temperature) do
+    case call_ollama(ollama_url, model, prompt, temperature) do
       {:ok, response} ->
         {actions, traces} = parse_response(response, state)
         {:ok, {response, actions, traces}}
@@ -58,10 +83,11 @@ defmodule Kudzu.Cognition do
   @spec quick_think(map(), String.t(), keyword()) :: {:ok, action()} | {:error, term()}
   def quick_think(state, stimulus, opts \\ []) do
     model = Keyword.get(opts, :model, @default_model)
+    ollama_url = get_ollama_url(opts, state)
 
     prompt = PromptBuilder.build_quick(state, stimulus)
 
-    case call_ollama(model, prompt, 0.3) do
+    case call_ollama(ollama_url, model, prompt, 0.3) do
       {:ok, response} ->
         action = parse_single_action(response)
         {:ok, action}
@@ -72,22 +98,26 @@ defmodule Kudzu.Cognition do
   end
 
   @doc """
-  Check if Ollama is available.
+  Check if Ollama is available at the given URL (or default).
   """
-  @spec available?() :: boolean()
-  def available? do
-    case :httpc.request(:get, {~c"#{@ollama_url}/api/tags", []}, [{:timeout, 5000}], []) do
+  @spec available?(String.t() | nil) :: boolean()
+  def available?(ollama_url \\ nil) do
+    url = ollama_url || get_ollama_url()
+    :inets.start()
+    case :httpc.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5000}], []) do
       {:ok, {{_, 200, _}, _, _}} -> true
       _ -> false
     end
   end
 
   @doc """
-  List available models from Ollama.
+  List available models from Ollama at the given URL (or default).
   """
-  @spec list_models() :: {:ok, [String.t()]} | {:error, term()}
-  def list_models do
-    case :httpc.request(:get, {~c"#{@ollama_url}/api/tags", []}, [{:timeout, 10_000}], []) do
+  @spec list_models(String.t() | nil) :: {:ok, [String.t()]} | {:error, term()}
+  def list_models(ollama_url \\ nil) do
+    url = ollama_url || get_ollama_url()
+    :inets.start()
+    case :httpc.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 10_000}], []) do
       {:ok, {{_, 200, _}, _, body}} ->
         case Jason.decode(to_string(body)) do
           {:ok, %{"models" => models}} ->
@@ -102,7 +132,7 @@ defmodule Kudzu.Cognition do
   end
 
   # Call Ollama generate API
-  defp call_ollama(model, prompt, temperature) do
+  defp call_ollama(ollama_url, model, prompt, temperature) do
     # Ensure inets is started
     :inets.start()
     :ssl.start()
@@ -118,7 +148,7 @@ defmodule Kudzu.Cognition do
     })
 
     request = {
-      ~c"#{@ollama_url}/api/generate",
+      ~c"#{ollama_url}/api/generate",
       [],
       ~c"application/json",
       body

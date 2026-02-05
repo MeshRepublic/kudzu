@@ -1,0 +1,53 @@
+# Docker Compose for running separate Ollama instances
+#
+# Usage:
+#   docker-compose up -d ollama-secondary
+#
+# This creates an Ollama instance on port 11435, separate from any
+# system-installed Ollama (which typically runs on 11434).
+#
+# Kudzu holograms can then use either:
+#   - http://localhost:11434 (system Ollama)
+#   - http://localhost:11435 (Docker Ollama)
+#   - http://<tailscale-ip>:11434 (remote Ollama)
+
+version: '3.8'
+
+services:
+  # Secondary Ollama instance on port 11435
+  ollama-secondary:
+    image: ollama/ollama:latest
+    container_name: kudzu-ollama-secondary
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama-secondary-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    # GPU support (uncomment if you have NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Third Ollama instance on port 11436 (for testing multi-LLM setups)
+  ollama-tertiary:
+    image: ollama/ollama:latest
+    container_name: kudzu-ollama-tertiary
+    ports:
+      - "11436:11434"
+    volumes:
+      - ollama-tertiary-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    profiles:
+      - multi  # Only starts with: docker-compose --profile multi up
+
+volumes:
+  ollama-secondary-data:
+  ollama-tertiary-data:

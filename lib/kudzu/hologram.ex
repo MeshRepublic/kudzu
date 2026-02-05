@@ -320,6 +320,7 @@ defmodule Kudzu.Hologram do
     desires = Keyword.get(opts, :desires, [])
     cognition_enabled = Keyword.get(opts, :cognition, false)
     model = Keyword.get(opts, :model, "mistral:latest")
+    ollama_url = Keyword.get(opts, :ollama_url)  # nil means use default
     constitution = Keyword.get(opts, :constitution, @default_constitution)
 
     # Constrain initial desires according to constitution
@@ -335,6 +336,7 @@ defmodule Kudzu.Hologram do
       desires: constrained_desires,
       cognition_enabled: cognition_enabled,
       cognition_model: model,
+      ollama_url: ollama_url,  # Custom Ollama endpoint for this hologram
       constitution: constitution,
       metadata: %{}
     }
@@ -589,13 +591,14 @@ defmodule Kudzu.Hologram do
   def handle_call({:stimulate, stimulus, opts}, _from, state) do
     if state.cognition_enabled do
       model = Keyword.get(opts, :model, state.cognition_model)
+      ollama_url = Keyword.get(opts, :ollama_url, state.ollama_url)
 
       # Constrain desires through constitution before cognition
       constrained_state = %{state |
         desires: Constitution.constrain(state.constitution, state.desires, state)
       }
 
-      case Cognition.think(constrained_state, stimulus, model: model) do
+      case Cognition.think(constrained_state, stimulus, model: model, ollama_url: ollama_url) do
         {:ok, {response, actions, traces}} ->
           # Execute actions (with constitutional checks) and record traces
           new_state = execute_actions(actions, constrained_state)
