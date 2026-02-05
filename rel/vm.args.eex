@@ -1,0 +1,51 @@
+## VM Arguments for Kudzu on 128-core Titan server
+
+## Use all available schedulers (128 cores)
++S 128:128
+
+## Enable scheduler binding for NUMA optimization
++sbt db
+
+## Increase async thread pool for IO operations
++A 128
+
+## Enable dirty schedulers for CPU-intensive operations
++SDcpu 128:128
+
+## Enable dirty IO schedulers
++SDio 64
+
+## Increase process limit for many holograms
++P 2097152
+
+## Increase port limit
++Q 65536
+
+## Increase atom limit
++t 2097152
+
+## Enable SMP
+-smp enable
+
+## Set scheduler wakeup threshold
++swt very_low
+
+## Enable scheduler compaction of load
++scl true
+
+## Kernel poll for better IO performance
++K true
+
+## Memory allocator configuration for many small processes
++MBas aobf
++MBlmbcs 512
++MEas aobf
+
+## Carrier migration for better memory locality
++MMmcs 30
+
+## Name the node
+-name kudzu@127.0.0.1
+
+## Cookie for distributed Erlang
+-setcookie kudzu_distributed_cookie
