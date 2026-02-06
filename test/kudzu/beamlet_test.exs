@@ -49,9 +49,11 @@ defmodule Kudzu.BeamletTest do
     @tag :failover
     test "holograms find alternate beam-lets when preferred dies" do
       # Spawn extra IO beam-lets for redundancy
-      {:ok, io1} = Supervisor.spawn_beamlet(IO, id: "io-test-1")
-      {:ok, io2} = Supervisor.spawn_beamlet(IO, id: "io-test-2")
-      {:ok, io3} = Supervisor.spawn_beamlet(IO, id: "io-test-3")
+      # Use unique name option to avoid conflicts with default module-named process
+      unique = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+      {:ok, io1} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-1", name: :"io_failover_#{unique}_1")
+      {:ok, io2} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-2", name: :"io_failover_#{unique}_2")
+      {:ok, io3} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-3", name: :"io_failover_#{unique}_3")
 
       # Spawn holograms that will use beam-lets
       holograms = for i <- 1..10 do

@@ -9,6 +9,7 @@ defmodule Kudzu.ConstitutionTest do
       frameworks = [MeshRepublic, Cautious, Open]
 
       Enum.each(frameworks, fn mod ->
+        Code.ensure_loaded!(mod)
         assert function_exported?(mod, :permitted?, 2)
         assert function_exported?(mod, :constrain, 2)
         assert function_exported?(mod, :audit, 3)

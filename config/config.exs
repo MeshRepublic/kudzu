@@ -26,6 +26,8 @@ config :logger, :console,
 
 if config_env() == :test do
   config :logger, level: :warning
+  # Allow /tmp for test file operations
+  config :kudzu, allowed_io_paths: ["/tmp"]
 end
 
 if config_env() == :dev do
