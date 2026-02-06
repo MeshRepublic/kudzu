@@ -1,4 +1,4 @@
-# Kudzu
+# Kudzu - very pre-alpha, very insecure and dangerous
 
 A distributed agent architecture for navigational memory, built on Elixir/OTP.
 
