@@ -144,20 +144,34 @@ defmodule Kudzu.Protocol do
     end
   end
 
+  # Allowlist of valid message type atoms
+  @valid_message_types [:ping, :pong, :query, :query_response,
+                        :trace_share, :ack, :reconstruction_request,
+                        :reconstruction_response]
+
   @doc """
   Decode a binary message back to a map.
+
+  SECURITY: Uses :safe option to prevent arbitrary code execution,
+  and validates message types against an allowlist.
   """
   @spec decode(binary()) :: {:ok, message()} | {:error, term()}
   def decode(binary) when is_binary(binary) do
     try do
       decoded = :erlang.binary_to_term(binary, [:safe])
 
-      # Reconstruct VectorClock
-      message = decoded
-      |> Map.update(:timestamp, VectorClock.new(nil), &VectorClock.from_map/1)
-      |> maybe_deserialize_trace()
+      # Validate message type is in allowlist
+      with %{type: type} <- decoded,
+           true <- type in @valid_message_types do
+        # Reconstruct VectorClock
+        message = decoded
+        |> Map.update(:timestamp, VectorClock.new(nil), &VectorClock.from_map/1)
+        |> maybe_deserialize_trace()
 
-      {:ok, message}
+        {:ok, message}
+      else
+        _ -> {:error, :invalid_message_type}
+      end
     rescue
       e -> {:error, e}
     end

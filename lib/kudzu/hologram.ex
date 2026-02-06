@@ -522,6 +522,16 @@ defmodule Kudzu.Hologram do
 
   @impl true
   def handle_call({:set_constitution, constitution}, _from, state) do
+    # SECURITY: Block :open constitution in production environments
+    if constitution == :open and production_env?() do
+      Logger.warning("[Hologram #{state.id}] Blocked attempt to set :open constitution in production")
+      {:reply, {:error, :open_constitution_blocked_in_production}, state}
+    else
+      set_constitution_impl(constitution, state)
+    end
+  end
+
+  defp set_constitution_impl(constitution, state) do
     # Hot-swap constitution and re-constrain desires
     new_desires = Constitution.constrain(constitution, state.desires, state)
 
@@ -549,6 +559,12 @@ defmodule Kudzu.Hologram do
     }
 
     {:reply, :ok, new_state}
+  end
+
+  defp production_env? do
+    # Check if running in production environment
+    Application.get_env(:kudzu, :env, :dev) == :prod or
+      System.get_env("MIX_ENV") == "prod"
   end
 
   @impl true

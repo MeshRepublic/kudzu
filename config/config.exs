@@ -10,6 +10,15 @@ config :kudzu,
   default_model: "mistral:latest",
   cognition_timeout: 120_000
 
+# Security configuration
+# IMPORTANT: Configure these before deploying to production
+config :kudzu,
+  # Environment (:dev, :test, :prod) - :open constitution blocked in :prod
+  env: config_env(),
+  # Allowed paths for file IO operations (empty list = no file access)
+  # Example: ["/var/kudzu/data", "/tmp/kudzu"]
+  allowed_io_paths: []
+
 # Logger configuration
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",

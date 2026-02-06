@@ -18,8 +18,26 @@
 
 set -e
 
-# Default cookie (change this for security!)
-DEFAULT_COOKIE="kudzu_mesh_republic"
+# Cookie configuration
+# SECURITY: The cookie is the shared secret for Erlang distribution.
+# For production, set KUDZU_COOKIE environment variable or pass as argument.
+# A random cookie will be generated if not provided, but nodes must share the same cookie.
+generate_cookie() {
+    # Generate a secure random cookie
+    if command -v openssl &> /dev/null; then
+        openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32
+    else
+        head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32
+    fi
+}
+
+# Use environment variable, or argument, or generate new cookie
+DEFAULT_COOKIE="${KUDZU_COOKIE:-}"
+if [ -z "$DEFAULT_COOKIE" ]; then
+    echo "WARNING: No KUDZU_COOKIE set. Generating random cookie."
+    echo "         To connect nodes, set KUDZU_COOKIE environment variable to the same value on all nodes."
+    DEFAULT_COOKIE=$(generate_cookie)
+fi
 
 # Get Tailscale IP
 get_tailscale_ip() {

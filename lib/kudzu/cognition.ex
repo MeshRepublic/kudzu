@@ -201,7 +201,7 @@ defmodule Kudzu.Cognition do
       String.starts_with?(line, "QUERY_PEER:") ->
         case String.split(line, ":", parts: 3) do
           [_, peer_id, purpose] ->
-            {:action, {:query_peer, String.trim(peer_id), String.to_atom(String.trim(purpose))}}
+            {:action, {:query_peer, String.trim(peer_id), safe_to_atom(String.trim(purpose))}}
           _ -> :skip
         end
 
@@ -241,11 +241,11 @@ defmodule Kudzu.Cognition do
   defp parse_record_trace(line) do
     case String.split(line, ":", parts: 3) do
       [_, purpose, hints_str] ->
-        purpose_atom = purpose |> String.trim() |> String.to_atom()
+        purpose_atom = purpose |> String.trim() |> safe_to_atom()
         hints = parse_hints(hints_str)
         {:ok, purpose_atom, hints}
       [_, purpose] ->
-        {:ok, purpose |> String.trim() |> String.to_atom(), %{}}
+        {:ok, purpose |> String.trim() |> safe_to_atom(), %{}}
       _ ->
         :error
     end
@@ -256,11 +256,36 @@ defmodule Kudzu.Cognition do
     |> String.split(",")
     |> Enum.reduce(%{}, fn pair, acc ->
       case String.split(pair, "=", parts: 2) do
-        [k, v] -> Map.put(acc, String.trim(k) |> String.to_atom(), String.trim(v))
+        # Use string keys for hints to avoid atom exhaustion
+        [k, v] -> Map.put(acc, String.trim(k), String.trim(v))
         _ -> acc
       end
     end)
   end
+
+  # Allowlist of valid purpose atoms to prevent atom table exhaustion
+  @allowed_purpose_atoms ~w(
+    thought observation query response navigation memory
+    research learning coordination sharing discovery
+    analysis synthesis planning execution reflection
+    communication collaboration exploration unknown
+    record_trace recall think observe reflect
+    analyze_efficiency record_lesson record_experiment
+  )a
+
+  @doc """
+  Safely convert a string to an atom using an allowlist.
+  Returns :unknown for unrecognized strings instead of creating new atoms.
+  """
+  defp safe_to_atom(str) when is_binary(str) do
+    normalized = str |> String.trim() |> String.downcase()
+
+    # Try to find in allowlist
+    Enum.find(@allowed_purpose_atoms, :unknown, fn atom ->
+      Atom.to_string(atom) == normalized
+    end)
+  end
+  defp safe_to_atom(_), do: :unknown
 
   defp parse_single_action(response) do
     response
