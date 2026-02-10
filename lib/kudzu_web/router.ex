@@ -22,6 +22,7 @@ defmodule KudzuWeb.Router do
       # Nested hologram actions
       post "/stimulate", HologramController, :stimulate
       get "/traces", HologramController, :traces
+      post "/traces", HologramController, :record_trace
       get "/peers", HologramController, :peers
       post "/peers", HologramController, :add_peer
       get "/constitution", HologramController, :get_constitution
