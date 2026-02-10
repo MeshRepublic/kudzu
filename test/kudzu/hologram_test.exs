@@ -1,7 +1,7 @@
 defmodule Kudzu.HologramTest do
   use ExUnit.Case, async: false
 
-  alias Kudzu.{Hologram, Trace, Application}
+  alias Kudzu.{Hologram, Application}
 
   @moduletag timeout: 300_000  # 5 minutes for large tests
 
@@ -151,7 +151,7 @@ defmodule Kudzu.HologramTest do
       IO.puts("\nKilling #{num_to_kill} holograms (#{round(kill_percentage * 100)}%)...")
 
       {to_kill, survivors} = Enum.split(Enum.shuffle(holograms), num_to_kill)
-      survivor_ids = MapSet.new(survivors, fn {id, _} -> id end)
+      _survivor_ids = MapSet.new(survivors, fn {id, _} -> id end)
 
       start_time = System.monotonic_time(:millisecond)
       Enum.each(to_kill, fn {_id, pid} ->

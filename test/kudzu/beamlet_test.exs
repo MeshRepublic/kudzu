@@ -53,10 +53,10 @@ defmodule Kudzu.BeamletTest do
       unique = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
       {:ok, io1} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-1", name: :"io_failover_#{unique}_1")
       {:ok, io2} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-2", name: :"io_failover_#{unique}_2")
-      {:ok, io3} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-3", name: :"io_failover_#{unique}_3")
+      {:ok, _io3} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-3", name: :"io_failover_#{unique}_3")
 
       # Spawn holograms that will use beam-lets
-      holograms = for i <- 1..10 do
+      holograms = for _ <- 1..10 do
         {:ok, h} = Application.spawn_hologram(purpose: :failover_test)
         # Trigger beam-let discovery
         Hologram.discover_beamlets(h)
