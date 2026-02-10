@@ -21,6 +21,9 @@ defmodule Kudzu.Application do
       # Keys: {:id, hologram_id} or {:purpose, purpose_atom}
       {Registry, keys: :duplicate, name: Kudzu.Registry},
 
+      # PubSub for real-time events (WebSocket channels)
+      {Phoenix.PubSub, name: Kudzu.PubSub},
+
       # Beam-let execution substrate (must start before holograms)
       {Kudzu.Beamlet.Supervisor, []},
 
@@ -28,7 +31,10 @@ defmodule Kudzu.Application do
       {DynamicSupervisor, strategy: :one_for_one, name: Kudzu.HologramSupervisor},
 
       # Telemetry supervisor for metrics
-      {Kudzu.Telemetry, []}
+      {Kudzu.Telemetry, []},
+
+      # Phoenix HTTP/WebSocket endpoint (API layer)
+      KudzuWeb.Endpoint
     ]
 
     opts = [strategy: :one_for_one, name: Kudzu.Supervisor]
