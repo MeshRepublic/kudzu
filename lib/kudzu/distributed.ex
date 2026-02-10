@@ -14,23 +14,23 @@ defmodule Kudzu.Distributed do
 
   2. Start Kudzu nodes with names based on Tailscale IPs:
      ```bash
-     # On machine 1 (e.g., 100.x.x.1)
-     iex --name kudzu@100.x.x.1 --cookie kudzu_swarm -S mix
+     # On machine 1
+     iex --name kudzu@<your-tailscale-ip> --cookie <your-cookie> -S mix
 
-     # On machine 2 (e.g., 100.x.x.2)
-     iex --name kudzu@100.x.x.2 --cookie kudzu_swarm -S mix
+     # On machine 2
+     iex --name kudzu@<other-tailscale-ip> --cookie <your-cookie> -S mix
      ```
 
   3. Connect nodes:
      ```elixir
-     Kudzu.Distributed.connect("kudzu@100.x.x.2")
+     Kudzu.Distributed.connect("kudzu@<other-tailscale-ip>")
      ```
 
   4. Spawn remote holograms:
      ```elixir
-     {:ok, h} = Kudzu.Distributed.spawn_remote(:"kudzu@100.x.x.2",
+     {:ok, h} = Kudzu.Distributed.spawn_remote(:"kudzu@<other-tailscale-ip>",
        purpose: :remote_researcher,
-       ollama_url: "http://100.x.x.2:11434"
+       ollama_url: "http://<other-tailscale-ip>:11434"
      )
      ```
 
@@ -48,7 +48,7 @@ defmodule Kudzu.Distributed do
   Connect to a remote Kudzu node.
 
   ## Example
-      Kudzu.Distributed.connect("kudzu@100.64.0.2")
+      Kudzu.Distributed.connect("kudzu@<remote-node-ip>")
   """
   @spec connect(atom() | String.t()) :: boolean() | {:error, term()}
   def connect(node) when is_binary(node), do: connect(String.to_atom(node))
@@ -95,9 +95,9 @@ defmodule Kudzu.Distributed do
   Returns a local proxy PID that forwards calls to the remote hologram.
 
   ## Example
-      {:ok, h} = Kudzu.Distributed.spawn_remote(:"kudzu@100.64.0.2",
+      {:ok, h} = Kudzu.Distributed.spawn_remote(:"kudzu@<remote-node-ip>",
         purpose: :researcher,
-        ollama_url: "http://100.64.0.2:11434"
+        ollama_url: "http://<remote-node-ip>:11434"
       )
   """
   @spec spawn_remote(atom(), keyword()) :: {:ok, pid()} | {:error, term()}

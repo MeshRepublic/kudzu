@@ -6,9 +6,9 @@
 #   ./scripts/start_distributed.sh [node_name] [cookie]
 #
 # Examples:
-#   ./scripts/start_distributed.sh                    # Auto-detect Tailscale IP
-#   ./scripts/start_distributed.sh kudzu@100.64.0.1   # Specific node name
-#   ./scripts/start_distributed.sh auto mysecret      # Auto IP with custom cookie
+#   ./scripts/start_distributed.sh                        # Auto-detect Tailscale IP
+#   ./scripts/start_distributed.sh kudzu@<your-ip>        # Specific node name
+#   ./scripts/start_distributed.sh auto <your-cookie>     # Auto IP with custom cookie
 #
 # The script will:
 #   1. Detect your Tailscale IP (or use provided node name)
@@ -60,7 +60,7 @@ if [ "$NODE_NAME" = "auto" ]; then
     if [ -z "$TAILSCALE_IP" ]; then
         echo "Error: Could not detect Tailscale IP. Is Tailscale running?"
         echo "Usage: $0 [node_name] [cookie]"
-        echo "Example: $0 kudzu@100.64.0.1 mysecret"
+        echo "Example: $0 kudzu@<your-ip> <your-cookie>"
         exit 1
     fi
     NODE_NAME="kudzu@${TAILSCALE_IP}"

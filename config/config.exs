@@ -82,4 +82,4 @@ end
 
 # Example distributed configuration (uncomment and modify for your setup)
 # config :kudzu,
-#   ollama_url: "http://100.64.0.1:11434"  # Tailscale IP of Ollama server
+#   ollama_url: "http://<tailscale-ip>:11434"  # Tailscale IP of Ollama server
