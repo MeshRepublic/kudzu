@@ -574,7 +574,7 @@ Kudzu embodies several key inversions:
 
 ## License
 
-MIT
+AGPL-3.0
 
 ## Contributing
 
