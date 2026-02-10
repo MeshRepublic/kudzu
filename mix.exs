@@ -15,7 +15,7 @@ defmodule Kudzu.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :crypto, :inets, :ssl],
+      extra_applications: [:logger, :crypto, :inets, :ssl, :mnesia],
       mod: {Kudzu.Application, []}
     ]
   end

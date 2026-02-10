@@ -7,9 +7,13 @@ defmodule Kudzu.Application do
   - DynamicSupervisor for spawning holograms on demand
   - Registry for hologram discovery by id and by purpose
   - Telemetry supervision for observability
+  - Tiered storage: ETS (hot) → DETS (warm) → Mnesia (cold)
+  - Memory consolidation daemon (biomimetic processing)
 
   Architecture: Beam-lets start first as the execution substrate,
   then holograms can be spawned to use them for IO operations.
+  The consolidation daemon runs in the background, processing
+  memories similar to how biological systems consolidate during sleep.
   """
 
   use Application
@@ -24,6 +28,12 @@ defmodule Kudzu.Application do
       # PubSub for real-time events (WebSocket channels)
       {Phoenix.PubSub, name: Kudzu.PubSub},
 
+      # Tiered storage: ETS (hot) → DETS (warm) → Mnesia (cold)
+      {Kudzu.Storage, []},
+
+      # Node management: mesh connectivity, capabilities
+      {Kudzu.Node, []},
+
       # Beam-let execution substrate (must start before holograms)
       {Kudzu.Beamlet.Supervisor, []},
 
@@ -32,6 +42,9 @@ defmodule Kudzu.Application do
 
       # Telemetry supervisor for metrics
       {Kudzu.Telemetry, []},
+
+      # Memory consolidation daemon (biomimetic memory processing)
+      {Kudzu.Consolidation, []},
 
       # Phoenix HTTP/WebSocket endpoint (API layer)
       KudzuWeb.Endpoint

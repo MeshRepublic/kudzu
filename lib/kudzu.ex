@@ -41,8 +41,9 @@ defmodule Kudzu do
   trace-following, not retrieval from storage.
   """
 
-  alias Kudzu.{Application, Hologram, Trace, VectorClock, Protocol}
+  alias Kudzu.{Application, Hologram, Trace, VectorClock, Protocol, Storage}
 
+  # Hologram management
   defdelegate spawn_hologram(opts \\ []), to: Application
   defdelegate spawn_holograms(count, opts \\ []), to: Application
   defdelegate stop_hologram(pid), to: Application
@@ -151,5 +152,103 @@ defmodule Kudzu do
         (local ++ peer_results) |> Enum.take(max)
       end
     end
+  end
+
+  # ============================================================================
+  # Mesh Management - SETI-style distributed memory
+  # ============================================================================
+
+  @doc """
+  Initialize this node for mesh participation.
+  Sets up Mnesia and prepares for distributed storage.
+  """
+  def init_mesh_node do
+    Storage.MnesiaSchema.init_node()
+  end
+
+  @doc """
+  Create the mesh schema across the given nodes.
+  Run this once when setting up a new mesh.
+
+  ## Example
+
+      # On first node
+      Kudzu.create_mesh([:"kudzu@titan", :"kudzu@radiator"])
+  """
+  def create_mesh(nodes) when is_list(nodes) do
+    Storage.MnesiaSchema.create_schema(nodes)
+  end
+
+  @doc """
+  Join an existing mesh.
+  Run this on new nodes to join an established mesh.
+
+  ## Example
+
+      # On new node
+      Kudzu.join_mesh(:"kudzu@titan")
+  """
+  def join_mesh(existing_node) do
+    Storage.MnesiaSchema.join_mesh(existing_node)
+  end
+
+  @doc """
+  Get mesh status including all connected nodes and storage stats.
+  """
+  def mesh_status do
+    %{
+      node: node(),
+      connected_nodes: Node.list(),
+      storage: Storage.stats(),
+      cold_storage: Storage.MnesiaSchema.stats(),
+      holograms: hologram_count()
+    }
+  end
+
+  @doc """
+  Get all nodes in the mesh.
+  """
+  def mesh_nodes do
+    [node() | Node.list()]
+  end
+
+  # ============================================================================
+  # Storage Delegation
+  # ============================================================================
+
+  @doc """
+  Store a trace with optional importance level.
+  Importance affects aging: :critical traces stay hot longer.
+  """
+  def store_trace(trace, hologram_id, importance \\ :normal) do
+    Storage.store(trace, hologram_id, importance)
+  end
+
+  @doc """
+  Retrieve a trace by ID from any tier.
+  """
+  def retrieve_trace(trace_id) do
+    Storage.retrieve(trace_id)
+  end
+
+  @doc """
+  Query traces by purpose across all tiers and mesh nodes.
+  """
+  def query_traces(purpose, opts \\ []) do
+    Storage.query(purpose, opts)
+  end
+
+  @doc """
+  Get storage statistics.
+  """
+  def storage_stats do
+    Storage.stats()
+  end
+
+  @doc """
+  Force aging cycle (move hot→warm→cold based on access patterns).
+  """
+  def age_traces do
+    Storage.age_traces()
   end
 end

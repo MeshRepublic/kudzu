@@ -131,10 +131,10 @@ defmodule KudzuWeb.HologramController do
     case find_hologram(id) do
       {:ok, pid} ->
         case Hologram.stimulate(pid, stimulus, opts) do
-          {:ok, response, traces} ->
+          {:ok, response, actions} ->
             json(conn, %{
               response: response,
-              traces: Enum.map(traces, &trace_to_map/1),
+              actions: Enum.map(actions, &action_to_map/1),
               hologram_id: id
             })
 
@@ -142,6 +142,35 @@ defmodule KudzuWeb.HologramController do
             conn
             |> put_status(:unprocessable_entity)
             |> json(%{error: "Stimulation failed", reason: inspect(reason)})
+        end
+
+      :error ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Hologram not found"})
+    end
+  end
+
+  @doc """
+  Record a trace to a hologram.
+  POST /api/v1/holograms/:id/traces
+  """
+  def record_trace(conn, %{"hologram_id" => id} = params) do
+    purpose = get_trace_purpose(params)
+    data = Map.get(params, "data", %{})
+
+    case find_hologram(id) do
+      {:ok, pid} ->
+        case Hologram.record_trace(pid, purpose, data) do
+          {:ok, trace} ->
+            conn
+            |> put_status(:created)
+            |> json(%{trace: trace_to_map(trace)})
+
+          {:error, reason} ->
+            conn
+            |> put_status(:unprocessable_entity)
+            |> json(%{error: "Failed to record trace", reason: inspect(reason)})
         end
 
       :error ->
@@ -332,6 +361,33 @@ defmodule KudzuWeb.HologramController do
     ArgumentError -> traces
   end
 
+  defp action_to_map({:record_trace, purpose, hints}) do
+    %{type: "record_trace", purpose: purpose, hints: hints}
+  end
+  defp action_to_map({:query_peer, peer_id, purpose}) do
+    %{type: "query_peer", peer_id: peer_id, purpose: purpose}
+  end
+  defp action_to_map({:share_trace, peer_id, trace_id}) do
+    %{type: "share_trace", peer_id: peer_id, trace_id: trace_id}
+  end
+  defp action_to_map({:update_desire, desire}) do
+    %{type: "update_desire", desire: desire}
+  end
+  defp action_to_map({:respond, message}) do
+    %{type: "respond", message: message}
+  end
+  defp action_to_map(:noop), do: %{type: "noop"}
+  defp action_to_map(other), do: %{type: "unknown", raw: inspect(other)}
+
+  @allowed_trace_purposes ~w(observation thought memory discovery research learning session_context)a
+  defp get_trace_purpose(params) do
+    case Map.get(params, "purpose") do
+      nil -> :observation
+      purpose when is_binary(purpose) ->
+        find_allowed_atom(purpose, @allowed_trace_purposes, :observation)
+    end
+  end
+
   defp get_atom_param(params, key, default) do
     case Map.get(params, key) do
       nil -> default
@@ -340,12 +396,17 @@ defmodule KudzuWeb.HologramController do
     end
   end
 
-  @allowed_purposes ~w(api_spawned research assistant coordinator worker analyzer)a
+  @allowed_purposes ~w(api_spawned research assistant coordinator worker analyzer claude_memory claude_assistant claude_research claude_learning claude_project explorer thinker researcher librarian optimizer specialist)a
   defp safe_to_atom(str, default) do
-    atom = String.to_existing_atom(str)
-    if atom in @allowed_purposes, do: atom, else: default
-  rescue
-    ArgumentError -> default
+    find_allowed_atom(str, @allowed_purposes, default)
+  end
+
+  # Find matching atom from allowlist by comparing strings
+  defp find_allowed_atom(str, allowlist, default) do
+    normalized = str |> String.trim() |> String.downcase()
+    Enum.find(allowlist, default, fn atom ->
+      Atom.to_string(atom) == normalized
+    end)
   end
 
   @allowed_constitutions ~w(mesh_republic cautious open kudzu_evolve)a

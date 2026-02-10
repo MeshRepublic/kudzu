@@ -9,9 +9,24 @@ defmodule Kudzu.Trace do
   - How to navigate back (reconstruction_hint)
 
   The data itself may or may not exist - but the navigation survives.
+
+  ## Phase 2: Content-Addressable Traces
+
+  Traces now use content-addressable IDs (SHA-256 hash of content).
+  This enables:
+  - Deduplication: Same content = same ID
+  - Integrity verification: ID proves content unchanged
+  - Efficient synchronization: Only sync by ID comparison
+
+  ## Salience Integration
+
+  Each trace carries a salience score that determines:
+  - Priority during recall
+  - Consolidation eligibility
+  - Archival timing
   """
 
-  alias Kudzu.VectorClock
+  alias Kudzu.{VectorClock, Salience}
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -19,7 +34,9 @@ defmodule Kudzu.Trace do
           timestamp: VectorClock.t(),
           purpose: atom() | String.t(),
           path: [String.t()],
-          reconstruction_hint: map()
+          reconstruction_hint: map(),
+          salience: Salience.t() | nil,
+          content_hash: String.t() | nil
         }
 
   @enforce_keys [:id, :origin, :timestamp, :purpose]
@@ -28,6 +45,8 @@ defmodule Kudzu.Trace do
     :origin,
     :timestamp,
     :purpose,
+    :salience,
+    :content_hash,
     path: [],
     reconstruction_hint: %{}
   ]
@@ -40,31 +59,68 @@ defmodule Kudzu.Trace do
     - purpose: why this trace was recorded (atom or string)
     - path: initial list of agent_id hops (defaults to [origin])
     - reconstruction_hint: metadata for retrieval (optional)
+
+  ## Options
+    - :content_addressable - if true, ID is SHA-256 hash of content (default: true)
+    - :importance - salience importance level (:critical, :high, :normal, :low, :trivial)
   """
-  @spec new(String.t(), atom() | String.t(), [String.t()], map()) :: t()
-  def new(origin, purpose, path \\ nil, reconstruction_hint \\ %{}) do
+  @spec new(String.t(), atom() | String.t(), [String.t()] | nil, map(), keyword()) :: t()
+  def new(origin, purpose, path \\ nil, reconstruction_hint \\ %{}, opts \\ []) do
+    content_addressable = Keyword.get(opts, :content_addressable, true)
+    importance = Keyword.get(opts, :importance, :normal)
+
+    # Generate content hash
+    content_hash = compute_content_hash(origin, purpose, reconstruction_hint)
+
+    # Use content-addressable ID or random
+    id = if content_addressable do
+      content_hash
+    else
+      generate_id()
+    end
+
+    # Initialize salience
+    salience = Salience.new(importance: importance)
+
     %__MODULE__{
-      id: generate_id(),
+      id: id,
       origin: origin,
       timestamp: VectorClock.new(origin) |> VectorClock.increment(origin),
       purpose: purpose,
       path: path || [origin],
-      reconstruction_hint: reconstruction_hint
+      reconstruction_hint: reconstruction_hint,
+      salience: salience,
+      content_hash: content_hash
     }
   end
 
   @doc """
   Create a trace with an existing vector clock (for receiving traces from peers).
   """
-  @spec new_with_clock(String.t(), atom() | String.t(), VectorClock.t(), [String.t()], map()) :: t()
-  def new_with_clock(origin, purpose, clock, path \\ nil, reconstruction_hint \\ %{}) do
+  @spec new_with_clock(String.t(), atom() | String.t(), VectorClock.t(), [String.t()] | nil, map(), keyword()) :: t()
+  def new_with_clock(origin, purpose, clock, path \\ nil, reconstruction_hint \\ %{}, opts \\ []) do
+    content_addressable = Keyword.get(opts, :content_addressable, true)
+    importance = Keyword.get(opts, :importance, :normal)
+
+    content_hash = compute_content_hash(origin, purpose, reconstruction_hint)
+
+    id = if content_addressable do
+      content_hash
+    else
+      generate_id()
+    end
+
+    salience = Salience.new(importance: importance)
+
     %__MODULE__{
-      id: generate_id(),
+      id: id,
       origin: origin,
       timestamp: clock,
       purpose: purpose,
       path: path || [origin],
-      reconstruction_hint: reconstruction_hint
+      reconstruction_hint: reconstruction_hint,
+      salience: salience,
+      content_hash: content_hash
     }
   end
 
@@ -142,6 +198,59 @@ defmodule Kudzu.Trace do
     %{trace | reconstruction_hint: Map.put(hints, key, value)}
   end
 
+  @doc """
+  Update salience when trace is accessed (reconsolidation).
+  """
+  @spec on_access(t()) :: t()
+  def on_access(%__MODULE__{salience: nil} = trace), do: trace
+  def on_access(%__MODULE__{salience: salience} = trace) do
+    %{trace | salience: Salience.on_access(salience)}
+  end
+
+  @doc """
+  Update salience after consolidation.
+  """
+  @spec on_consolidation(t()) :: t()
+  def on_consolidation(%__MODULE__{salience: nil} = trace), do: trace
+  def on_consolidation(%__MODULE__{salience: salience} = trace) do
+    %{trace | salience: Salience.on_consolidation(salience)}
+  end
+
+  @doc """
+  Get the current salience score.
+  """
+  @spec salience_score(t()) :: float()
+  def salience_score(%__MODULE__{salience: nil}), do: 0.5
+  def salience_score(%__MODULE__{salience: salience}), do: Salience.score(salience)
+
+  @doc """
+  Verify content integrity using stored hash.
+  """
+  @spec verify_integrity(t()) :: boolean()
+  def verify_integrity(%__MODULE__{content_hash: nil}), do: true
+  def verify_integrity(%__MODULE__{} = trace) do
+    computed = compute_content_hash(trace.origin, trace.purpose, trace.reconstruction_hint)
+    computed == trace.content_hash
+  end
+
+  @doc """
+  Check if trace is a candidate for consolidation.
+  """
+  @spec consolidation_candidate?(t(), keyword()) :: boolean()
+  def consolidation_candidate?(%__MODULE__{salience: nil}, _opts), do: false
+  def consolidation_candidate?(%__MODULE__{salience: salience}, opts) do
+    Salience.consolidation_candidate?(salience, opts)
+  end
+
+  @doc """
+  Check if trace is a candidate for archival.
+  """
+  @spec archival_candidate?(t(), keyword()) :: boolean()
+  def archival_candidate?(%__MODULE__{salience: nil}, _opts), do: false
+  def archival_candidate?(%__MODULE__{salience: salience}, opts) do
+    Salience.archival_candidate?(salience, opts)
+  end
+
   # Merge paths keeping unique agents in order of first appearance
   defp merge_paths(path1, path2) do
     (path1 ++ path2)
@@ -150,5 +259,25 @@ defmodule Kudzu.Trace do
 
   defp generate_id do
     :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
+  end
+
+  @doc """
+  Compute SHA-256 content hash for content-addressable ID.
+  """
+  @spec compute_content_hash(String.t(), atom() | String.t(), map()) :: String.t()
+  def compute_content_hash(origin, purpose, reconstruction_hint) do
+    # Canonical serialization for consistent hashing
+    purpose_str = if is_atom(purpose), do: Atom.to_string(purpose), else: purpose
+
+    # Sort hint keys for consistency
+    hint_str = reconstruction_hint
+    |> Enum.sort_by(fn {k, _v} -> to_string(k) end)
+    |> Enum.map(fn {k, v} -> "#{k}:#{inspect(v)}" end)
+    |> Enum.join("|")
+
+    content = "#{origin}|#{purpose_str}|#{hint_str}"
+
+    :crypto.hash(:sha256, content)
+    |> Base.encode16(case: :lower)
   end
 end

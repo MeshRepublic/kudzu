@@ -53,6 +53,43 @@ defmodule KudzuWeb.Router do
       get "/stats", ClusterController, :stats
     end
 
+    # Node/Mesh management (SETI-style distributed memory)
+    scope "/node" do
+      get "/", NodeController, :status
+      post "/init", NodeController, :init
+      post "/mesh/create", NodeController, :create_mesh
+      post "/mesh/join", NodeController, :join_mesh
+      post "/mesh/leave", NodeController, :leave_mesh
+      get "/mesh/peers", NodeController, :mesh_peers
+      get "/storage", NodeController, :storage_stats
+      get "/capabilities", NodeController, :capabilities
+    end
+
+    # Universal Agent API (for any AI to use)
+    scope "/agents" do
+      post "/", AgentController, :create
+      get "/:name", AgentController, :find
+      delete "/:name", AgentController, :destroy
+
+      # Memory operations
+      post "/:name/remember", AgentController, :remember
+      post "/:name/learn", AgentController, :learn
+      post "/:name/think", AgentController, :think
+      post "/:name/observe", AgentController, :observe
+      post "/:name/decide", AgentController, :decide
+      get "/:name/recall", AgentController, :recall
+      get "/:name/recall/:purpose", AgentController, :recall_by_purpose
+
+      # Cognition
+      post "/:name/stimulate", AgentController, :stimulate
+      get "/:name/desires", AgentController, :desires
+      post "/:name/desires", AgentController, :add_desire
+
+      # Peers
+      get "/:name/peers", AgentController, :peers
+      post "/:name/peers", AgentController, :connect_peer
+    end
+
     # Beamlet operations
     scope "/beamlets" do
       get "/", BeamletController, :index
