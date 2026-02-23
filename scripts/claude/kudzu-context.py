@@ -222,10 +222,7 @@ SKIP_CONTENT_PREFIXES = (
 )
 
 # Repetitive traces where only the most recent instance matters
-DEDUP_EXACT = {
-    "Auto-context build for Claude Code session",
-    "Session started",
-}
+DEDUP_EXACT: set = set()
 
 
 def categorize_trace(trace: dict, content: str) -> str:
@@ -239,6 +236,19 @@ def categorize_trace(trace: dict, content: str) -> str:
     # Skip internal/system traces that aren't useful context
     if purpose in SKIP_PURPOSES:
         return ""
+
+    # Skip low-value session_context subtypes
+    hint = trace.get("reconstruction_hint", {})
+    if isinstance(hint, dict):
+        trace_type = hint.get("type", "")
+        if trace_type == "context_build":
+            return ""  # Auto-context build markers are noise
+        project = hint.get("project", "")
+        if purpose == "session_context" and project in ("", "general"):
+            # "Session started" with no real project is not useful
+            if content in ("Session started", ""):
+                return ""
+
     content_lower = content.lower()
 
     if purpose in ("learning", "discovery", "research"):
@@ -246,9 +256,7 @@ def categorize_trace(trace: dict, content: str) -> str:
     if purpose == "decision":
         return "Recent Decisions"
     if purpose == "session_context":
-        # Check for project info
-        hint = trace.get("reconstruction_hint", {})
-        if isinstance(hint, dict) and hint.get("project"):
+        if isinstance(hint, dict) and hint.get("project") and hint["project"] != "general":
             return "Active Projects"
         if "project" in content_lower:
             return "Active Projects"
@@ -357,6 +365,24 @@ def truncate_line(text: str, max_len: int = 120) -> str:
     return text
 
 
+def wrap_bullet(text: str, width: int = 100) -> list:
+    """Wrap text into a markdown bullet with continuation lines.
+
+    Returns a list of lines: first is '- text...' and continuations
+    are indented with two spaces for markdown list continuation.
+    Long content wraps at word boundaries up to `width` chars per line.
+    """
+    import textwrap
+    text = text.replace("\n", " ").strip()
+    if len(text) <= width:
+        return [f"- {text}"]
+    wrapped = textwrap.wrap(text, width=width)
+    lines = [f"- {wrapped[0]}"]
+    for cont in wrapped[1:]:
+        lines.append(f"  {cont}")
+    return lines
+
+
 def render_memory_md(sections: dict) -> str:
     """Render sections into MEMORY.md content within the line budget."""
     lines = []
@@ -396,17 +422,24 @@ def render_memory_md(sections: dict) -> str:
         largest = max(per_section, key=per_section.get)
         per_section[largest] -= 1
 
-    # Render
+    # Render with wrapping — count lines as we go to stay within budget
     for name, items in active_sections:
         max_items = per_section.get(name, 3)
         lines.append(f"## {name}")
         lines.append("")
-        for content, _ in items[:max_items]:
-            bullet = truncate_line(content)
-            lines.append(f"- {bullet}")
+        items_rendered = 0
+        for content, _ in items:
+            if items_rendered >= max_items:
+                break
+            bullet_lines = wrap_bullet(content)
+            # Check if adding this item would exceed budget
+            if len(lines) + len(bullet_lines) + 1 > LINE_BUDGET:
+                break
+            lines.extend(bullet_lines)
+            items_rendered += 1
         lines.append("")
 
-    # Final trim to budget
+    # Final trim to budget (safety net)
     if len(lines) > LINE_BUDGET:
         lines = lines[:LINE_BUDGET - 1]
         lines.append("_... (truncated to fit line budget)_")
@@ -544,10 +577,7 @@ def main():
     md_content = render_memory_md(sections)
     memory_md_path.write_text(md_content)
 
-    # Step 6: Record this context-build run
-    record_context_run(memory_id)
-
-    # Step 7: Print summary to stdout
+    # Step 6: Print summary to stdout
     print_summary(sections)
 
 
