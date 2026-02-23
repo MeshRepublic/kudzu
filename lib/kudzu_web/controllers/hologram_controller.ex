@@ -80,6 +80,16 @@ defmodule KudzuWeb.HologramController do
     case Application.spawn_hologram(opts) do
       {:ok, pid} ->
         id = Hologram.get_id(pid)
+
+        # Register in persistent registry so it survives restarts
+        Kudzu.HologramRegistry.register(id, %{
+          purpose: opts[:purpose],
+          constitution: opts[:constitution],
+          desires: opts[:desires] || [],
+          cognition_enabled: opts[:cognition] || false,
+          cognition_model: Keyword.get(opts, :model, "mistral:latest")
+        })
+
         conn
         |> put_status(:created)
         |> json(%{
@@ -105,6 +115,8 @@ defmodule KudzuWeb.HologramController do
   def delete(conn, %{"id" => id}) do
     case find_hologram(id) do
       {:ok, pid} ->
+        # Deregister from persistent registry before stopping
+        Kudzu.HologramRegistry.deregister(id)
         GenServer.stop(pid, :normal)
         json(conn, %{deleted: true, id: id})
 
@@ -232,6 +244,7 @@ defmodule KudzuWeb.HologramController do
     case {find_hologram(id), find_hologram(peer_id)} do
       {{:ok, pid}, {:ok, peer_pid}} ->
         Hologram.introduce_peer(pid, peer_pid)
+        # Persist peer change (will be captured by periodic persist_all_live)
         json(conn, %{added: true, peer_id: peer_id})
 
       {{:ok, _}, :error} ->

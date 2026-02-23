@@ -17,6 +17,7 @@ defmodule Kudzu.Application do
   """
 
   use Application
+  require Logger
 
   @impl true
   def start(_type, _args) do
@@ -37,6 +38,9 @@ defmodule Kudzu.Application do
       # Beam-let execution substrate (must start before holograms)
       {Kudzu.Beamlet.Supervisor, []},
 
+      # Persistent hologram registry (must start before DynamicSupervisor)
+      {Kudzu.HologramRegistry, []},
+
       # DynamicSupervisor for spawning holograms on demand
       {DynamicSupervisor, strategy: :one_for_one, name: Kudzu.HologramSupervisor},
 
@@ -51,7 +55,25 @@ defmodule Kudzu.Application do
     ]
 
     opts = [strategy: :one_for_one, name: Kudzu.Supervisor]
-    Supervisor.start_link(children, opts)
+    result = Supervisor.start_link(children, opts)
+
+    # After supervisor tree is fully started, reconstruct persisted holograms
+    case result do
+      {:ok, _pid} ->
+        Task.start(fn ->
+          # Small delay to ensure all services are ready
+          Process.sleep(1000)
+          try do
+            reconstructed = Kudzu.HologramRegistry.reconstruct_all()
+            Logger.info("[Application] Reconstructed #{length(reconstructed)} holograms on startup")
+          rescue
+            e -> Logger.warning("[Application] Hologram reconstruction failed: #{inspect(e)}")
+          end
+        end)
+      _ -> :ok
+    end
+
+    result
   end
 
   @doc """

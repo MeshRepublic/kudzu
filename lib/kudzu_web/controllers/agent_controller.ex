@@ -257,8 +257,13 @@ defmodule KudzuWeb.AgentController do
       prompt = params["prompt"] || ""
 
       case Agent.stimulate(pid, prompt) do
+        {:ok, response, actions} ->
+          json(conn, %{
+            response: response,
+            actions: length(actions)
+          })
         {:ok, response} ->
-          json(conn, response)
+          json(conn, %{response: response})
         {:error, reason} ->
           conn
           |> put_status(:unprocessable_entity)

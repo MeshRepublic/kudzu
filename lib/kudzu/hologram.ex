@@ -322,6 +322,7 @@ defmodule Kudzu.Hologram do
     model = Keyword.get(opts, :model, "mistral:latest")
     ollama_url = Keyword.get(opts, :ollama_url)  # nil means use default
     constitution = Keyword.get(opts, :constitution, @default_constitution)
+    reconstruct = Keyword.get(opts, :reconstruct, false)
 
     # Constrain initial desires according to constitution
     constrained_desires = Constitution.constrain(constitution, desires, %{id: id})
@@ -341,11 +342,18 @@ defmodule Kudzu.Hologram do
       metadata: %{}
     }
 
+    # If reconstructing, reload traces from persistent storage
+    state = if reconstruct do
+      reload_traces_from_storage(state)
+    else
+      state
+    end
+
     # Emit telemetry for hologram start
     :telemetry.execute(
       [:kudzu, :hologram, :start],
       %{system_time: System.system_time()},
-      %{id: id, purpose: purpose}
+      %{id: id, purpose: purpose, reconstructed: reconstruct}
     )
 
     # Schedule periodic proximity decay
@@ -370,6 +378,9 @@ defmodule Kudzu.Hologram do
       traces: Map.put(state.traces, trace.id, trace),
       clock: clock
     }
+
+    # Persist trace to durable storage immediately
+    Kudzu.Storage.store(trace, state.id, :normal)
 
     :telemetry.execute(
       [:kudzu, :hologram, :trace_recorded],
@@ -663,8 +674,9 @@ defmodule Kudzu.Hologram do
     new_clock = VectorClock.merge(state.clock, trace.timestamp)
     |> VectorClock.increment(state.id)
 
-    # Store the trace
+    # Store the trace in-process and in durable storage
     new_traces = Map.put(state.traces, followed_trace.id, followed_trace)
+    Kudzu.Storage.store(followed_trace, state.id, :normal)
 
     # Boost proximity with sender
     new_peers = Map.update(state.peers, from_id, @proximity_boost, fn score ->
@@ -758,6 +770,26 @@ defmodule Kudzu.Hologram do
 
   @impl true
   def terminate(reason, state) do
+    # Persist current state to registry on graceful shutdown
+    # (not on explicit delete — controller handles deregister)
+    if reason in [:normal, :shutdown] do
+      try do
+        Kudzu.HologramRegistry.update(state.id, %{
+          purpose: state.purpose,
+          constitution: state.constitution,
+          desires: state.desires,
+          cognition_enabled: state.cognition_enabled,
+          cognition_model: state.cognition_model,
+          peers: state.peers
+        })
+      catch
+        :exit, _ -> :ok
+      end
+    end
+
+    # Persist in-process traces to warm storage before dying
+    persist_traces_to_storage(state)
+
     :telemetry.execute(
       [:kudzu, :hologram, :stop],
       %{system_time: System.system_time()},
@@ -1050,5 +1082,48 @@ defmodule Kudzu.Hologram do
       :shell_exec -> :shell_exec
       _ -> :file_read
     end
+  end
+
+  # Persistence helpers
+
+  defp reload_traces_from_storage(state) do
+    traces = Kudzu.Storage.query_hologram(state.id, limit: 1000)
+
+    loaded_traces = traces
+    |> Enum.map(fn record ->
+      trace = %Trace{
+        id: record.id,
+        origin: record.origin,
+        purpose: record.purpose,
+        reconstruction_hint: record.reconstruction_hint,
+        path: record.path || [state.id],
+        timestamp: record.clock || VectorClock.new(state.id)
+      }
+      {trace.id, trace}
+    end)
+    |> Map.new()
+
+    # Rebuild clock from loaded traces
+    clock = loaded_traces
+    |> Map.values()
+    |> Enum.reduce(VectorClock.new(state.id), fn trace, acc ->
+      VectorClock.merge(acc, trace.timestamp)
+    end)
+
+    Logger.info("[Hologram #{state.id}] Reconstructed with #{map_size(loaded_traces)} traces from storage")
+
+    %{state | traces: loaded_traces, clock: clock}
+  end
+
+  defp persist_traces_to_storage(state) do
+    state.traces
+    |> Map.values()
+    |> Enum.each(fn trace ->
+      try do
+        Kudzu.Storage.store(trace, state.id, :normal)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
   end
 end

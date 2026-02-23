@@ -144,8 +144,9 @@ defmodule Kudzu.Storage do
       importance: importance
     }
 
-    # Always start in hot tier
+    # Write to both hot (fast reads) and warm (durable) tiers
     :ets.insert(@hot_table, {trace.id, record})
+    :dets.insert(@warm_file, {trace.id, record})
 
     {:reply, :ok, state}
   end
