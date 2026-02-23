@@ -342,7 +342,40 @@ defmodule KudzuWeb.MCP.Tools do
       name: "kudzu_find_beamlets",
       description: "Find beamlets by capability (e.g. file_read, http_get, dns_resolve).",
       inputSchema: %{type: "object", properties: %{capability: %{type: "string", description: "Capability to search for"}}, required: ["capability"]}
-    }
+    },
+
+    # === Semantic Memory ===
+    %{
+      name: "kudzu_semantic_recall",
+      description: "Search traces by semantic similarity to a natural language query. Uses HRR token-seeded encoding with co-occurrence learning. Returns traces ranked by similarity.",
+      inputSchema: %{type: "object", properties: %{
+        query: %{type: "string", description: "Natural language query (e.g. 'supervisor crash restart')"},
+        purpose: %{type: "string", description: "Filter by trace purpose: observation, thought, memory, discovery, research, learning, session_context"},
+        limit: %{type: "integer", description: "Max results (default 10)"},
+        threshold: %{type: "number", description: "Minimum similarity score 0.0-1.0 (default 0.0)"}
+      }, required: ["query"]}
+    },
+    %{
+      name: "kudzu_associations",
+      description: "Show co-occurrence neighbors for a token. Reveals what concepts Kudzu has learned are related through trace processing.",
+      inputSchema: %{type: "object", properties: %{
+        token: %{type: "string", description: "Token to look up (e.g. 'supervisor', 'storage')"},
+        k: %{type: "integer", description: "Number of neighbors (default 10)"}
+      }, required: ["token"]}
+    },
+    %{
+      name: "kudzu_vocabulary",
+      description: "List known tokens and their frequency. Shows what concepts Kudzu has learned from processing traces.",
+      inputSchema: %{type: "object", properties: %{
+        limit: %{type: "integer", description: "Max results (default 50)"},
+        query: %{type: "string", description: "Filter tokens containing this substring"}
+      }, required: []}
+    },
+    %{
+      name: "kudzu_encoder_stats",
+      description: "Get HRR encoder statistics: vocabulary size, co-occurrence entries, traces processed, top tokens.",
+      inputSchema: %{type: "object", properties: %{}, required: []}
+    },
   ]
 
   def list, do: @tools
