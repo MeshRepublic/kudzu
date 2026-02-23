@@ -50,6 +50,7 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
 
   def handle("kudzu_delete_hologram", %{"id" => id}) do
     with_hologram(id, fn pid ->
+      Kudzu.HologramRegistry.deregister(id)
       GenServer.stop(pid, :normal)
       {:ok, %{deleted: true, id: id}}
     end)

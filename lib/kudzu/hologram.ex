@@ -366,6 +366,37 @@ defmodule Kudzu.Hologram do
     Registry.register(Kudzu.Registry, {:id, id}, purpose)
     Registry.register(Kudzu.Registry, {:purpose, purpose}, id)
 
+    # On reconstruction, reload traces from persistent storage
+    state = if Keyword.get(opts, :reconstruct, false) do
+      case Kudzu.Storage.query_hologram(id, limit: 10_000) do
+        records when is_list(records) ->
+          traces = Enum.reduce(records, %{}, fn record, acc ->
+            trace = %Trace{
+              id: record.id,
+              origin: record.origin,
+              purpose: record.purpose,
+              reconstruction_hint: record.reconstruction_hint,
+              path: record.path || [id],
+              timestamp: record.clock || Kudzu.VectorClock.new(id)
+            }
+            Map.put(acc, record.id, trace)
+          end)
+          %{state | traces: traces}
+        _ ->
+          state
+      end
+    else
+      # Persist hologram metadata for reconstruction after restart
+      Kudzu.HologramRegistry.register(id, %{
+        purpose: purpose,
+        constitution: constitution,
+        desires: constrained_desires,
+        cognition_enabled: cognition_enabled,
+        cognition_model: model
+      })
+      state
+    end
+
     {:ok, state}
   end
 
