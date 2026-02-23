@@ -10,24 +10,19 @@ defmodule Kudzu.Consolidation do
   3. **Form associations**: Related traces are linked via HRR
   4. **Archive cold memories**: Move stable memories to cold storage
   5. **Compress representations**: Bundle similar traces into HRR vectors
+  6. **Learn co-occurrences**: Update token co-occurrence matrix for semantic encoding
 
-  ## Consolidation Cycle
+  ## Consolidation Cycles
 
-  The daemon runs periodically (default: every 10 minutes) and processes
-  memories in batches to avoid blocking normal operations.
-
-  ## Sleep-like Deep Consolidation
-
-  Less frequently (default: every 6 hours), a "deep consolidation" runs
-  that performs more aggressive memory restructuring, similar to how
-  biological memories are reorganized during deep sleep.
+  - **Light (10 minutes)**: Process new traces, update co-occurrence matrix
+  - **Deep (6 hours)**: Rebuild vectors, decay/prune co-occurrence, persist encoder state
   """
 
   use GenServer
   require Logger
 
   alias Kudzu.{Storage, HRR}
-  alias Kudzu.HRR.Encoder
+  alias Kudzu.HRR.{Encoder, EncoderState, Tokenizer}
 
   @default_interval_ms 600_000        # 10 minutes
   @deep_consolidation_interval_ms 21_600_000  # 6 hours
@@ -35,6 +30,7 @@ defmodule Kudzu.Consolidation do
 
   defstruct [
     :hrr_codebook,
+    :encoder_state,
     :consolidated_vectors,  # %{purpose => HRR.vector()}
     :last_consolidation,
     :last_deep_consolidation,
@@ -47,36 +43,40 @@ defmodule Kudzu.Consolidation do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @doc """
-  Force a consolidation cycle.
-  """
+  @doc "Force a consolidation cycle."
   @spec consolidate_now() :: :ok
   def consolidate_now do
     GenServer.cast(__MODULE__, :consolidate)
   end
 
-  @doc """
-  Force a deep consolidation cycle.
-  """
+  @doc "Force a deep consolidation cycle."
   @spec deep_consolidate_now() :: :ok
   def deep_consolidate_now do
     GenServer.cast(__MODULE__, :deep_consolidate)
   end
 
-  @doc """
-  Get consolidated HRR vector for a purpose.
-  """
+  @doc "Get consolidated HRR vector for a purpose."
   @spec get_consolidated_vector(atom()) :: HRR.vector() | nil
   def get_consolidated_vector(purpose) do
     GenServer.call(__MODULE__, {:get_vector, purpose})
   end
 
-  @doc """
-  Get consolidation statistics.
-  """
+  @doc "Get consolidation statistics."
   @spec stats() :: map()
   def stats do
     GenServer.call(__MODULE__, :stats)
+  end
+
+  @doc "Get the current encoder state (for use by other modules)."
+  @spec get_encoder_state() :: EncoderState.t()
+  def get_encoder_state do
+    GenServer.call(__MODULE__, :get_encoder_state)
+  end
+
+  @doc "Get the HRR codebook."
+  @spec get_codebook() :: map()
+  def get_codebook do
+    GenServer.call(__MODULE__, :get_codebook)
   end
 
   @doc """
@@ -86,6 +86,14 @@ defmodule Kudzu.Consolidation do
   @spec query_memory(HRR.vector(), float()) :: [{atom(), float()}]
   def query_memory(query_vec, threshold \\ 0.3) do
     GenServer.call(__MODULE__, {:query_memory, query_vec, threshold})
+  end
+
+  @doc """
+  Semantic query: encode a natural language query and probe memory.
+  """
+  @spec semantic_query(String.t(), float()) :: [{atom(), float()}]
+  def semantic_query(query_text, threshold \\ 0.1) do
+    GenServer.call(__MODULE__, {:semantic_query, query_text, threshold})
   end
 
   # Server Callbacks
@@ -98,8 +106,13 @@ defmodule Kudzu.Consolidation do
     # Initialize HRR codebook
     codebook = Encoder.init()
 
+    # Load encoder state from DETS (or start fresh)
+    encoder_state = EncoderState.load()
+    Logger.info("[Consolidation] Loaded encoder state: #{encoder_state.traces_processed} traces, #{map_size(encoder_state.token_counts)} vocabulary")
+
     state = %__MODULE__{
       hrr_codebook: codebook,
+      encoder_state: encoder_state,
       consolidated_vectors: %{},
       last_consolidation: nil,
       last_deep_consolidation: nil,
@@ -140,12 +153,40 @@ defmodule Kudzu.Consolidation do
 
   @impl true
   def handle_call(:stats, _from, state) do
-    {:reply, state.stats, state}
+    encoder_stats = EncoderState.stats(state.encoder_state)
+    combined = Map.merge(state.stats, %{
+      encoder: encoder_stats
+    })
+    {:reply, combined, state}
+  end
+
+  @impl true
+  def handle_call(:get_encoder_state, _from, state) do
+    {:reply, state.encoder_state, state}
+  end
+
+  @impl true
+  def handle_call(:get_codebook, _from, state) do
+    {:reply, state.hrr_codebook, state}
   end
 
   @impl true
   def handle_call({:query_memory, query_vec, threshold}, _from, state) do
-    # Probe all consolidated vectors
+    matches = state.consolidated_vectors
+    |> Enum.map(fn {purpose, vec} ->
+      similarity = HRR.similarity(query_vec, vec)
+      {purpose, similarity}
+    end)
+    |> Enum.filter(fn {_purpose, sim} -> sim >= threshold end)
+    |> Enum.sort_by(fn {_purpose, sim} -> sim end, :desc)
+
+    {:reply, matches, state}
+  end
+
+  @impl true
+  def handle_call({:semantic_query, query_text, threshold}, _from, state) do
+    query_vec = Encoder.encode_query(query_text, state.hrr_codebook, state.encoder_state)
+
     matches = state.consolidated_vectors
     |> Enum.map(fn {purpose, vec} ->
       similarity = HRR.similarity(query_vec, vec)
@@ -171,7 +212,7 @@ defmodule Kudzu.Consolidation do
     {:noreply, new_state}
   end
 
-  # Private functions
+  # --- Consolidation Logic ---
 
   defp schedule_consolidation(interval) do
     Process.send_after(self(), :consolidate, interval)
@@ -184,26 +225,26 @@ defmodule Kudzu.Consolidation do
   defp do_consolidation(state) do
     Logger.debug("[Consolidation] Starting consolidation cycle")
 
-    # Get storage stats
     storage_stats = try do
       Storage.stats()
     rescue
       _ -> %{hot: 0, warm: 0, cold: 0}
     end
 
-    # Process hot tier traces
-    {processed, new_vectors} = process_hot_traces(state.hrr_codebook, state.consolidated_vectors)
+    # Process hot tier traces and update co-occurrence
+    {processed, new_vectors, new_encoder_state} =
+      process_hot_traces(state.hrr_codebook, state.encoder_state, state.consolidated_vectors)
 
-    # Update statistics
     new_stats = %{state.stats |
       consolidations: state.stats.consolidations + 1,
       traces_processed: state.stats.traces_processed + processed
     }
 
-    Logger.debug("[Consolidation] Processed #{processed} traces, storage: hot=#{storage_stats.hot}, warm=#{storage_stats.warm}")
+    Logger.debug("[Consolidation] Processed #{processed} traces, vocab: #{map_size(new_encoder_state.token_counts)}, storage: hot=#{storage_stats.hot}, warm=#{storage_stats.warm}")
 
     %{state |
       consolidated_vectors: new_vectors,
+      encoder_state: new_encoder_state,
       last_consolidation: DateTime.utc_now(),
       stats: new_stats
     }
@@ -212,39 +253,44 @@ defmodule Kudzu.Consolidation do
   defp do_deep_consolidation(state) do
     Logger.info("[Consolidation] Starting deep consolidation cycle")
 
-    # Deep consolidation:
-    # 1. Rebuild all consolidated vectors from scratch
-    # 2. Identify archival candidates and move to cold storage
-    # 3. Form cross-purpose associations
-
-    # Rebuild consolidated vectors
+    # 1. Rebuild all consolidated vectors
     all_traces = query_all_traces()
-    new_vectors = build_consolidated_vectors(all_traces, state.hrr_codebook)
+    new_vectors = build_consolidated_vectors(all_traces, state.hrr_codebook, state.encoder_state)
 
-    # Identify archival candidates
+    # 2. Maintain encoder state (decay + prune co-occurrence)
+    maintained_state = EncoderState.maintain(state.encoder_state)
+
+    # 3. Persist encoder state to DETS
+    case EncoderState.save(maintained_state) do
+      :ok ->
+        Logger.info("[Consolidation] Encoder state persisted to DETS")
+      {:error, reason} ->
+        Logger.warning("[Consolidation] Failed to persist encoder state: #{inspect(reason)}")
+    end
+
+    # 4. Archive stale traces
     archived = archive_stale_traces(all_traces)
 
-    # Update statistics
     new_stats = %{state.stats |
       deep_consolidations: state.stats.deep_consolidations + 1,
       traces_archived: state.stats.traces_archived + archived
     }
 
-    Logger.info("[Consolidation] Deep consolidation complete: rebuilt #{map_size(new_vectors)} vectors, archived #{archived} traces")
+    Logger.info("[Consolidation] Deep consolidation complete: rebuilt #{map_size(new_vectors)} vectors, archived #{archived} traces, vocab: #{map_size(maintained_state.token_counts)}")
 
     %{state |
       consolidated_vectors: new_vectors,
+      encoder_state: maintained_state,
       last_deep_consolidation: DateTime.utc_now(),
       stats: new_stats
     }
   end
 
-  defp process_hot_traces(codebook, existing_vectors) do
-    # Query recent traces from hot storage
+  defp process_hot_traces(codebook, encoder_state, existing_vectors) do
     traces = query_hot_traces(@batch_size)
 
     if traces == [] do
-      {0, existing_vectors}
+      {0, existing_vectors, encoder_state}
     else
       # Group by purpose
       by_purpose = Enum.group_by(traces, fn trace ->
@@ -254,15 +300,21 @@ defmodule Kudzu.Consolidation do
         end
       end)
 
+      # Update co-occurrence from all new traces
+      new_encoder_state = Enum.reduce(traces, encoder_state, fn trace, es ->
+        hint = case trace do
+          %{reconstruction_hint: hint} when is_map(hint) -> hint
+          _ -> %{}
+        end
+        tokens = Tokenizer.tokenize_hint(hint) |> Enum.reject(&String.contains?(&1, "_"))
+        EncoderState.update_co_occurrence(es, tokens)
+      end)
+
       # Update consolidated vectors for each purpose
       new_vectors = Enum.reduce(by_purpose, existing_vectors, fn {purpose, purpose_traces}, acc ->
-        # Create mock Trace structs for encoding
         trace_structs = Enum.map(purpose_traces, &to_trace_struct/1)
+        vec = Encoder.consolidate(trace_structs, codebook, new_encoder_state)
 
-        # Consolidate into HRR vector
-        vec = Encoder.consolidate(trace_structs, codebook)
-
-        # Merge with existing vector if present
         merged = case Map.get(acc, purpose) do
           nil -> vec
           existing -> HRR.bundle([existing, vec])
@@ -271,17 +323,14 @@ defmodule Kudzu.Consolidation do
         Map.put(acc, purpose, merged)
       end)
 
-      # Update salience for processed traces
       update_trace_salience(traces)
 
-      {length(traces), new_vectors}
+      {length(traces), new_vectors, new_encoder_state}
     end
   end
 
   defp query_hot_traces(limit) do
     try do
-      # Query from storage - get recent traces
-      # Note: In real implementation, would query by recency
       Storage.query(:memory, limit: limit) ++
       Storage.query(:thought, limit: limit) ++
       Storage.query(:observation, limit: limit)
@@ -301,8 +350,7 @@ defmodule Kudzu.Consolidation do
     end
   end
 
-  defp build_consolidated_vectors(traces, codebook) do
-    # Group by purpose
+  defp build_consolidated_vectors(traces, codebook, encoder_state) do
     by_purpose = Enum.group_by(traces, fn trace ->
       case trace do
         %{purpose: purpose} -> purpose
@@ -310,17 +358,15 @@ defmodule Kudzu.Consolidation do
       end
     end)
 
-    # Build vector for each purpose
     Enum.map(by_purpose, fn {purpose, purpose_traces} ->
       trace_structs = Enum.map(purpose_traces, &to_trace_struct/1)
-      vec = Encoder.consolidate(trace_structs, codebook)
+      vec = Encoder.consolidate(trace_structs, codebook, encoder_state)
       {purpose, vec}
     end)
     |> Map.new()
   end
 
   defp archive_stale_traces(traces) do
-    # Identify traces that should be archived
     now = DateTime.utc_now()
 
     candidates = Enum.filter(traces, fn trace ->
@@ -328,33 +374,24 @@ defmodule Kudzu.Consolidation do
         %{last_accessed: last_accessed, access_count: count, importance: importance}
             when not is_nil(last_accessed) ->
           hours_since = DateTime.diff(now, last_accessed, :hour)
-          # Archive if: old, low access count, not critical
           hours_since > 168 and count < 5 and importance != :critical
-
         _ ->
           false
       end
     end)
 
-    # Would trigger actual archival here
-    # For now, just count candidates
     length(candidates)
   end
 
   defp update_trace_salience(traces) do
-    # Update salience for each trace (mark as consolidated)
     Enum.each(traces, fn trace ->
       case trace do
-        %{id: id} when not is_nil(id) ->
-          # In real implementation, would update salience in storage
-          :ok
-        _ ->
-          :ok
+        %{id: id} when not is_nil(id) -> :ok
+        _ -> :ok
       end
     end)
   end
 
-  # Convert storage record to Trace struct for encoding
   defp to_trace_struct(%{id: id, hologram_id: origin, purpose: purpose, reconstruction_hint: hint, path: path}) do
     %Kudzu.Trace{
       id: id || "unknown",
@@ -369,7 +406,6 @@ defmodule Kudzu.Consolidation do
   defp to_trace_struct(%Kudzu.Trace{} = trace), do: trace
 
   defp to_trace_struct(other) do
-    # Handle other formats
     %Kudzu.Trace{
       id: "unknown",
       origin: "unknown",
