@@ -27,6 +27,13 @@ config :kudzu, KudzuWeb.Endpoint,
   server: true,
   pubsub_server: Kudzu.PubSub
 
+# MCP endpoint configuration (Tailscale-only)
+# Override IP with KUDZU_MCP_IP env var
+config :kudzu, KudzuWeb.MCP.Endpoint,
+  http: [ip: {100, 70, 67, 110}, port: 4001],
+  server: true,
+  secret_key_base: "mcp-endpoint-does-not-use-sessions-but-phoenix-requires-this-key"
+
 # API authentication (disabled by default for development)
 # Enable and set API keys for production
 config :kudzu, :api_auth,
@@ -52,6 +59,9 @@ if config_env() == :test do
   config :kudzu, KudzuWeb.Endpoint,
     http: [port: 4002],
     server: false  # Don't start server during tests
+  config :kudzu, KudzuWeb.MCP.Endpoint,
+    http: [port: 4003],
+    server: false
 end
 
 if config_env() == :dev do
@@ -78,6 +88,13 @@ if config_env() == :prod do
 
   config :kudzu, :cors_origins,
     String.split(System.get_env("KUDZU_CORS_ORIGINS") || "", ",", trim: true)
+
+  # MCP endpoint: use env vars for IP/port
+  mcp_ip = System.get_env("KUDZU_MCP_IP", "100.70.67.110")
+  |> String.split(".") |> Enum.map(&String.to_integer/1) |> List.to_tuple()
+  mcp_port = String.to_integer(System.get_env("KUDZU_MCP_PORT") || "4001")
+  config :kudzu, KudzuWeb.MCP.Endpoint,
+    http: [ip: mcp_ip, port: mcp_port]
 end
 
 # Example distributed configuration (uncomment and modify for your setup)

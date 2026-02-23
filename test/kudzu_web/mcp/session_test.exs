@@ -2,11 +2,6 @@ defmodule KudzuWeb.MCP.SessionTest do
   use ExUnit.Case, async: false
   alias KudzuWeb.MCP.Session
 
-  setup do
-    start_supervised!(Session)
-    :ok
-  end
-
   test "create returns a session ID" do
     {:ok, session_id} = Session.create()
     assert is_binary(session_id)

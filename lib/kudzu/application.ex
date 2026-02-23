@@ -51,7 +51,13 @@ defmodule Kudzu.Application do
       {Kudzu.Consolidation, []},
 
       # Phoenix HTTP/WebSocket endpoint (API layer)
-      KudzuWeb.Endpoint
+      KudzuWeb.Endpoint,
+
+      # MCP session manager
+      KudzuWeb.MCP.Session,
+
+      # MCP Streamable HTTP endpoint (Tailscale-only)
+      KudzuWeb.MCP.Endpoint
     ]
 
     opts = [strategy: :one_for_one, name: Kudzu.Supervisor]
