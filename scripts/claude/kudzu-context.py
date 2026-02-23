@@ -209,13 +209,36 @@ def extract_recency(trace: dict) -> int:
 # Categorization
 # ---------------------------------------------------------------------------
 
+SKIP_PURPOSES = {"constitution_change", "peer_added", "peer_removed"}
+
+# Content patterns that indicate test/canary traces to filter out
+SKIP_CONTENT_PREFIXES = (
+    "CANARY_",
+    "WRITE_THROUGH_TEST",
+    "CONTEXT-PLATFORM-TEST",
+    "Testing full persistence",
+    "Testing session workflow",
+    "Test session: verified",
+)
+
+# Repetitive traces where only the most recent instance matters
+DEDUP_EXACT = {
+    "Auto-context build for Claude Code session",
+    "Session started",
+}
+
+
 def categorize_trace(trace: dict, content: str) -> str:
     """Map a trace to a MEMORY.md section name.
 
     Returns one of: Learnings, Recent Decisions, Workflows, Key Facts,
-    Current State, Active Projects.
+    Current State, Active Projects, or empty string for traces to skip.
     """
     purpose = trace.get("purpose", "")
+
+    # Skip internal/system traces that aren't useful context
+    if purpose in SKIP_PURPOSES:
+        return ""
     content_lower = content.lower()
 
     if purpose in ("learning", "discovery", "research"):
@@ -290,13 +313,30 @@ def build_sections(all_traces: list) -> dict:
     Returns {section_name: [(content, recency), ...]}.
     """
     sections = {s: [] for s in SECTION_ORDER}
+    seen_dedup = {}  # content -> best recency so far
+
+    # Pre-pass: find the highest recency for each DEDUP_EXACT content
+    for trace in all_traces:
+        content = extract_content(trace)
+        if content in DEDUP_EXACT:
+            recency = extract_recency(trace)
+            if content not in seen_dedup or recency > seen_dedup[content]:
+                seen_dedup[content] = recency
 
     for trace in all_traces:
         content = extract_content(trace)
         if not content or content in ("{}", "{}"):
             continue
+        # Skip test/canary traces
+        if any(content.startswith(prefix) for prefix in SKIP_CONTENT_PREFIXES):
+            continue
         recency = extract_recency(trace)
+        # For repetitive traces, only keep the most recent instance
+        if content in DEDUP_EXACT and recency < seen_dedup.get(content, 0):
+            continue
         section = categorize_trace(trace, content)
+        if not section:
+            continue
         if section in sections:
             sections[section].append((content, recency))
 
