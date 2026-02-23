@@ -2,7 +2,13 @@
 
 A distributed agent architecture for navigational memory, built on Elixir/OTP.
 
-Kudzu inverts traditional AI architecture: instead of storing facts, agents maintain **traces** - navigational paths back to context reconstruction. Instead of centralized control, agents form a **mesh** governed by pluggable **constitutional frameworks**.
+Kudzu is a distributed memory system where autonomous agents called **holograms** maintain navigational memory through **traces** — not stored facts, but reconstruction paths that carry causal ordering via vector clocks, purpose metadata, and minimal hints for context recovery. Holograms form peer meshes governed by pluggable **constitutional frameworks** (mesh_republic for transparent distributed governance, kudzu_evolve for meta-learning, cautious for explicit-permission environments). Traces flow through a three-tier storage architecture — hot ETS tables for active data, warm DETS for recent history, cold Mnesia for long-term persistence — with a salience system that prioritizes high-value memories during consolidation.
+
+The system builds its own semantic understanding through **Holographic Reduced Representations** (HRR) — 512-dimensional vectors that encode trace content using circular convolution (FFT-accelerated) for binding and superposition for bundling. A token-seeded encoding pipeline decomposes trace text into stemmed unigrams and bigrams, maps each to a deterministic base vector, then blends in learned co-occurrence relationships from neighboring tokens. This co-occurrence matrix evolves continuously: light consolidation cycles (every 10 minutes) update token pair frequencies from new traces, while deep cycles (every 6 hours) apply temporal decay and prune weak associations. The result is an emergent semantic space where related concepts like "supervisor" and "genserver" gravitate toward similar vector representations without any external embedding model.
+
+Kudzu exposes its full capabilities through an **MCP (Model Context Protocol)** server with 50+ tools, making it a native extension of Claude Code. Tools span hologram lifecycle management, trace recording and querying, constitutional framework inspection, mesh networking, and — as of the latest work — semantic memory operations: `kudzu_semantic_recall` for natural-language trace retrieval using token-set similarity with co-occurrence boosting, `kudzu_associations` for exploring learned concept relationships, `kudzu_vocabulary` for inspecting the token space, and `kudzu_encoder_stats` for monitoring the encoding system. The MCP interface means Claude can create holograms, record observations, query memories, and reason over accumulated knowledge as naturally as reading a file.
+
+The entire system is self-contained — no external vector databases, no embedding API calls, no dependencies beyond Elixir/OTP and Ollama for optional LLM cognition. Semantic capability starts at zero and improves as Kudzu processes traces, learning which concepts co-occur and strengthening those associations over time. This makes Kudzu genuinely evolutionary: a fresh instance works using pure token-seeded vectors, while a mature instance with thousands of processed traces has a rich learned semantic space that surfaces relevant memories through associative retrieval rather than keyword matching.
 
 ## Core Concepts
 
@@ -533,6 +539,13 @@ lib/
 │   │   ├── cautious.ex         # Restrictive framework
 │   │   ├── open.ex             # No constraints (testing)
 │   │   └── kudzu_evolve.ex     # Meta-learning framework
+│   ├── hrr.ex                  # Holographic Reduced Representations (FFT-based)
+│   ├── hrr/
+│   │   ├── encoder.ex          # Token-seeded bundling with co-occurrence blending
+│   │   ├── encoder_state.ex    # Co-occurrence matrix, DETS persistence
+│   │   └── tokenizer.ex        # Stemming, stopwords, bigrams
+│   ├── consolidation.ex        # Tiered storage consolidation daemon
+│   ├── storage.ex              # Hot/warm/cold storage management
 │   ├── beamlet/
 │   │   ├── behaviour.ex        # Beam-let interface
 │   │   ├── base.ex             # Common implementation
@@ -550,6 +563,19 @@ lib/
     ├── controllers/
     │   ├── hologram_controller.ex    # Hologram CRUD + actions
     │   └── cluster_controller.ex     # Cluster statistics
+    ├── mcp/
+    │   ├── controller.ex         # MCP JSON-RPC dispatch
+    │   ├── tools.ex              # Tool definitions (50+)
+    │   └── handlers/
+    │       ├── system.ex         # Health, node status
+    │       ├── hologram.ex       # Hologram CRUD
+    │       ├── trace.ex          # Trace operations
+    │       ├── agent.ex          # Named agent API
+    │       ├── semantic.ex       # Semantic recall, associations
+    │       ├── constitution.ex   # Framework inspection
+    │       ├── cluster.ex        # Cluster operations
+    │       ├── node.ex           # Node/mesh management
+    │       └── beamlet.ex        # Beamlet operations
     └── channels/
         ├── user_socket.ex            # WebSocket authentication
         └── hologram_channel.ex       # Real-time hologram interaction
