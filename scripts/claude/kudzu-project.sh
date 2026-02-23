@@ -87,7 +87,7 @@ cmd_create() {
     local safe_project
     safe_project=$(json_escape "$project")
 
-    # Create the hologram
+    # Create the hologram (claude_project is in the server's allowed purpose list)
     local hologram_id
     hologram_id=$(create_hologram "claude_project" "$constitution" "[\"Track ${safe_project} progress\", \"Remember project decisions\", \"Share learnings with peers\"]")
 

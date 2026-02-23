@@ -152,12 +152,18 @@ def get_hologram_ids() -> dict:
 # Trace fetching
 # ---------------------------------------------------------------------------
 
-def get_project_hologram_ids() -> list:
-    """Load project hologram IDs from projects.json."""
+def get_project_holograms() -> list:
+    """Load project holograms from projects.json.
+
+    Returns list of (name, hologram_id) tuples.
+    Registry format: {"project_name": {"id": "...", ...}, ...}
+    """
     try:
         if PROJECTS_FILE.exists():
             data = json.loads(PROJECTS_FILE.read_text())
-            return [p["hologram_id"] for p in data.get("projects", []) if p.get("hologram_id")]
+            if isinstance(data, dict):
+                return [(name, info["id"]) for name, info in data.items()
+                        if isinstance(info, dict) and info.get("id")]
     except (OSError, json.JSONDecodeError, KeyError):
         pass
     return []
@@ -178,17 +184,25 @@ def extract_content(trace: dict) -> str:
     """Extract human-readable content from a trace's reconstruction_hint."""
     hint = trace.get("reconstruction_hint", {})
     if not isinstance(hint, dict):
-        return str(hint)[:200] if hint else ""
+        raw = str(hint)[:200] if hint else ""
+    else:
+        raw = ""
+        # Try known content fields in priority order
+        for field in ("content", "summary", "key_events", "event"):
+            val = hint.get(field)
+            if val and isinstance(val, str):
+                raw = val.strip()
+                break
+        if not raw:
+            # Fallback: stringify the hint
+            fallback = str(hint)
+            raw = fallback[:200] if len(fallback) > 200 else fallback
 
-    # Try known content fields in priority order
-    for field in ("content", "summary", "key_events", "event"):
-        val = hint.get(field)
-        if val and isinstance(val, str):
-            return val.strip()
-
-    # Fallback: stringify the hint
-    fallback = str(hint)
-    return fallback[:200] if len(fallback) > 200 else fallback
+    # Prefix with project name if tagged
+    project = trace.get("_project")
+    if project and raw:
+        return f"[{project}] {raw}"
+    return raw
 
 
 def extract_recency(trace: dict) -> int:
@@ -248,6 +262,10 @@ def categorize_trace(trace: dict, content: str) -> str:
             # "Session started" with no real project is not useful
             if content in ("Session started", ""):
                 return ""
+
+    # Project-tagged traces go to Active Projects
+    if trace.get("_project"):
+        return "Active Projects"
 
     content_lower = content.lower()
 
@@ -566,9 +584,14 @@ def main():
     for hid in [memory_id, research_id, learning_id]:
         all_traces.extend(fetch_traces(hid))
 
-    # Also fetch from project holograms
-    for pid in get_project_hologram_ids():
-        all_traces.extend(fetch_traces(pid, limit=20))
+    # Also fetch from project holograms, tagging with project name
+    project_holograms = get_project_holograms()
+    project_id_to_name = {hid: name for name, hid in project_holograms}
+    for name, pid in project_holograms:
+        traces = fetch_traces(pid, limit=20)
+        for t in traces:
+            t["_project"] = name  # tag for rendering
+        all_traces.extend(traces)
 
     # Step 4: Build sections
     sections = build_sections(all_traces)
