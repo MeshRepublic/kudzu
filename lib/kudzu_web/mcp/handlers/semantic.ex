@@ -2,8 +2,8 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
   @moduledoc """
   MCP handlers for semantic memory tools.
 
-  Uses the HRR Encoder V2 (token-seeded bundling with co-occurrence learning)
-  to provide semantic retrieval, association lookup, and vocabulary inspection.
+  Uses token-set similarity with contextual vector boosting for retrieval.
+  Co-occurrence data from the HRR encoder improves results over time.
   """
 
   alias Kudzu.{Hologram, Application, HRR}
@@ -14,52 +14,60 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
     query = params["query"] || ""
     limit = Map.get(params, "limit", 10)
     purpose_filter = params["purpose"]
-    threshold = Map.get(params, "threshold", 0.0)
+    threshold = Map.get(params, "threshold", 0.01)
 
     if query == "" do
       {:error, -32602, "Query text is required"}
     else
-      # Get encoder state and codebook from consolidation daemon
-      {codebook, encoder_state} = get_encoder_context()
+      {_codebook, encoder_state} = get_encoder_context()
 
-      # Encode the query
-      query_vec = Encoder.encode_query(query, codebook, encoder_state)
+      # Tokenize query into stemmed unigrams
+      query_tokens = Tokenizer.unigrams(query) |> MapSet.new()
 
-      # Collect all traces from all holograms
-      all_traces = collect_all_traces(purpose_filter)
+      if MapSet.size(query_tokens) == 0 do
+        {:ok, %{query: query, results: [], count: 0, encoder_stats: encoder_summary(encoder_state)}}
+      else
+        # Precompute contextual vectors for query tokens
+        query_vecs = query_tokens
+        |> Enum.map(fn t -> {t, EncoderState.contextual_vector(encoder_state, t)} end)
+        |> Map.new()
 
-      # Encode each trace and compute similarity
-      scored = all_traces
-      |> Enum.map(fn {trace, hologram_id} ->
-        trace_vec = Encoder.encode(trace, codebook, encoder_state)
-        sim = HRR.similarity(query_vec, trace_vec)
-        {trace, hologram_id, sim}
-      end)
-      |> Enum.filter(fn {_t, _h, sim} -> sim >= threshold end)
-      |> Enum.sort_by(fn {_t, _h, sim} -> sim end, :desc)
-      |> Enum.take(limit)
+        # Collect and score all traces
+        all_traces = collect_all_traces(purpose_filter)
 
-      results = Enum.map(scored, fn {trace, hologram_id, sim} ->
-        %{
-          similarity: Float.round(sim, 4),
-          trace_id: trace.id,
-          hologram_id: hologram_id,
-          purpose: trace.purpose,
-          content: extract_content_preview(trace.reconstruction_hint),
-          reconstruction_hint: trace.reconstruction_hint
-        }
-      end)
+        scored = all_traces
+        |> Enum.map(fn {trace, hologram_id} ->
+          hint = trace.reconstruction_hint || %{}
+          trace_tokens = Tokenizer.tokenize_hint(hint)
+            |> Enum.reject(&String.contains?(&1, "_"))
+            |> MapSet.new()
 
-      {:ok, %{
-        query: query,
-        results: results,
-        count: length(results),
-        encoder_stats: %{
-          vocabulary_size: map_size(encoder_state.token_counts),
-          traces_processed: encoder_state.traces_processed,
-          blend_strength: encoder_state.blend_strength
-        }
-      }}
+          score = token_set_similarity(query_tokens, trace_tokens, query_vecs, encoder_state)
+          {trace, hologram_id, score}
+        end)
+        |> Enum.filter(fn {_t, _h, score} -> score >= threshold end)
+        |> Enum.sort_by(fn {_t, _h, score} -> score end, :desc)
+        |> Enum.take(limit)
+
+        results = Enum.map(scored, fn {trace, hologram_id, score} ->
+          %{
+            score: Float.round(score, 4),
+            trace_id: trace.id,
+            hologram_id: hologram_id,
+            purpose: trace.purpose,
+            content: extract_content_preview(trace.reconstruction_hint),
+            reconstruction_hint: trace.reconstruction_hint
+          }
+        end)
+
+        {:ok, %{
+          query: query,
+          query_tokens: MapSet.to_list(query_tokens),
+          results: results,
+          count: length(results),
+          encoder_stats: encoder_summary(encoder_state)
+        }}
+      end
     end
   end
 
@@ -72,12 +80,9 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
     else
       {_codebook, encoder_state} = get_encoder_context()
 
-      # Stem the input token to match how it's stored
       stemmed = Tokenizer.stem(String.downcase(token))
-
       neighbors = EncoderState.top_neighbors(encoder_state, stemmed, k: k)
 
-      # Also get neighbors for the unstemmed form
       raw_neighbors = if stemmed != String.downcase(token) do
         EncoderState.top_neighbors(encoder_state, String.downcase(token), k: k)
       else
@@ -140,7 +145,6 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
   def handle("kudzu_encoder_stats", _params) do
     {_codebook, encoder_state} = get_encoder_context()
     stats = EncoderState.stats(encoder_state)
-    # Convert tuple lists to maps for JSON serialization
     json_safe = %{stats |
       top_tokens: Enum.map(stats.top_tokens, fn {token, count} ->
         %{token: token, count: count}
@@ -149,10 +153,69 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
     {:ok, json_safe}
   end
 
-  # --- Private ---
+  # --- Token-Set Similarity ---
+
+  # Score = jaccard overlap + contextual boost from co-occurrence vectors
+  defp token_set_similarity(query_tokens, trace_tokens, query_vecs, encoder_state) do
+    shared = MapSet.intersection(query_tokens, trace_tokens)
+    shared_count = MapSet.size(shared)
+
+    if shared_count == 0 do
+      # No direct overlap — check for co-occurrence proximity
+      # For each query token, check if any trace token is a top neighbor
+      indirect_score(query_tokens, trace_tokens, encoder_state)
+    else
+      union_count = MapSet.size(MapSet.union(query_tokens, trace_tokens))
+      jaccard = shared_count / max(union_count, 1)
+
+      # Contextual boost: average similarity between shared token vectors
+      # and non-shared query token vectors (captures semantic proximity)
+      boost = if shared_count < MapSet.size(query_tokens) do
+        non_shared_query = MapSet.difference(query_tokens, shared)
+        pairs = for s <- MapSet.to_list(shared),
+                    q <- MapSet.to_list(non_shared_query) do
+          sv = EncoderState.contextual_vector(encoder_state, s)
+          qv = Map.get(query_vecs, q, EncoderState.base_vector(q, encoder_state.dim))
+          HRR.similarity(sv, qv)
+        end
+        if pairs == [], do: 0.0, else: Enum.sum(pairs) / length(pairs)
+      else
+        0.0
+      end
+
+      jaccard + max(boost, 0.0) * 0.3
+    end
+  end
+
+  # Indirect matching: no shared tokens, but check co-occurrence neighbors
+  defp indirect_score(query_tokens, trace_tokens, encoder_state) do
+    # For each query token, get its top co-occurrence neighbors
+    # If any neighbor appears in the trace tokens, that's an indirect hit
+    query_list = MapSet.to_list(query_tokens)
+
+    hits = Enum.reduce(query_list, 0, fn qt, acc ->
+      neighbors = EncoderState.top_neighbors(encoder_state, qt, k: 10)
+      neighbor_tokens = Enum.map(neighbors, fn {t, _w} -> t end) |> MapSet.new()
+      overlap = MapSet.intersection(neighbor_tokens, trace_tokens) |> MapSet.size()
+      acc + overlap
+    end)
+
+    # Normalize by possible hits
+    max_possible = MapSet.size(query_tokens) * 10
+    if max_possible > 0, do: hits / max_possible * 0.15, else: 0.0
+  end
+
+  # --- Helpers ---
+
+  defp encoder_summary(encoder_state) do
+    %{
+      vocabulary_size: map_size(encoder_state.token_counts),
+      traces_processed: encoder_state.traces_processed,
+      blend_strength: encoder_state.blend_strength
+    }
+  end
 
   defp get_encoder_context do
-    # Try to get from running consolidation daemon, fall back to fresh
     try do
       codebook = Consolidation.get_codebook()
       encoder_state = Consolidation.get_encoder_state()
