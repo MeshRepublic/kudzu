@@ -109,6 +109,29 @@ defmodule Kudzu.Brain do
     GenServer.call(__MODULE__, {:chat, message, opts}, 120_000)
   end
 
+  @doc """
+  Send a streaming chat message to the Brain.
+
+  Like `chat/2` but asynchronous — the Brain processes the message via
+  `GenServer.cast` and sends streaming messages to `stream_to`:
+
+    * `{:thinking, tier, description}` — progress indicator for each tier
+    * `{:chunk, text}` — incremental response text (Tier 3 streams from Claude)
+    * `{:tool_use, [tool_names]}` — when Claude invokes tools during reasoning
+    * `{:done, %{tier: integer, tool_calls: list, cost: float}}` — completion signal
+
+  Tiers 1 and 2 send the full response as a single `{:chunk, text}`.
+  Tier 3 streams incrementally via `Claude.reason_stream`.
+
+  ## Options
+
+    * Same as `chat/2`
+  """
+  @spec chat_stream(String.t(), pid(), keyword()) :: :ok
+  def chat_stream(message, stream_to, opts \\ []) do
+    GenServer.cast(__MODULE__, {:chat_stream, message, stream_to, opts})
+  end
+
   # ── Server Callbacks ────────────────────────────────────────────────
 
   @impl true
@@ -174,6 +197,40 @@ defmodule Kudzu.Brain do
   def handle_cast(:wake_now, state) do
     send(self(), :wake_cycle)
     {:noreply, state}
+  end
+
+  def handle_cast({:chat_stream, _message, stream_to, _opts}, %{hologram_id: nil} = state) do
+    send(stream_to, {:done, %{tier: 0, tool_calls: [], cost: 0.0, error: "not_ready"}})
+    {:noreply, state}
+  end
+
+  def handle_cast({:chat_stream, message, stream_to, opts}, state) do
+    Logger.info("[Brain] Streaming chat message received: #{String.slice(message, 0, 100)}")
+
+    # Record user message as trace
+    record_trace(state, :observation, %{
+      source: "human_chat",
+      content: message,
+      timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+    })
+
+    # Run streaming reasoning
+    {response_text, tier, tool_calls, cost, new_state} =
+      chat_reason_stream(state, message, stream_to, opts)
+
+    # Record brain response as trace
+    record_trace(new_state, :thought, %{
+      source: "brain_chat_response",
+      content: String.slice(response_text, 0, 2000),
+      tier: tier,
+      tool_calls: tool_calls,
+      user_message: String.slice(message, 0, 500)
+    })
+
+    # Signal completion
+    send(stream_to, {:done, %{tier: tier, tool_calls: tool_calls, cost: cost}})
+
+    {:noreply, new_state}
   end
 
   @impl true
@@ -591,6 +648,146 @@ defmodule Kudzu.Brain do
             Logger.error("[Brain] Chat Claude API error: #{inspect(reason)}")
             {"I encountered an error while processing your message with Claude: #{inspect(reason)}",
              3, tool_calls, 0.0, state}
+        end
+    end
+  end
+
+  # ── Streaming Chat Reasoning Pipeline ─────────────────────────────────
+
+  defp chat_reason_stream(state, message, stream_to, _opts) do
+    # Package message as an anomaly for the reflexes pipeline
+    tagged = [{:anomaly, %{check: :human_chat, reason: message}}]
+
+    # Tier 1: Reflexes
+    send(stream_to, {:thinking, 1, "Checking reflexes..."})
+
+    case Reflexes.check(tagged) do
+      {:act, actions} ->
+        Logger.info("[Brain] Stream Chat Tier 1: #{length(actions)} reflex actions")
+        Enum.each(actions, &Reflexes.execute_action/1)
+
+        response =
+          actions
+          |> Enum.map(&inspect/1)
+          |> Enum.join("; ")
+
+        send(stream_to, {:chunk, response})
+        {response, 1, [], 0.0, state}
+
+      {:escalate, _alerts} ->
+        # Escalation from chat — fall through to Tier 2/3
+        chat_tier2_3_stream(state, message, stream_to)
+
+      :pass ->
+        # No reflex match — try Tier 2 silo inference
+        chat_tier2_3_stream(state, message, stream_to)
+    end
+  end
+
+  defp chat_tier2_3_stream(state, message, stream_to) do
+    # Tier 2: Silo inference
+    send(stream_to, {:thinking, 2, "Querying silos..."})
+
+    case try_silo_inference_for_chat(message) do
+      {:found, findings} ->
+        Logger.info("[Brain] Stream Chat Tier 2: silo inference found #{length(findings)} relevant facts")
+        response = format_silo_findings(message, findings)
+        send(stream_to, {:chunk, response})
+        {response, 2, [], 0.0, state}
+
+      :no_match ->
+        # Tier 3: Claude API (streaming)
+        send(stream_to, {:thinking, 3, "Thinking..."})
+        chat_with_claude_stream(state, message, stream_to)
+    end
+  end
+
+  defp chat_with_claude_stream(state, message, stream_to) do
+    api_key = state.config[:api_key] || state.config["api_key"]
+    budget_limit = state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
+
+    cond do
+      is_nil(api_key) or api_key == "" ->
+        Logger.debug("[Brain] Stream Chat: No API key configured, skipping Tier 3")
+        error_msg =
+          "I don't have an API key configured for Claude, so I can't process this with Tier 3 reasoning. " <>
+            "My reflexes and silo inference didn't find a match for your message either."
+        send(stream_to, {:chunk, error_msg})
+        {error_msg, 3, [], 0.0, state}
+
+      not Budget.within_budget?(state.budget, budget_limit) ->
+        Logger.warning("[Brain] Stream Chat: Monthly budget exceeded ($#{state.budget.estimated_cost_usd})")
+        error_msg =
+          "I've exceeded my monthly API budget, so I can't use Tier 3 reasoning right now. " <>
+            "My reflexes and silo inference didn't find a match for your message."
+        send(stream_to, {:chunk, error_msg})
+        {error_msg, 3, [], 0.0, state}
+
+      true ->
+        system_prompt = PromptBuilder.build_chat(state)
+
+        tools =
+          Kudzu.Brain.Tools.Introspection.to_claude_format() ++
+            Kudzu.Brain.Tools.Host.to_claude_format() ++
+            Kudzu.Brain.Tools.Escalation.to_claude_format()
+
+        # Set up tool executor with call tracking
+        Process.put(:chat_tool_calls, [])
+
+        executor = fn name, params ->
+          Process.put(:chat_tool_calls, [name | Process.get(:chat_tool_calls)])
+
+          case Kudzu.Brain.Tools.Introspection.execute(name, params) do
+            {:error, "unknown tool: " <> _} ->
+              case Kudzu.Brain.Tools.Host.execute(name, params) do
+                {:error, "unknown host tool: " <> _} ->
+                  Kudzu.Brain.Tools.Escalation.execute(name, params)
+
+                result ->
+                  result
+              end
+
+            result ->
+              result
+          end
+        end
+
+        case Kudzu.Brain.Claude.reason_stream(
+               api_key,
+               system_prompt,
+               message,
+               tools,
+               executor,
+               stream_to: stream_to,
+               max_turns: state.config[:max_turns] || 10,
+               model: state.config[:model] || "claude-sonnet-4-20250514"
+             ) do
+          {:ok, response_text, usage} ->
+            tool_calls = Process.get(:chat_tool_calls) |> Enum.reverse()
+            Process.delete(:chat_tool_calls)
+
+            Logger.info(
+              "[Brain] Stream Chat Tier 3 (#{usage.input_tokens}+#{usage.output_tokens} tokens): " <>
+                String.slice(response_text, 0, 200)
+            )
+
+            cost =
+              (Map.get(usage, :input_tokens, 0) / 1_000_000 * 3.0) +
+                (Map.get(usage, :output_tokens, 0) / 1_000_000 * 15.0)
+
+            budget = Budget.record_usage(state.budget, usage)
+            new_state = %{state | budget: budget}
+
+            {response_text, 3, tool_calls, Float.round(cost, 6), new_state}
+
+          {:error, reason} ->
+            tool_calls = Process.get(:chat_tool_calls) |> Enum.reverse()
+            Process.delete(:chat_tool_calls)
+
+            Logger.error("[Brain] Stream Chat Claude API error: #{inspect(reason)}")
+            error_msg = "I encountered an error while processing your message with Claude: #{inspect(reason)}"
+            send(stream_to, {:chunk, error_msg})
+            {error_msg, 3, tool_calls, 0.0, state}
         end
     end
   end
