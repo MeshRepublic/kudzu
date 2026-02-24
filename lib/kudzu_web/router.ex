@@ -13,6 +13,12 @@ defmodule KudzuWeb.Router do
     get "/health", HealthController, :index
   end
 
+  # Brain chat — auth handled in controller (needed for SSE before chunked mode)
+  scope "/api/v1/brain", KudzuWeb do
+    post "/chat", BrainChatController, :chat
+    get "/status", BrainChatController, :status
+  end
+
   # API v1
   scope "/api/v1", KudzuWeb do
     pipe_through :api

@@ -73,6 +73,15 @@ defmodule KudzuWeb.MCP.Router do
     end
   end
 
+  # Brain chat SSE endpoint (also available on MCP port 4001)
+  post "/brain/chat" do
+    KudzuWeb.BrainChatController.chat(conn, conn.body_params)
+  end
+
+  get "/brain/status" do
+    KudzuWeb.BrainChatController.status(conn, conn.params)
+  end
+
   match _ do
     send_resp(conn, 404, Jason.encode!(%{error: "Not found"}))
   end
