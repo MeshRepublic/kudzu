@@ -280,10 +280,18 @@ defmodule Kudzu.Brain do
           anomaly_desc <>
           "\n\nWhat should I do?"
 
-      tools = Kudzu.Brain.Tools.Introspection.to_claude_format()
+      tools =
+        Kudzu.Brain.Tools.Introspection.to_claude_format() ++
+          Kudzu.Brain.Tools.Host.to_claude_format()
 
       executor = fn name, params ->
-        Kudzu.Brain.Tools.Introspection.execute(name, params)
+        case Kudzu.Brain.Tools.Introspection.execute(name, params) do
+          {:error, "unknown tool: " <> _} ->
+            Kudzu.Brain.Tools.Host.execute(name, params)
+
+          result ->
+            result
+        end
       end
 
       case Kudzu.Brain.Claude.reason(
