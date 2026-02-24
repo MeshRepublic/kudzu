@@ -496,6 +496,12 @@ defmodule Kudzu.Brain.Claude do
       {:http, {^request_id, {:error, reason}}} ->
         Logger.error("[Claude] Stream error: #{inspect(reason)}")
         {:error, {:stream_error, reason}}
+
+      # Handle non-streaming response (e.g., 400 API error)
+      {:http, {^request_id, {{_http_ver, status, _reason}, _headers, body}}} ->
+        body_str = to_string(body)
+        Logger.warning("[Claude] Stream got non-streaming response: #{status}")
+        {:error, {:api_error, status, body_str}}
     after
       @timeout ->
         Logger.error("[Claude] Stream timeout after #{@timeout}ms")
