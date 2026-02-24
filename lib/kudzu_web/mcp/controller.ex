@@ -2,7 +2,7 @@ defmodule KudzuWeb.MCP.Controller do
   @moduledoc "MCP JSON-RPC 2.0 dispatch controller."
 
   alias KudzuWeb.MCP.{Protocol, Tools}
-  alias KudzuWeb.MCP.Handlers.{System, Hologram, Trace, Agent, Constitution, Cluster, Node, Beamlet, Semantic}
+  alias KudzuWeb.MCP.Handlers.{System, Hologram, Trace, Agent, Constitution, Cluster, Node, Beamlet, Semantic, Brain}
 
   @protocol_version "2025-03-26"
 
@@ -42,7 +42,8 @@ defmodule KudzuWeb.MCP.Controller do
     "kudzu_list_beamlets" => Beamlet, "kudzu_get_beamlet" => Beamlet,
     "kudzu_find_beamlets" => Beamlet,
     "kudzu_semantic_recall" => Semantic, "kudzu_associations" => Semantic,
-    "kudzu_vocabulary" => Semantic, "kudzu_encoder_stats" => Semantic
+    "kudzu_vocabulary" => Semantic, "kudzu_encoder_stats" => Semantic,
+    "kudzu_brain_chat" => Brain, "kudzu_brain_status" => Brain
   }
 
   # --- Public API ---
