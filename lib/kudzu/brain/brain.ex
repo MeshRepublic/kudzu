@@ -1,10 +1,14 @@
 defmodule Kudzu.Brain do
   @moduledoc """
-  Brain GenServer — desire-driven wake cycles with pre-check health gate.
+  Brain GenServer — desire-driven wake cycles with three-tier reasoning.
 
   The Brain is the autonomous executive layer of Kudzu. It wakes periodically,
   runs health checks (the "pre-check gate"), and when anomalies are detected,
-  reasons about them and takes corrective action.
+  reasons about them through a three-tier pipeline:
+
+  1. **Tier 1 — Reflexes**: Instant pattern → action mappings, zero cost.
+  2. **Tier 2 — Silo Inference**: HRR vector reasoning across expertise silos.
+  3. **Tier 3 — Claude API**: LLM-driven reasoning for novel situations.
 
   ## Wake Cycle
 
@@ -12,7 +16,7 @@ defmodule Kudzu.Brain do
 
   1. Runs `pre_check/1` — a battery of health checks
   2. If all nominal → goes back to sleep
-  3. If anomalies detected → enters reasoning mode (TODO: LLM-driven reasoning)
+  3. If anomalies detected → enters the reasoning pipeline
   4. Schedules the next wake cycle
 
   ## Desires
@@ -26,6 +30,8 @@ defmodule Kudzu.Brain do
   require Logger
 
   alias Kudzu.Brain.Reflexes
+  alias Kudzu.Brain.InferenceEngine
+  alias Kudzu.Brain.PromptBuilder
 
   @initial_desires [
     "Maintain Kudzu system health and recover from failures",
@@ -150,31 +156,8 @@ defmodule Kudzu.Brain do
         {:noreply, %{state | status: :sleeping}}
 
       {:wake, anomalies} ->
-        anomaly_count = length(anomalies)
-        suffix = if anomaly_count == 1, do: "y", else: "ies"
-        Logger.info("[Brain] Pre-check found #{anomaly_count} anomal#{suffix}")
-
-        for anomaly <- anomalies do
-          Logger.info("[Brain]   → #{anomaly.check}: #{anomaly.reason}")
-        end
-
-        # Tier 1: Reflex system — pattern → action, zero cost
-        tagged = Enum.map(anomalies, &{:anomaly, &1})
-
-        case Reflexes.check(tagged) do
-          {:act, actions} ->
-            Logger.info("[Brain] Reflex: executing #{length(actions)} action(s)")
-            Enum.each(actions, &Reflexes.execute_action/1)
-
-          {:escalate, alerts} ->
-            Logger.warning("[Brain] Reflex escalation: #{inspect(alerts)}")
-            # TODO: Tier 2/3 reasoning for escalated anomalies
-
-          :pass ->
-            Logger.debug("[Brain] Reflexes passed — no pattern match")
-            # TODO: Tier 2/3 reasoning for unmatched anomalies
-        end
-
+        Logger.info("[Brain] Cycle #{new_count}: #{length(anomalies)} anomalies")
+        state = reason(state, anomalies)
         schedule_wake_cycle(state.cycle_interval)
         {:noreply, %{state | status: :sleeping}}
     end
@@ -184,6 +167,186 @@ defmodule Kudzu.Brain do
     Logger.debug("[Brain] Unexpected message: #{inspect(msg)}")
     {:noreply, state}
   end
+
+  # ── Three-Tier Reasoning Pipeline ──────────────────────────────────
+
+  defp reason(state, anomalies) do
+    tagged = Enum.map(anomalies, &{:anomaly, &1})
+
+    # Tier 1: Reflexes — pattern → action, zero cost
+    case Reflexes.check(tagged) do
+      {:act, actions} ->
+        Logger.info("[Brain] Tier 1: executing #{length(actions)} reflex actions")
+        Enum.each(actions, &Reflexes.execute_action/1)
+
+        record_trace(state, :decision, %{
+          tier: "reflex",
+          actions: Enum.map(actions, &inspect/1)
+        })
+
+        state
+
+      {:escalate, alerts} ->
+        record_trace(state, :observation, %{
+          alert: true,
+          severity: alert_severity(alerts),
+          alerts: Enum.map(alerts, &ensure_map/1)
+        })
+
+        Logger.warning("[Brain] Escalation: #{inspect(alerts)}")
+        # After escalation, try Tier 2/3 for resolution
+        maybe_tier2_3(state, anomalies)
+
+      :pass ->
+        Logger.debug("[Brain] Reflexes passed — no pattern match")
+        # Reflexes didn't match — try Tier 2 silo inference, then Tier 3 Claude
+        maybe_tier2_3(state, anomalies)
+    end
+  end
+
+  defp maybe_tier2_3(state, anomalies) do
+    # Tier 2: Silo inference — check if any expertise silo has relevant knowledge
+    silo_results = try_silo_inference(anomalies)
+
+    case silo_results do
+      {:found, findings} ->
+        Logger.info("[Brain] Tier 2: silo inference found #{length(findings)} relevant facts")
+
+        record_trace(state, :thought, %{
+          tier: "silo_inference",
+          findings: findings
+        })
+
+        state
+
+      :no_match ->
+        # Tier 3: Claude API — novel situation, needs LLM reasoning
+        maybe_call_claude(state, anomalies)
+    end
+  end
+
+  defp try_silo_inference(anomalies) do
+    # Extract key terms from anomalies and probe silos
+    terms =
+      anomalies
+      |> Enum.flat_map(fn anomaly ->
+        reason = to_string(Map.get(anomaly, :reason, ""))
+        check = to_string(Map.get(anomaly, :check, ""))
+        [check | String.split(reason)]
+      end)
+      |> Enum.uniq()
+
+    results =
+      Enum.flat_map(terms, fn term ->
+        InferenceEngine.cross_query(term)
+      end)
+
+    high_confidence =
+      Enum.filter(results, fn {_domain, _hint, score} ->
+        InferenceEngine.confidence(score) in [:high, :moderate]
+      end)
+
+    if high_confidence != [] do
+      findings =
+        Enum.map(high_confidence, fn {domain, hint, score} ->
+          %{
+            domain: domain,
+            hint: ensure_map(hint),
+            score: score,
+            confidence: InferenceEngine.confidence(score)
+          }
+        end)
+
+      {:found, Enum.take(findings, 10)}
+    else
+      :no_match
+    end
+  end
+
+  defp maybe_call_claude(state, anomalies) do
+    api_key = state.config[:api_key] || state.config["api_key"]
+
+    if api_key do
+      system_prompt = PromptBuilder.build(state)
+
+      anomaly_desc =
+        Enum.map(anomalies, fn a ->
+          "#{a.check}: #{a.reason}"
+        end)
+        |> Enum.join("; ")
+
+      message =
+        "Anomalies detected that I couldn't handle with reflexes or silo inference:\n" <>
+          anomaly_desc <>
+          "\n\nWhat should I do?"
+
+      tools = Kudzu.Brain.Tools.Introspection.to_claude_format()
+
+      executor = fn name, params ->
+        Kudzu.Brain.Tools.Introspection.execute(name, params)
+      end
+
+      case Kudzu.Brain.Claude.reason(
+             api_key,
+             system_prompt,
+             message,
+             tools,
+             executor,
+             max_turns: state.config[:max_turns] || 10,
+             model: state.config[:model] || "claude-sonnet-4-20250514"
+           ) do
+        {:ok, response_text, usage} ->
+          Logger.info(
+            "[Brain] Tier 3 (#{usage.input_tokens}+#{usage.output_tokens} tokens): " <>
+              String.slice(response_text, 0, 200)
+          )
+
+          record_trace(state, :thought, %{
+            tier: "claude",
+            response: String.slice(response_text, 0, 500),
+            usage: usage
+          })
+
+          state
+
+        {:error, reason} ->
+          Logger.error("[Brain] Claude API error: #{inspect(reason)}")
+
+          record_trace(state, :observation, %{
+            error: "claude_api_failure",
+            reason: inspect(reason)
+          })
+
+          state
+      end
+    else
+      Logger.debug("[Brain] No API key configured, skipping Tier 3")
+      state
+    end
+  end
+
+  # ── Trace Recording ─────────────────────────────────────────────────
+
+  defp record_trace(state, purpose, data) do
+    if state.hologram_pid do
+      try do
+        Kudzu.Hologram.record_trace(state.hologram_pid, purpose, data)
+      rescue
+        _ -> :ok
+      end
+    end
+  end
+
+  # ── Helpers ─────────────────────────────────────────────────────────
+
+  # Extract severity from the first alert in the list, defaulting to :unknown
+  defp alert_severity([%{severity: sev} | _]), do: sev
+  defp alert_severity(_), do: :unknown
+
+  # Ensure a value is a plain map (not a struct) for trace serialization
+  defp ensure_map(%_{} = struct), do: Map.from_struct(struct)
+  defp ensure_map(map) when is_map(map), do: map
+  defp ensure_map(other), do: %{value: inspect(other)}
 
   # ── Pre-Check Gate ──────────────────────────────────────────────────
 
