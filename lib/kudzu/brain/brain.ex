@@ -25,6 +25,8 @@ defmodule Kudzu.Brain do
   use GenServer
   require Logger
 
+  alias Kudzu.Brain.Reflexes
+
   @initial_desires [
     "Maintain Kudzu system health and recover from failures",
     "Build accurate self-model of architecture, resources, and capabilities",
@@ -149,7 +151,23 @@ defmodule Kudzu.Brain do
           Logger.info("[Brain]   → #{anomaly.check}: #{anomaly.reason}")
         end
 
-        # TODO: reasoning loop — feed anomalies + desires to LLM, take action
+        # Tier 1: Reflex system — pattern → action, zero cost
+        tagged = Enum.map(anomalies, &{:anomaly, &1})
+
+        case Reflexes.check(tagged) do
+          {:act, actions} ->
+            Logger.info("[Brain] Reflex: executing #{length(actions)} action(s)")
+            Enum.each(actions, &Reflexes.execute_action/1)
+
+          {:escalate, alerts} ->
+            Logger.warning("[Brain] Reflex escalation: #{inspect(alerts)}")
+            # TODO: Tier 2/3 reasoning for escalated anomalies
+
+          :pass ->
+            Logger.debug("[Brain] Reflexes passed — no pattern match")
+            # TODO: Tier 2/3 reasoning for unmatched anomalies
+        end
+
         schedule_wake_cycle(state.cycle_interval)
         {:noreply, %{state | status: :sleeping}}
     end
