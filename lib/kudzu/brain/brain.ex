@@ -293,12 +293,19 @@ defmodule Kudzu.Brain do
 
         tools =
           Kudzu.Brain.Tools.Introspection.to_claude_format() ++
-            Kudzu.Brain.Tools.Host.to_claude_format()
+            Kudzu.Brain.Tools.Host.to_claude_format() ++
+            Kudzu.Brain.Tools.Escalation.to_claude_format()
 
         executor = fn name, params ->
           case Kudzu.Brain.Tools.Introspection.execute(name, params) do
             {:error, "unknown tool: " <> _} ->
-              Kudzu.Brain.Tools.Host.execute(name, params)
+              case Kudzu.Brain.Tools.Host.execute(name, params) do
+                {:error, "unknown host tool: " <> _} ->
+                  Kudzu.Brain.Tools.Escalation.execute(name, params)
+
+                result ->
+                  result
+              end
 
             result ->
               result
