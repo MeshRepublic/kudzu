@@ -19,6 +19,16 @@ defmodule Kudzu.Brain do
   3. If anomalies detected → enters the reasoning pipeline
   4. Schedules the next wake cycle
 
+  ## Chat
+
+  The Brain also supports interactive chat via `chat/2`. This runs the same
+  three-tier reasoning pipeline but adapted for human conversation:
+
+  1. Records the user message as a trace
+  2. Runs chat-specific three-tier reasoning
+  3. Records the response as a trace
+  4. Returns structured result with tier info and cost
+
   ## Desires
 
   The Brain maintains a list of high-level desires that guide its reasoning.
@@ -78,6 +88,27 @@ defmodule Kudzu.Brain do
     GenServer.cast(__MODULE__, :wake_now)
   end
 
+  @doc """
+  Send a chat message to the Brain for three-tier reasoning.
+
+  The message is processed through the same reasoning pipeline as
+  autonomous wake cycles, but adapted for interactive conversation:
+
+  1. Tier 1 — Reflexes check for known patterns
+  2. Tier 2 — Silo inference searches expertise silos for relevant knowledge
+  3. Tier 3 — Claude API for novel questions
+
+  Returns `{:ok, %{response: text, tier: 1|2|3, tool_calls: list, cost: float}}`
+
+  ## Options
+
+    * `:timeout` — GenServer call timeout in ms (default 120_000)
+  """
+  @spec chat(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def chat(message, opts \\ []) do
+    GenServer.call(__MODULE__, {:chat, message, opts}, 120_000)
+  end
+
   # ── Server Callbacks ────────────────────────────────────────────────
 
   @impl true
@@ -104,6 +135,39 @@ defmodule Kudzu.Brain do
   @impl true
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
+  end
+
+  def handle_call({:chat, _message, _opts}, _from, %{hologram_id: nil} = state) do
+    {:reply, {:error, :not_ready}, state}
+  end
+
+  def handle_call({:chat, message, opts}, _from, state) do
+    Logger.info("[Brain] Chat message received: #{String.slice(message, 0, 100)}")
+
+    # Record user message as a trace
+    record_trace(state, :observation, %{
+      source: "human_chat",
+      content: message
+    })
+
+    # Run three-tier reasoning adapted for chat
+    {response_text, tier, tool_calls, cost, new_state} = chat_reason(state, message, opts)
+
+    # Record brain response as a trace
+    record_trace(new_state, :thought, %{
+      source: "brain_chat_response",
+      content: String.slice(response_text, 0, 500),
+      tier: tier
+    })
+
+    result = %{
+      response: response_text,
+      tier: tier,
+      tool_calls: tool_calls,
+      cost: cost
+    }
+
+    {:reply, {:ok, result}, new_state}
   end
 
   @impl true
@@ -169,7 +233,7 @@ defmodule Kudzu.Brain do
     {:noreply, state}
   end
 
-  # ── Three-Tier Reasoning Pipeline ──────────────────────────────────
+  # ── Three-Tier Reasoning Pipeline (Autonomous Wake Cycle) ──────────
 
   defp reason(state, anomalies) do
     tagged = Enum.map(anomalies, &{:anomaly, &1})
@@ -345,6 +409,188 @@ defmodule Kudzu.Brain do
             })
 
             state
+        end
+    end
+  end
+
+  # ── Chat Reasoning Pipeline ─────────────────────────────────────────
+
+  defp chat_reason(state, message, _opts) do
+    # Package message as an anomaly for the reflexes pipeline
+    tagged = [{:anomaly, %{check: :human_chat, reason: message}}]
+
+    # Tier 1: Reflexes
+    case Reflexes.check(tagged) do
+      {:act, actions} ->
+        Logger.info("[Brain] Chat Tier 1: #{length(actions)} reflex actions")
+        Enum.each(actions, &Reflexes.execute_action/1)
+
+        response =
+          actions
+          |> Enum.map(&inspect/1)
+          |> Enum.join("; ")
+
+        {response, 1, [], 0.0, state}
+
+      {:escalate, _alerts} ->
+        # Escalation from chat — fall through to Tier 2/3
+        chat_tier2_3(state, message)
+
+      :pass ->
+        # No reflex match — try Tier 2 silo inference
+        chat_tier2_3(state, message)
+    end
+  end
+
+  defp chat_tier2_3(state, message) do
+    case try_silo_inference_for_chat(message) do
+      {:found, findings} ->
+        Logger.info("[Brain] Chat Tier 2: silo inference found #{length(findings)} relevant facts")
+        response = format_silo_findings(message, findings)
+        {response, 2, [], 0.0, state}
+
+      :no_match ->
+        # Tier 3: Claude API
+        chat_with_claude(state, message)
+    end
+  end
+
+  defp try_silo_inference_for_chat(message) do
+    # Extract key terms from the message
+    terms =
+      message
+      |> String.downcase()
+      |> String.split(~r/[\s\p{P}]+/u)
+      |> Enum.filter(fn term -> String.length(term) >= 3 end)
+      |> Enum.uniq()
+
+    results =
+      Enum.flat_map(terms, fn term ->
+        InferenceEngine.cross_query(term)
+      end)
+
+    high_confidence =
+      Enum.filter(results, fn {_domain, _hint, score} ->
+        InferenceEngine.confidence(score) in [:high, :moderate]
+      end)
+
+    if high_confidence != [] do
+      findings =
+        Enum.map(high_confidence, fn {domain, hint, score} ->
+          %{
+            domain: domain,
+            hint: ensure_map(hint),
+            score: score,
+            confidence: InferenceEngine.confidence(score)
+          }
+        end)
+
+      {:found, Enum.take(findings, 10)}
+    else
+      :no_match
+    end
+  end
+
+  defp format_silo_findings(_message, findings) do
+    header = "Based on my knowledge silos, here's what I found relevant to your question:\n\n"
+
+    body =
+      findings
+      |> Enum.map(fn %{domain: domain, hint: hint, confidence: confidence} ->
+        content =
+          case hint do
+            %{subject: s, relation: r, object: o} -> "#{s} #{r} #{o}"
+            %{"subject" => s, "relation" => r, "object" => o} -> "#{s} #{r} #{o}"
+            %{content: c} -> to_string(c)
+            %{"content" => c} -> to_string(c)
+            other -> inspect(other)
+          end
+
+        "- [#{domain}, #{confidence}] #{content}"
+      end)
+      |> Enum.join("\n")
+
+    header <> body
+  end
+
+  defp chat_with_claude(state, message) do
+    api_key = state.config[:api_key] || state.config["api_key"]
+    budget_limit = state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
+
+    cond do
+      is_nil(api_key) or api_key == "" ->
+        Logger.debug("[Brain] Chat: No API key configured, skipping Tier 3")
+        {"I don't have an API key configured for Claude, so I can't process this with Tier 3 reasoning. " <>
+           "My reflexes and silo inference didn't find a match for your message either.", 3, [], 0.0, state}
+
+      not Budget.within_budget?(state.budget, budget_limit) ->
+        Logger.warning("[Brain] Chat: Monthly budget exceeded ($#{state.budget.estimated_cost_usd})")
+        {"I've exceeded my monthly API budget, so I can't use Tier 3 reasoning right now. " <>
+           "My reflexes and silo inference didn't find a match for your message.", 3, [], 0.0, state}
+
+      true ->
+        system_prompt = PromptBuilder.build_chat(state)
+
+        tools =
+          Kudzu.Brain.Tools.Introspection.to_claude_format() ++
+            Kudzu.Brain.Tools.Host.to_claude_format() ++
+            Kudzu.Brain.Tools.Escalation.to_claude_format()
+
+        # Set up tool executor with call tracking
+        Process.put(:chat_tool_calls, [])
+
+        executor = fn name, params ->
+          Process.put(:chat_tool_calls, [name | Process.get(:chat_tool_calls)])
+
+          case Kudzu.Brain.Tools.Introspection.execute(name, params) do
+            {:error, "unknown tool: " <> _} ->
+              case Kudzu.Brain.Tools.Host.execute(name, params) do
+                {:error, "unknown host tool: " <> _} ->
+                  Kudzu.Brain.Tools.Escalation.execute(name, params)
+
+                result ->
+                  result
+              end
+
+            result ->
+              result
+          end
+        end
+
+        case Kudzu.Brain.Claude.reason(
+               api_key,
+               system_prompt,
+               message,
+               tools,
+               executor,
+               max_turns: state.config[:max_turns] || 10,
+               model: state.config[:model] || "claude-sonnet-4-20250514"
+             ) do
+          {:ok, response_text, usage} ->
+            tool_calls = Process.get(:chat_tool_calls) |> Enum.reverse()
+            Process.delete(:chat_tool_calls)
+
+            Logger.info(
+              "[Brain] Chat Tier 3 (#{usage.input_tokens}+#{usage.output_tokens} tokens): " <>
+                String.slice(response_text, 0, 200)
+            )
+
+            cost =
+              (Map.get(usage, :input_tokens, 0) / 1_000_000 * 3.0) +
+                (Map.get(usage, :output_tokens, 0) / 1_000_000 * 15.0)
+
+            budget = Budget.record_usage(state.budget, usage)
+            new_state = %{state | budget: budget}
+
+            {response_text, 3, tool_calls, Float.round(cost, 6), new_state}
+
+          {:error, reason} ->
+            tool_calls = Process.get(:chat_tool_calls) |> Enum.reverse()
+            Process.delete(:chat_tool_calls)
+
+            Logger.error("[Brain] Chat Claude API error: #{inspect(reason)}")
+            {"I encountered an error while processing your message with Claude: #{inspect(reason)}",
+             3, tool_calls, 0.0, state}
         end
     end
   end
