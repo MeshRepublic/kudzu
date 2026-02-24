@@ -50,6 +50,9 @@ defmodule Kudzu.Application do
       # Memory consolidation daemon (biomimetic memory processing)
       {Kudzu.Consolidation, []},
 
+      # Brain — desire-driven wake cycles with pre-check health gate
+      Kudzu.Brain,
+
       # Phoenix HTTP/WebSocket endpoint (API layer)
       KudzuWeb.Endpoint,
 
