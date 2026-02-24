@@ -110,6 +110,13 @@ defmodule Kudzu.Brain do
     case init_hologram() do
       {:ok, pid, id} ->
         Logger.info("[Brain] Hologram ready — id=#{id}")
+        try do
+          Kudzu.Brain.SelfModel.init()
+          Logger.info("[Brain] Self-model silo initialized")
+        catch
+          kind, reason ->
+            Logger.warning("[Brain] Self-model init failed: #{inspect({kind, reason})}")
+        end
         new_state = %{state | hologram_pid: pid, hologram_id: id}
         schedule_wake_cycle(new_state.cycle_interval)
         {:noreply, new_state}
