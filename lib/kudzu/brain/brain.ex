@@ -29,6 +29,7 @@ defmodule Kudzu.Brain do
   use GenServer
   require Logger
 
+  alias Kudzu.Brain.Budget
   alias Kudzu.Brain.Reflexes
   alias Kudzu.Brain.InferenceEngine
   alias Kudzu.Brain.PromptBuilder
@@ -90,7 +91,7 @@ defmodule Kudzu.Brain do
       budget_limit_monthly: 100.0
     }
 
-    state = %__MODULE__{config: config}
+    state = %__MODULE__{config: config, budget: Budget.new()}
 
     # Schedule hologram initialization after a short delay so the rest of
     # the supervision tree has time to start.
@@ -265,71 +266,79 @@ defmodule Kudzu.Brain do
 
   defp maybe_call_claude(state, anomalies) do
     api_key = state.config[:api_key] || state.config["api_key"]
+    budget_limit = state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
 
-    if api_key do
-      system_prompt = PromptBuilder.build(state)
+    cond do
+      is_nil(api_key) or api_key == "" ->
+        Logger.debug("[Brain] No API key configured, skipping Tier 3")
+        state
 
-      anomaly_desc =
-        Enum.map(anomalies, fn a ->
-          "#{a.check}: #{a.reason}"
-        end)
-        |> Enum.join("; ")
+      not Budget.within_budget?(state.budget, budget_limit) ->
+        Logger.warning("[Brain] Monthly budget exceeded ($#{state.budget.estimated_cost_usd}), skipping Tier 3")
+        state
 
-      message =
-        "Anomalies detected that I couldn't handle with reflexes or silo inference:\n" <>
-          anomaly_desc <>
-          "\n\nWhat should I do?"
+      true ->
+        system_prompt = PromptBuilder.build(state)
 
-      tools =
-        Kudzu.Brain.Tools.Introspection.to_claude_format() ++
-          Kudzu.Brain.Tools.Host.to_claude_format()
+        anomaly_desc =
+          Enum.map(anomalies, fn a ->
+            "#{a.check}: #{a.reason}"
+          end)
+          |> Enum.join("; ")
 
-      executor = fn name, params ->
-        case Kudzu.Brain.Tools.Introspection.execute(name, params) do
-          {:error, "unknown tool: " <> _} ->
-            Kudzu.Brain.Tools.Host.execute(name, params)
+        message =
+          "Anomalies detected that I couldn't handle with reflexes or silo inference:\n" <>
+            anomaly_desc <>
+            "\n\nWhat should I do?"
 
-          result ->
-            result
+        tools =
+          Kudzu.Brain.Tools.Introspection.to_claude_format() ++
+            Kudzu.Brain.Tools.Host.to_claude_format()
+
+        executor = fn name, params ->
+          case Kudzu.Brain.Tools.Introspection.execute(name, params) do
+            {:error, "unknown tool: " <> _} ->
+              Kudzu.Brain.Tools.Host.execute(name, params)
+
+            result ->
+              result
+          end
         end
-      end
 
-      case Kudzu.Brain.Claude.reason(
-             api_key,
-             system_prompt,
-             message,
-             tools,
-             executor,
-             max_turns: state.config[:max_turns] || 10,
-             model: state.config[:model] || "claude-sonnet-4-20250514"
-           ) do
-        {:ok, response_text, usage} ->
-          Logger.info(
-            "[Brain] Tier 3 (#{usage.input_tokens}+#{usage.output_tokens} tokens): " <>
-              String.slice(response_text, 0, 200)
-          )
+        case Kudzu.Brain.Claude.reason(
+               api_key,
+               system_prompt,
+               message,
+               tools,
+               executor,
+               max_turns: state.config[:max_turns] || 10,
+               model: state.config[:model] || "claude-sonnet-4-20250514"
+             ) do
+          {:ok, response_text, usage} ->
+            Logger.info(
+              "[Brain] Tier 3 (#{usage.input_tokens}+#{usage.output_tokens} tokens): " <>
+                String.slice(response_text, 0, 200)
+            )
 
-          record_trace(state, :thought, %{
-            tier: "claude",
-            response: String.slice(response_text, 0, 500),
-            usage: usage
-          })
+            record_trace(state, :thought, %{
+              tier: "claude",
+              response: String.slice(response_text, 0, 500),
+              usage: usage
+            })
 
-          state
+            budget = Budget.record_usage(state.budget, usage)
+            %{state | budget: budget}
 
-        {:error, reason} ->
-          Logger.error("[Brain] Claude API error: #{inspect(reason)}")
+          {:error, reason} ->
+            Logger.error("[Brain] Claude API error: #{inspect(reason)}")
 
-          record_trace(state, :observation, %{
-            error: "claude_api_failure",
-            reason: inspect(reason)
-          })
+            record_trace(state, :observation, %{
+              error: "claude_api_failure",
+              reason: inspect(reason)
+            })
 
-          state
-      end
-    else
-      Logger.debug("[Brain] No API key configured, skipping Tier 3")
-      state
+            state
+        end
     end
   end
 
