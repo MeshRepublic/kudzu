@@ -8,7 +8,7 @@ defmodule Kudzu.SiloTest do
   setup do
     # Clean up any leftover test silo
     Silo.delete(@test_domain)
-    Process.sleep(100)
+    Process.sleep(200)
 
     on_exit(fn ->
       Silo.delete(@test_domain)
@@ -33,7 +33,8 @@ defmodule Kudzu.SiloTest do
     test "delete removes the silo" do
       {:ok, _pid} = Silo.create(@test_domain)
       assert :ok = Silo.delete(@test_domain)
-      Process.sleep(100)
+      # Registry deregistration is async — wait for it
+      Process.sleep(500)
       assert {:error, :not_found} = Silo.find(@test_domain)
     end
 
