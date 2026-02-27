@@ -103,7 +103,4 @@ defmodule KudzuWeb.Router do
       get "/capabilities/:capability", BeamletController, :by_capability
     end
   end
-
-  # Catch-all for 404
-  match :*, "/*path", KudzuWeb.FallbackController, :not_found
 end

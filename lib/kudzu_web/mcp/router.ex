@@ -1,16 +1,14 @@
 defmodule KudzuWeb.MCP.Router do
   @moduledoc """
   Plug router for MCP Streamable HTTP.
-  Handles POST, GET, DELETE on /mcp.
+  Handles POST, GET, DELETE on /mcp, plus brain chat endpoints.
+
+  Unmatched requests fall through to KudzuWeb.Router (Phoenix)
+  so the full REST API is available on the same port.
   """
   use Plug.Router
 
   alias KudzuWeb.MCP.{Protocol, Controller, Session}
-
-  plug Plug.Parsers,
-    parsers: [:json],
-    pass: ["application/json"],
-    json_decoder: Jason
 
   plug :match
   plug :dispatch
@@ -73,7 +71,7 @@ defmodule KudzuWeb.MCP.Router do
     end
   end
 
-  # Brain chat SSE endpoint (also available on MCP port 4001)
+  # Brain chat SSE endpoint (also kept here for backward compat with /brain/chat)
   post "/brain/chat" do
     KudzuWeb.BrainChatController.chat(conn, conn.body_params)
   end
@@ -82,7 +80,8 @@ defmodule KudzuWeb.MCP.Router do
     KudzuWeb.BrainChatController.status(conn, conn.params)
   end
 
+  # Unmatched requests fall through to the Phoenix router
   match _ do
-    send_resp(conn, 404, Jason.encode!(%{error: "Not found"}))
+    KudzuWeb.Router.call(conn, KudzuWeb.Router.init([]))
   end
 end

@@ -19,20 +19,13 @@ config :kudzu,
   # Example: ["/var/kudzu/data", "/tmp/kudzu"]
   allowed_io_paths: []
 
-# Phoenix API endpoint configuration
-config :kudzu, KudzuWeb.Endpoint,
-  url: [host: "localhost"],
-  http: [ip: {0, 0, 0, 0}, port: 4000],
-  secret_key_base: "generate-a-secret-key-with-mix-phx-gen-secret",
-  server: true,
-  pubsub_server: Kudzu.PubSub
-
-# MCP endpoint configuration (Tailscale-only)
-# Override IP with KUDZU_MCP_IP env var
+# Consolidated endpoint (MCP + REST API + WebSocket) — Tailscale IP, port 4001
 config :kudzu, KudzuWeb.MCP.Endpoint,
+  url: [host: "localhost"],
   http: [ip: {100, 70, 67, 110}, port: 4001],
   server: true,
-  secret_key_base: "mcp-endpoint-does-not-use-sessions-but-phoenix-requires-this-key"
+  secret_key_base: "generate-a-secret-key-with-mix-phx-gen-secret",
+  pubsub_server: Kudzu.PubSub
 
 # API authentication (disabled by default for development)
 # Enable and set API keys for production
@@ -56,9 +49,6 @@ if config_env() == :test do
   # Allow /tmp for test file operations
   config :kudzu, allowed_io_paths: ["/tmp"]
   # Use different port for tests to avoid conflicts
-  config :kudzu, KudzuWeb.Endpoint,
-    http: [port: 4002],
-    server: false  # Don't start server during tests
   config :kudzu, KudzuWeb.MCP.Endpoint,
     http: [port: 4003],
     server: false
@@ -67,7 +57,7 @@ end
 if config_env() == :dev do
   config :kudzu, telemetry_console: true
   # Dev-friendly endpoint settings
-  config :kudzu, KudzuWeb.Endpoint,
+  config :kudzu, KudzuWeb.MCP.Endpoint,
     debug_errors: true,
     code_reloader: false,
     check_origin: false
@@ -77,10 +67,8 @@ if config_env() == :prod do
   # Production requires these environment variables:
   # - SECRET_KEY_BASE: generate with `mix phx.gen.secret`
   # - KUDZU_API_KEYS: comma-separated API keys
-  # - KUDZU_PORT: HTTP port (default 4000)
-  config :kudzu, KudzuWeb.Endpoint,
-    secret_key_base: System.get_env("SECRET_KEY_BASE"),
-    http: [port: String.to_integer(System.get_env("KUDZU_PORT") || "4000")]
+  config :kudzu, KudzuWeb.MCP.Endpoint,
+    secret_key_base: System.get_env("SECRET_KEY_BASE")
 
   config :kudzu, :api_auth,
     enabled: true,

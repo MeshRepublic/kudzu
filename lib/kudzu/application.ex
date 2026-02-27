@@ -53,13 +53,10 @@ defmodule Kudzu.Application do
       # Brain — desire-driven wake cycles with pre-check health gate
       Kudzu.Brain,
 
-      # Phoenix HTTP/WebSocket endpoint (API layer)
-      KudzuWeb.Endpoint,
-
       # MCP session manager
       KudzuWeb.MCP.Session,
 
-      # MCP Streamable HTTP endpoint (Tailscale-only)
+      # Consolidated endpoint — MCP + REST API + WebSocket on port 4001
       KudzuWeb.MCP.Endpoint
     ]
 
@@ -74,9 +71,9 @@ defmodule Kudzu.Application do
           Process.sleep(1000)
           try do
             reconstructed = Kudzu.HologramRegistry.reconstruct_all()
-            Logger.info("[Application] Reconstructed #{length(reconstructed)} holograms on startup")
+            Logger.info("[Application] Reconstructed \#{length(reconstructed)} holograms on startup")
           rescue
-            e -> Logger.warning("[Application] Hologram reconstruction failed: #{inspect(e)}")
+            e -> Logger.warning("[Application] Hologram reconstruction failed: \#{inspect(e)}")
           end
         end)
       _ -> :ok
