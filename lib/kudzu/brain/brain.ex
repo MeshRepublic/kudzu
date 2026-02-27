@@ -1,33 +1,34 @@
 defmodule Kudzu.Brain do
   @moduledoc """
-  Brain GenServer — desire-driven wake cycles with three-tier reasoning.
+  Brain GenServer — desire-driven wake cycles with thinking-layer reasoning.
 
   The Brain is the autonomous executive layer of Kudzu. It wakes periodically,
   runs health checks (the "pre-check gate"), and when anomalies are detected,
-  reasons about them through a three-tier pipeline:
+  reasons about them through a multi-tier pipeline enhanced by a thinking layer:
 
   1. **Tier 1 — Reflexes**: Instant pattern → action mappings, zero cost.
-  2. **Tier 2 — Silo Inference**: HRR vector reasoning across expertise silos.
-  3. **Tier 3 — Claude API**: LLM-driven reasoning for novel situations.
+  2. **Thinking Layer — Thought**: Ephemeral reasoning via silo HRR activation,
+     chain building, and working memory integration.
+  3. **Tier 3 — Claude API**: LLM-driven reasoning for novel situations,
+     followed by Distiller extraction of knowledge back into silos.
 
   ## Wake Cycle
 
   Every `cycle_interval` milliseconds (default 5 minutes), the Brain:
 
   1. Runs `pre_check/1` — a battery of health checks
-  2. If all nominal → goes back to sleep
+  2. If all nominal → explores curiosity-driven questions
   3. If anomalies detected → enters the reasoning pipeline
-  4. Schedules the next wake cycle
+  4. Decays working memory and schedules the next wake cycle
 
   ## Chat
 
-  The Brain also supports interactive chat via `chat/2`. This runs the same
-  three-tier reasoning pipeline but adapted for human conversation:
+  The Brain supports interactive chat via `chat/2`. Messages flow through:
 
-  1. Records the user message as a trace
-  2. Runs chat-specific three-tier reasoning
-  3. Records the response as a trace
-  4. Returns structured result with tier info and cost
+  1. Tier 1 — Reflexes check for known patterns
+  2. Thinking Layer — Thought process with working memory priming
+  3. Tier 3 — Claude API (if thought didn't fully resolve)
+  4. Distiller extracts knowledge from Claude responses
 
   ## Desires
 
@@ -43,6 +44,10 @@ defmodule Kudzu.Brain do
   alias Kudzu.Brain.Reflexes
   alias Kudzu.Brain.InferenceEngine
   alias Kudzu.Brain.PromptBuilder
+  alias Kudzu.Brain.WorkingMemory
+  alias Kudzu.Brain.Thought
+  alias Kudzu.Brain.Curiosity
+  alias Kudzu.Brain.Distiller
 
   @initial_desires [
     "Maintain Kudzu system health and recover from failures",
@@ -62,6 +67,7 @@ defmodule Kudzu.Brain do
     :hologram_pid,
     :current_session,
     :budget,
+    :working_memory,
     desires: @initial_desires,
     status: :sleeping,
     cycle_interval: @default_cycle_interval,
@@ -95,10 +101,10 @@ defmodule Kudzu.Brain do
   autonomous wake cycles, but adapted for interactive conversation:
 
   1. Tier 1 — Reflexes check for known patterns
-  2. Tier 2 — Silo inference searches expertise silos for relevant knowledge
+  2. Thinking Layer — Thought process with working memory priming
   3. Tier 3 — Claude API for novel questions
 
-  Returns `{:ok, %{response: text, tier: 1|2|3, tool_calls: list, cost: float}}`
+  Returns `{:ok, %{response: text, tier: 1|2|3|:thought, tool_calls: list, cost: float}}`
 
   ## Options
 
@@ -173,7 +179,7 @@ defmodule Kudzu.Brain do
       content: message
     })
 
-    # Run three-tier reasoning adapted for chat
+    # Run reasoning pipeline adapted for chat
     {response_text, tier, tool_calls, cost, new_state} = chat_reason(state, message, opts)
 
     # Record brain response as a trace
@@ -246,6 +252,7 @@ defmodule Kudzu.Brain do
             Logger.warning("[Brain] Self-model init failed: #{inspect({kind, reason})}")
         end
         new_state = %{state | hologram_pid: pid, hologram_id: id}
+        new_state = %{new_state | working_memory: WorkingMemory.new()}
         schedule_wake_cycle(new_state.cycle_interval)
         {:noreply, new_state}
 
@@ -271,18 +278,32 @@ defmodule Kudzu.Brain do
 
     state = %{state | cycle_count: new_count, status: :reasoning}
 
-    case pre_check(state) do
+    state = case pre_check(state) do
       :sleep ->
-        Logger.debug("[Brain] Pre-check nominal — back to sleep")
-        schedule_wake_cycle(state.cycle_interval)
-        {:noreply, %{state | status: :sleeping}}
+        Logger.debug("[Brain] Pre-check nominal — exploring curiosity")
+        # No anomalies — pursue curiosity instead
+        maybe_explore_curiosity(state)
 
       {:wake, anomalies} ->
         Logger.info("[Brain] Cycle #{new_count}: #{length(anomalies)} anomalies")
-        state = reason(state, anomalies)
-        schedule_wake_cycle(state.cycle_interval)
-        {:noreply, %{state | status: :sleeping}}
+        reason(state, anomalies)
     end
+
+    # Decay working memory at end of each cycle
+    state = if state.working_memory do
+      %{state | working_memory: WorkingMemory.decay(state.working_memory, 0.05)}
+    else
+      state
+    end
+
+    schedule_wake_cycle(state.cycle_interval)
+    {:noreply, %{state | status: :sleeping}}
+  end
+
+  def handle_info({:thought_result, thought_id, result}, state) do
+    Logger.debug("[Brain] Received async thought result: #{thought_id}")
+    state = integrate_thought(state, result)
+    {:noreply, state}
   end
 
   def handle_info(msg, state) do
@@ -455,7 +476,10 @@ defmodule Kudzu.Brain do
             })
 
             budget = Budget.record_usage(state.budget, usage)
-            %{state | budget: budget}
+            new_state = %{state | budget: budget}
+
+            # Distill knowledge from Claude's response
+            distill_claude_response(new_state, response_text)
 
           {:error, reason} ->
             Logger.error("[Brain] Claude API error: #{inspect(reason)}")
@@ -490,84 +514,168 @@ defmodule Kudzu.Brain do
         {response, 1, [], 0.0, state}
 
       {:escalate, _alerts} ->
-        # Escalation from chat — fall through to Tier 2/3
-        chat_tier2_3(state, message)
+        # Escalation from chat — fall through to thinking layer
+        chat_think_then_claude(state, message)
 
       :pass ->
-        # No reflex match — try Tier 2 silo inference
-        chat_tier2_3(state, message)
+        # No reflex match — try thinking layer
+        chat_think_then_claude(state, message)
     end
   end
 
-  defp chat_tier2_3(state, message) do
-    case try_silo_inference_for_chat(message) do
-      {:found, findings} ->
-        Logger.info("[Brain] Chat Tier 2: silo inference found #{length(findings)} relevant facts")
-        response = format_silo_findings(message, findings)
-        {response, 2, [], 0.0, state}
-
-      :no_match ->
-        # Tier 3: Claude API
-        chat_with_claude(state, message)
-    end
-  end
-
-  defp try_silo_inference_for_chat(message) do
-    # Extract key terms from the message
-    terms =
-      message
-      |> String.downcase()
-      |> String.split(~r/[\s\p{P}]+/u)
-      |> Enum.filter(fn term -> String.length(term) >= 3 end)
-      |> Enum.uniq()
-
-    results =
-      Enum.flat_map(terms, fn term ->
-        InferenceEngine.cross_query(term)
-      end)
-
-    high_confidence =
-      Enum.filter(results, fn {_domain, _hint, score} ->
-        InferenceEngine.confidence(score) in [:high, :moderate]
-      end)
-
-    if high_confidence != [] do
-      findings =
-        Enum.map(high_confidence, fn {domain, hint, score} ->
-          %{
-            domain: domain,
-            hint: ensure_map(hint),
-            score: score,
-            confidence: InferenceEngine.confidence(score)
-          }
-        end)
-
-      {:found, Enum.take(findings, 10)}
+  defp chat_think_then_claude(state, message) do
+    # Get priming concepts from working memory
+    priming = if state.working_memory do
+      WorkingMemory.get_priming_concepts(state.working_memory, 5)
     else
-      :no_match
+      []
+    end
+
+    # Run a Thought process
+    thought_result = Thought.run(message,
+      monarch_pid: self(),
+      timeout: 10_000,
+      priming: priming
+    )
+
+    # Integrate thought results into working memory
+    state = integrate_thought(state, thought_result)
+
+    if thought_result.resolution == :found and thought_result.confidence > 0.5 do
+      # Thought resolved — format the chain as a response
+      response = format_thought_result(message, thought_result)
+      {response, :thought, [], 0.0, state}
+    else
+      # Thought didn't fully resolve — escalate to Claude
+      # But provide thought context to Claude for better reasoning
+      chat_with_claude_with_context(state, message, thought_result)
     end
   end
 
-  defp format_silo_findings(_message, findings) do
-    header = "Based on my knowledge silos, here's what I found relevant to your question:\n\n"
+  defp integrate_thought(%{working_memory: nil} = state, _result), do: state
+  defp integrate_thought(state, %Thought.Result{} = result) do
+    wm = state.working_memory
 
-    body =
-      findings
-      |> Enum.map(fn %{domain: domain, hint: hint, confidence: confidence} ->
-        content =
-          case hint do
-            %{subject: s, relation: r, object: o} -> "#{s} #{r} #{o}"
-            %{"subject" => s, "relation" => r, "object" => o} -> "#{s} #{r} #{o}"
-            %{content: c} -> to_string(c)
-            %{"content" => c} -> to_string(c)
-            other -> inspect(other)
-          end
+    # Activate concepts from the thought
+    wm = Enum.reduce(result.activations, wm, fn
+      {concept, score, source}, acc ->
+        WorkingMemory.activate(acc, concept, %{score: score, source: source})
+      _, acc -> acc
+    end)
 
-        "- [#{domain}, #{confidence}] #{content}"
+    # Add the chain
+    wm = if result.chain != [] do
+      WorkingMemory.add_chain(wm, result.chain)
+    else
+      wm
+    end
+
+    %{state | working_memory: wm}
+  end
+  defp integrate_thought(state, _result), do: state
+
+  defp format_thought_result(_message, %Thought.Result{} = result) do
+    chain_desc = result.chain
+    |> Enum.map(fn
+      %{concept: c, similarity: s, source: src} -> "#{c} (#{src}, #{Float.round(s * 1.0, 2)})"
+      {concept, score, source} -> "#{concept} (#{source}, #{Float.round(score * 1.0, 2)})"
+      other -> inspect(other)
+    end)
+    |> Enum.join(" -> ")
+
+    "Based on my reasoning:\n\n#{chain_desc}\n\nConfidence: #{Float.round(result.confidence * 1.0, 2)}"
+  end
+
+  defp chat_with_claude_with_context(state, message, thought_result) do
+    # Add thought context to enhance the Claude message
+    thought_context = if thought_result.chain != [] do
+      chain_summary = thought_result.chain
+      |> Enum.map(fn
+        %{concept: c, source: src} -> "#{c} (from #{src})"
+        {concept, _score, source} -> "#{concept} (from #{source})"
+        _ -> ""
       end)
-      |> Enum.join("\n")
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join(", ")
 
-    header <> body
+      "\n\n[Thinking context: my silo reasoning found these related concepts: #{chain_summary}]"
+    else
+      ""
+    end
+
+    enhanced_message = message <> thought_context
+
+    # Use the existing chat_with_claude but with the enhanced message
+    {response_text, tier, tool_calls, cost, new_state} = chat_with_claude(state, enhanced_message)
+
+    # Run Distiller on Claude's response if we got one
+    new_state = if tier == 3 and response_text != "" do
+      distill_claude_response(new_state, response_text)
+    else
+      new_state
+    end
+
+    {response_text, tier, tool_calls, cost, new_state}
+  end
+
+  defp distill_claude_response(state, response_text) do
+    try do
+      silo_domains = case Kudzu.Silo.list() do
+        domains when is_list(domains) ->
+          Enum.map(domains, fn
+            {domain, _, _} -> domain
+            domain when is_binary(domain) -> domain
+            _ -> nil
+          end) |> Enum.reject(&is_nil/1)
+        _ -> []
+      end
+
+      available_actions =
+        if function_exported?(Reflexes, :known_actions, 0) do
+          try do
+            apply(Reflexes, :known_actions, [])
+          catch
+            _, _ -> []
+          end
+        else
+          []
+        end
+
+      context = %{available_actions: available_actions}
+      result = Distiller.distill(response_text, silo_domains, context)
+
+      # Store extracted chains in silos
+      state = if result.chains != [] do
+        Logger.info("[Brain] Distiller extracted #{length(result.chains)} relationships from Claude response")
+        Enum.each(result.chains, fn {subject, relation, object} ->
+          try do
+            Kudzu.Silo.store_relationship("brain_knowledge", {subject, relation, object})
+          catch
+            _, _ -> :ok
+          end
+        end)
+        state
+      else
+        state
+      end
+
+      # Log knowledge gaps for curiosity
+      if result.knowledge_gaps != [] do
+        wm = state.working_memory
+        wm = if wm do
+          Enum.reduce(Enum.take(result.knowledge_gaps, 3), wm, fn gap, acc ->
+            WorkingMemory.add_question(acc, "What is #{gap}?")
+          end)
+        else
+          wm
+        end
+        %{state | working_memory: wm}
+      else
+        state
+      end
+    catch
+      _, _ -> state
+    end
   end
 
   defp chat_with_claude(state, message) do
@@ -675,30 +783,71 @@ defmodule Kudzu.Brain do
         {response, 1, [], 0.0, state}
 
       {:escalate, _alerts} ->
-        # Escalation from chat — fall through to Tier 2/3
-        chat_tier2_3_stream(state, message, stream_to)
+        # Escalation from chat — fall through to thinking layer
+        chat_think_then_claude_stream(state, message, stream_to)
 
       :pass ->
-        # No reflex match — try Tier 2 silo inference
-        chat_tier2_3_stream(state, message, stream_to)
+        # No reflex match — try thinking layer
+        chat_think_then_claude_stream(state, message, stream_to)
     end
   end
 
-  defp chat_tier2_3_stream(state, message, stream_to) do
-    # Tier 2: Silo inference
-    send(stream_to, {:thinking, 2, "Querying silos..."})
+  defp chat_think_then_claude_stream(state, message, stream_to) do
+    send(stream_to, {:thinking, :thought, "Running thought process..."})
 
-    case try_silo_inference_for_chat(message) do
-      {:found, findings} ->
-        Logger.info("[Brain] Stream Chat Tier 2: silo inference found #{length(findings)} relevant facts")
-        response = format_silo_findings(message, findings)
-        send(stream_to, {:chunk, response})
-        {response, 2, [], 0.0, state}
+    # Get priming concepts from working memory
+    priming = if state.working_memory do
+      WorkingMemory.get_priming_concepts(state.working_memory, 5)
+    else
+      []
+    end
 
-      :no_match ->
-        # Tier 3: Claude API (streaming)
-        send(stream_to, {:thinking, 3, "Thinking..."})
-        chat_with_claude_stream(state, message, stream_to)
+    # Run a synchronous Thought process
+    thought_result = Thought.run(message,
+      monarch_pid: self(),
+      timeout: 10_000,
+      priming: priming
+    )
+
+    # Integrate thought results into working memory
+    state = integrate_thought(state, thought_result)
+
+    if thought_result.resolution == :found and thought_result.confidence > 0.5 do
+      # Thought resolved — send result as chunk
+      response = format_thought_result(message, thought_result)
+      send(stream_to, {:chunk, response})
+      {response, :thought, [], 0.0, state}
+    else
+      # Thought didn't fully resolve — proceed to Claude streaming
+      thought_context = if thought_result.chain != [] do
+        chain_summary = thought_result.chain
+        |> Enum.map(fn
+          %{concept: c, source: src} -> "#{c} (from #{src})"
+          {concept, _score, source} -> "#{concept} (from #{source})"
+          _ -> ""
+        end)
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.join(", ")
+
+        "\n\n[Thinking context: my silo reasoning found these related concepts: #{chain_summary}]"
+      else
+        ""
+      end
+
+      enhanced_message = message <> thought_context
+
+      send(stream_to, {:thinking, 3, "Thinking..."})
+      {response_text, tier, tool_calls, cost, new_state} =
+        chat_with_claude_stream(state, enhanced_message, stream_to)
+
+      # Run Distiller on Claude's response
+      new_state = if tier == 3 and response_text != "" do
+        distill_claude_response(new_state, response_text)
+      else
+        new_state
+      end
+
+      {response_text, tier, tool_calls, cost, new_state}
     end
   end
 
@@ -789,6 +938,62 @@ defmodule Kudzu.Brain do
             send(stream_to, {:chunk, error_msg})
             {error_msg, 3, tool_calls, 0.0, state}
         end
+    end
+  end
+
+  # ── Curiosity-Driven Exploration ────────────────────────────────────
+
+  defp maybe_explore_curiosity(%{working_memory: nil} = state), do: state
+  defp maybe_explore_curiosity(state) do
+    # Check if there are pending questions from previous thoughts
+    {question, wm} = WorkingMemory.pop_question(state.working_memory)
+    state = %{state | working_memory: wm}
+
+    question = if is_nil(question) do
+      # Generate a new curiosity question
+      silo_domains = try do
+        case Kudzu.Silo.list() do
+          domains when is_list(domains) ->
+            Enum.map(domains, fn
+              {domain, _, _} -> domain
+              domain when is_binary(domain) -> domain
+              _ -> nil
+            end) |> Enum.reject(&is_nil/1)
+          _ -> []
+        end
+      catch
+        _, _ -> []
+      end
+
+      questions = Curiosity.generate(state.desires, state.working_memory, silo_domains)
+      List.first(questions)
+    else
+      question
+    end
+
+    if question do
+      Logger.info("[Brain] Curiosity exploring: #{String.slice(question, 0, 100)}")
+
+      # Run a thought on the curiosity question
+      thought_result = Thought.run(question,
+        monarch_pid: self(),
+        timeout: 8_000,
+        priming: WorkingMemory.get_priming_concepts(state.working_memory, 3)
+      )
+
+      state = integrate_thought(state, thought_result)
+
+      record_trace(state, :thought, %{
+        source: "curiosity",
+        question: question,
+        resolution: thought_result.resolution,
+        confidence: thought_result.confidence,
+        chain_length: length(thought_result.chain)
+      })
+
+      state
+    else
+      state
     end
   end
 
