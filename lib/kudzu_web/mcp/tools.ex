@@ -391,6 +391,22 @@ defmodule KudzuWeb.MCP.Tools do
       description: "Get the Brain's current state: status (sleeping/reasoning), cycle count, desires, budget spent.",
       inputSchema: %{type: "object", properties: %{}, required: []}
     },
+    # === Web Tools ===
+    %{
+      name: "kudzu_web_search",
+      description: "Search the internet for information. Returns titles, URLs, and snippets. Uses SearXNG (self-hosted) with DuckDuckGo fallback.",
+      inputSchema: %{type: "object", properties: %{
+        query: %{type: "string", description: "Search query"},
+        limit: %{type: "integer", description: "Max results (default 5)"}
+      }, required: ["query"]}
+    },
+    %{
+      name: "kudzu_web_read",
+      description: "Fetch a web page and extract its readable text content. Returns text, title, and word count. Max 100KB content.",
+      inputSchema: %{type: "object", properties: %{
+        url: %{type: "string", description: "URL to fetch (must start with http:// or https://)"}
+      }, required: ["url"]}
+    },
   ]
 
   def list, do: @tools

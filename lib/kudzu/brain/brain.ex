@@ -436,14 +436,21 @@ defmodule Kudzu.Brain do
         tools =
           Kudzu.Brain.Tools.Introspection.to_claude_format() ++
             Kudzu.Brain.Tools.Host.to_claude_format() ++
-            Kudzu.Brain.Tools.Escalation.to_claude_format()
+            Kudzu.Brain.Tools.Escalation.to_claude_format() ++
+            Kudzu.Brain.Tools.Web.to_claude_format()
 
         executor = fn name, params ->
           case Kudzu.Brain.Tools.Introspection.execute(name, params) do
             {:error, "unknown tool: " <> _} ->
               case Kudzu.Brain.Tools.Host.execute(name, params) do
                 {:error, "unknown host tool: " <> _} ->
-                  Kudzu.Brain.Tools.Escalation.execute(name, params)
+                  case Kudzu.Brain.Tools.Escalation.execute(name, params) do
+                    {:error, "unknown escalation tool: " <> _} ->
+                      Kudzu.Brain.Tools.Web.execute(name, params)
+
+                    result ->
+                      result
+                  end
 
                 result ->
                   result
@@ -699,7 +706,8 @@ defmodule Kudzu.Brain do
         tools =
           Kudzu.Brain.Tools.Introspection.to_claude_format() ++
             Kudzu.Brain.Tools.Host.to_claude_format() ++
-            Kudzu.Brain.Tools.Escalation.to_claude_format()
+            Kudzu.Brain.Tools.Escalation.to_claude_format() ++
+            Kudzu.Brain.Tools.Web.to_claude_format()
 
         # Set up tool executor with call tracking
         Process.put(:chat_tool_calls, [])
@@ -711,7 +719,13 @@ defmodule Kudzu.Brain do
             {:error, "unknown tool: " <> _} ->
               case Kudzu.Brain.Tools.Host.execute(name, params) do
                 {:error, "unknown host tool: " <> _} ->
-                  Kudzu.Brain.Tools.Escalation.execute(name, params)
+                  case Kudzu.Brain.Tools.Escalation.execute(name, params) do
+                    {:error, "unknown escalation tool: " <> _} ->
+                      Kudzu.Brain.Tools.Web.execute(name, params)
+
+                    result ->
+                      result
+                  end
 
                 result ->
                   result
@@ -878,7 +892,8 @@ defmodule Kudzu.Brain do
         tools =
           Kudzu.Brain.Tools.Introspection.to_claude_format() ++
             Kudzu.Brain.Tools.Host.to_claude_format() ++
-            Kudzu.Brain.Tools.Escalation.to_claude_format()
+            Kudzu.Brain.Tools.Escalation.to_claude_format() ++
+            Kudzu.Brain.Tools.Web.to_claude_format()
 
         # Set up tool executor with call tracking
         Process.put(:chat_tool_calls, [])
@@ -890,7 +905,13 @@ defmodule Kudzu.Brain do
             {:error, "unknown tool: " <> _} ->
               case Kudzu.Brain.Tools.Host.execute(name, params) do
                 {:error, "unknown host tool: " <> _} ->
-                  Kudzu.Brain.Tools.Escalation.execute(name, params)
+                  case Kudzu.Brain.Tools.Escalation.execute(name, params) do
+                    {:error, "unknown escalation tool: " <> _} ->
+                      Kudzu.Brain.Tools.Web.execute(name, params)
+
+                    result ->
+                      result
+                  end
 
                 result ->
                   result
