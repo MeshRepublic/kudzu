@@ -110,9 +110,12 @@ defmodule KudzuWeb.BrainChatController do
         end
 
       {:done, metadata} ->
-        # Send the final event, then return conn regardless of success/failure
+        # Send the final event, then close the stream properly
         case sse_event(conn, "done", metadata) do
-          {:ok, conn} -> conn
+          {:ok, conn} ->
+            # Send empty chunk to signal end of chunked transfer
+            chunk(conn, "")
+            conn
           {:error, _reason} -> conn
         end
     after

@@ -21,7 +21,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 KUDZU_HOST = os.environ.get("KUDZU_HOST", "titan")
-KUDZU_URL = "http://localhost:4000"
+KUDZU_URL = "http://100.70.67.110:4001"
 SSH_TIMEOUT = 10
 CURL_TIMEOUT = 15
 TRACE_LIMIT = 50
@@ -475,7 +475,7 @@ def render_fallback_md(reason: str) -> str:
         f"**WARNING**: Kudzu is currently unreachable ({reason}).",
         "Context may be stale or unavailable. Try:",
         "```",
-        'ssh titan "curl -s http://localhost:4000/health"',
+        'ssh titan "curl -s http://100.70.67.110:4001/health"',
         "```",
         "",
     ])

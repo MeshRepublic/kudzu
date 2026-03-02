@@ -11,7 +11,7 @@
 # === Configuration ===
 
 KUDZU_HOST="${KUDZU_HOST:-titan}"
-KUDZU_URL="http://localhost:4000"
+KUDZU_URL="http://100.70.67.110:4001"
 KUDZU_STATE_DIR="${KUDZU_STATE_DIR:-$HOME/.kudzu}"
 KUDZU_SSH_TIMEOUT="${KUDZU_SSH_TIMEOUT:-10}"
 KUDZU_CURL_TIMEOUT="${KUDZU_CURL_TIMEOUT:-15}"
@@ -77,7 +77,7 @@ except Exception:
 
 # Run a command on the Kudzu host via SSH.
 # Checks connectivity and quotes the host properly.
-# Usage: kudzu_ssh "curl -s http://localhost:4000/health"
+# Usage: kudzu_ssh "curl -s http://100.70.67.110:4001/health"
 kudzu_ssh() {
     local cmd="$1"
     local result
@@ -105,7 +105,7 @@ kudzu_api_post() {
     local json_body="$2"
     local timeout="${3:-$KUDZU_CURL_TIMEOUT}"
 
-    kudzu_ssh "echo '$(echo "$json_body" | base64)' | base64 -d | curl -s --max-time $timeout -X POST '${KUDZU_URL}${path}' -H 'Content-Type: application/json' -d @-"
+    kudzu_ssh "echo '$(echo "$json_body" | base64 -w0)' | base64 -d | curl -s --max-time $timeout -X POST '${KUDZU_URL}${path}' -H 'Content-Type: application/json' -d @-"
 }
 
 # Make an API DELETE request to the Kudzu server.

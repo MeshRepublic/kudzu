@@ -18,7 +18,7 @@ KUDZU_LOG_PREFIX="kudzu"
 source "$SCRIPT_DIR/kudzu-common.sh"
 
 KUDZU_SRC="${KUDZU_SRC:-$HOME/kudzu_src}"
-KUDZU_PORT="${KUDZU_PORT:-4000}"
+KUDZU_PORT="${KUDZU_PORT:-4001}"
 KUDZU_NODE_NAME="${KUDZU_NODE_NAME:-kudzu@$(hostname)}"
 KUDZU_PIDFILE="$KUDZU_STATE_DIR/kudzu.pid"
 
@@ -325,7 +325,7 @@ case "${1:-}" in
         echo "Environment:"
         echo "  KUDZU_STATE_DIR  - Data directory (default: ~/.kudzu)"
         echo "  KUDZU_SRC        - Source directory (default: ~/kudzu_src)"
-        echo "  KUDZU_PORT       - API port (default: 4000)"
+        echo "  KUDZU_PORT       - API port (default: 4001)"
         echo "  KUDZU_NODE_NAME  - Erlang node name (default: kudzu@hostname)"
         ;;
 esac
