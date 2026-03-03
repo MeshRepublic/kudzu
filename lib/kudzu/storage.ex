@@ -120,6 +120,11 @@ defmodule Kudzu.Storage do
     GenServer.call(__MODULE__, {:search_by_embedding, query_vector, opts}, 30_000)
   end
 
+  @doc "Embed a batch of unembedded traces. Returns count embedded."
+  def embed_batch(batch_size \\ 5) do
+    GenServer.call(__MODULE__, {:embed_batch, batch_size}, 300_000)
+  end
+
   @doc "Get the number of embedded traces."
   def embedding_count do
     try do
@@ -192,9 +197,14 @@ defmodule Kudzu.Storage do
     :ets.insert(@hot_table, {trace.id, record})
     :dets.insert(@warm_file, {trace.id, record})
 
-    # Embedding happens via periodic batch (see embed_batch/0)
+    # Embedding happens via periodic batch (see embed_batch/1)
 
     {:reply, :ok, state}
+  end
+
+  def handle_call({:embed_batch, batch_size}, _from, state) do
+    count = do_embed_batch(batch_size)
+    {:reply, count, state}
   end
 
   @impl true
@@ -328,12 +338,6 @@ defmodule Kudzu.Storage do
     :ets.insert(@embedding_table, {trace_id, vector})
     :dets.insert(@embedding_file, {trace_id, vector})
     {:noreply, state}
-  end
-
-  @impl true
-  def handle_call({:embed_batch, batch_size}, _from, state) do
-    count = do_embed_batch(batch_size)
-    {:reply, count, state}
   end
 
   def handle_call({:search_by_embedding, query_vector, opts}, _from, state) do
