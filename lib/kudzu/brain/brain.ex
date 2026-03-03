@@ -668,7 +668,24 @@ defmodule Kudzu.Brain do
     end
   end
 
-  defp parse_directive(message) do
+  defp handle_directive_or_escalate_stream(state, message, stream_to) do
+    case parse_directive(message) do
+      {:learn, topic} ->
+        {response, tier, tool_calls, cost, state} = start_learning_goal(state, topic)
+        send(stream_to, {:chunk, response})
+        {response, tier, tool_calls, cost, state}
+
+      :progress ->
+        {response, tier, tool_calls, cost, state} = report_learning_progress(state)
+        send(stream_to, {:chunk, response})
+        {response, tier, tool_calls, cost, state}
+
+      :not_directive ->
+        chat_escalate_stream(state, message, stream_to)
+    end
+  end
+
+    defp parse_directive(message) do
     trimmed = String.trim(message)
     cond do
       Regex.match?(~r/^learn\s+/i, trimmed) ->
@@ -1303,12 +1320,10 @@ defmodule Kudzu.Brain do
         {response, 1, [], 0.0, state}
 
       {:escalate, _alerts} ->
-        # Escalation from chat — fall through to escalation pipeline
-        chat_escalate_stream(state, message, stream_to)
+        handle_directive_or_escalate_stream(state, message, stream_to)
 
       :pass ->
-        # No reflex match — try escalation pipeline
-        chat_escalate_stream(state, message, stream_to)
+        handle_directive_or_escalate_stream(state, message, stream_to)
     end
   end
 
