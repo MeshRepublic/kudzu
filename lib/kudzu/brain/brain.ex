@@ -804,7 +804,9 @@ defmodule Kudzu.Brain do
 
       case Kudzu.Brain.Claude.simple_message(api_key, prompt) do
         {:ok, response_text, usage} ->
-          cost = Budget.calculate_cost(usage)
+          input = (usage["input_tokens"] || 0) / 1_000_000 * 3.0
+          output = (usage["output_tokens"] || 0) / 1_000_000 * 15.0
+          cost = Float.round(input + output, 4)
           case parse_curriculum_json(response_text) do
             {:ok, items} -> {:ok, items, cost}
             {:error, _} -> {:error, :json_parse_failed}
