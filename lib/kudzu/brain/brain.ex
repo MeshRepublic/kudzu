@@ -880,7 +880,8 @@ defmodule Kudzu.Brain do
     end
 
     top_score = case recall_results do
-      [{_purpose, score} | _] -> score
+      [%{similarity: score} | _] -> score
+      [{_purpose, score} | _] -> score  # fallback format
       _ -> 0.0
     end
 
@@ -994,16 +995,37 @@ defmodule Kudzu.Brain do
   end
 
   defp format_recall_response(_message, recall_results) do
-    matches = recall_results
+    snippets = recall_results
     |> Enum.take(5)
-    |> Enum.map(fn {purpose, similarity} ->
-      "- #{purpose} (relevance: #{Float.round(similarity, 3)})"
+    |> Enum.map(fn
+      %{similarity: sim, record: record} when is_map(record) ->
+        hint = record.reconstruction_hint || %{}
+        content = Map.get(hint, "content") || Map.get(hint, :content) ||
+                  Map.get(hint, "text") || Map.get(hint, :text) ||
+                  Map.get(hint, "summary") || Map.get(hint, :summary) ||
+                  Map.get(hint, "message") || Map.get(hint, :message) || ""
+        # Build a triple description if available
+        subj = Map.get(hint, "subject") || Map.get(hint, :subject)
+        rel = Map.get(hint, "relation") || Map.get(hint, :relation)
+        obj = Map.get(hint, "object") || Map.get(hint, :object)
+        triple_text = if subj && rel && obj, do: "#{subj} #{rel} #{obj}", else: nil
+
+        text = cond do
+          content != "" -> String.slice(to_string(content), 0, 300)
+          triple_text -> triple_text
+          true -> inspect(hint) |> String.slice(0, 200)
+        end
+
+        purpose = if is_struct(record) and Map.has_key?(record, :purpose),
+          do: "(#{record.purpose}) ", else: ""
+        "- #{purpose}#{text} [#{Float.round(sim, 3)}]"
+
+      {purpose, similarity} ->
+        "- #{purpose} (relevance: #{Float.round(similarity, 3)})"
     end)
     |> Enum.join("\n")
 
-    "Based on my stored knowledge:\n\n#{matches}\n\n" <>
-      "I found relevant information in my memory traces. " <>
-      "The strongest match was in the #{elem(List.first(recall_results), 0)} domain."
+    "Based on my stored knowledge:\n\n#{snippets}"
   end
 
   defp format_web_response(_message, findings) do
@@ -1107,15 +1129,22 @@ defmodule Kudzu.Brain do
   defp integrate_thought(state, _result), do: state
 
   defp format_thought_result(_message, %Thought.Result{} = result) do
-    chain_desc = result.chain
+    chain_parts = result.chain
     |> Enum.map(fn
-      %{concept: c, similarity: s, source: src} -> "#{c} (#{src}, #{Float.round(s * 1.0, 2)})"
-      {concept, score, source} -> "#{concept} (#{source}, #{Float.round(score * 1.0, 2)})"
-      other -> inspect(other)
+      %{concept: c, similarity: s, source: src} ->
+        "- #{c} (#{src}, score: #{Float.round(s * 1.0, 2)})"
+      {concept, score, source} ->
+        "- #{concept} (#{source}, score: #{Float.round(score * 1.0, 2)})"
+      other -> "- #{inspect(other)}"
     end)
-    |> Enum.join(" -> ")
 
-    "Based on my reasoning:\n\n#{chain_desc}\n\nConfidence: #{Float.round(result.confidence * 1.0, 2)}"
+    chain_text = if chain_parts != [] do
+      "Reasoning chain:\n" <> Enum.join(chain_parts, "\n")
+    else
+      "No reasoning chain available."
+    end
+
+    "Based on my reasoning:\n\n#{chain_text}\n\nConfidence: #{Float.round(result.confidence * 1.0, 2)}"
   end
 
   defp chat_with_claude_with_context(state, message, thought_result) do
@@ -1341,7 +1370,8 @@ defmodule Kudzu.Brain do
     end
 
     top_score = case recall_results do
-      [{_purpose, score} | _] -> score
+      [%{similarity: score} | _] -> score
+      [{_purpose, score} | _] -> score  # fallback format
       _ -> 0.0
     end
 

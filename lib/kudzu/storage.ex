@@ -30,9 +30,19 @@ defmodule Kudzu.Storage do
   @warm_file ~c"/home/eel/kudzu_data/dets/traces_warm.dets"
   @cold_table :kudzu_traces_cold
 
+  # Embedding storage (separate from traces for performance)
+  @embedding_table :kudzu_embeddings
+  @embedding_file ~c"/home/eel/kudzu_data/dets/embeddings.dets"
+
   # Aging thresholds
   @hot_to_warm_seconds 3600        # 1 hour without access → warm
   @warm_to_cold_seconds 86400 * 7  # 7 days without access → cold
+
+  # Storage limits
+  @max_hot_entries 50_000
+  @max_warm_bytes 500_000_000       # 500MB
+  @max_total_bytes 2_000_000_000    # 2GB
+  @warm_path "/home/eel/kudzu_data/dets/traces_warm.dets"
 
   # Trace record for Mnesia
   # {trace_id, hologram_id, purpose, reconstruction_hint, timestamp, last_accessed, access_count}
@@ -90,12 +100,46 @@ defmodule Kudzu.Storage do
     GenServer.call(__MODULE__, :stats)
   end
 
+  @doc "Get detailed storage stats with byte counts and utilization"
+  def detailed_stats do
+    GenServer.call(__MODULE__, :detailed_stats)
+  end
+
+  @doc "Evict the lowest-value traces from the warm tier"
+  def evict_lowest(count) do
+    GenServer.call(__MODULE__, {:evict_lowest, count}, 60_000)
+  end
+
+  @doc "Store an embedding vector for a trace."
+  def store_embedding(trace_id, vector) when is_list(vector) do
+    GenServer.cast(__MODULE__, {:store_embedding, trace_id, vector})
+  end
+
+  @doc "Search traces by embedding similarity. Returns top-K with content."
+  def search_by_embedding(query_vector, opts \\ []) do
+    GenServer.call(__MODULE__, {:search_by_embedding, query_vector, opts}, 30_000)
+  end
+
+  @doc "Get the number of embedded traces."
+  def embedding_count do
+    try do
+      :ets.info(@embedding_table, :size) || 0
+    rescue
+      _ -> 0
+    end
+  end
+
   # Server Implementation
 
   @impl true
   def init(_opts) do
     # Initialize hot tier (ETS)
     :ets.new(@hot_table, [:named_table, :set, :public, read_concurrency: true])
+
+    # Initialize embedding index
+    :ets.new(@embedding_table, [:named_table, :set, :public, read_concurrency: true])
+    {:ok, _} = :dets.open_file(@embedding_file, [type: :set])
+    load_embeddings_from_dets()
 
     # Initialize warm tier (DETS)
     warm_dir = Path.dirname(to_string(@warm_file))
@@ -147,6 +191,11 @@ defmodule Kudzu.Storage do
     # Write to both hot (fast reads) and warm (durable) tiers
     :ets.insert(@hot_table, {trace.id, record})
     :dets.insert(@warm_file, {trace.id, record})
+
+    # Async: embed traces with textual content (if not already embedded)
+    if :ets.lookup(@embedding_table, trace.id) == [] do
+      maybe_async_embed(trace)
+    end
 
     {:reply, :ok, state}
   end
@@ -233,6 +282,63 @@ defmodule Kudzu.Storage do
     # Update state if mnesia status changed
     new_state = %{state | mnesia_ready: mnesia_ready}
     {:reply, stats, new_state}
+  end
+
+  @impl true
+  def handle_call(:detailed_stats, _from, state) do
+    hot_count = :ets.info(@hot_table, :size)
+    hot_words = :ets.info(@hot_table, :memory)
+    wordsize = :erlang.system_info(:wordsize)
+    hot_bytes = hot_words * wordsize
+
+    warm_bytes =
+      case File.stat(@warm_path) do
+        {:ok, %{size: size}} -> size
+        _ -> 0
+      end
+
+    total_bytes = hot_bytes + warm_bytes
+
+    utilization =
+      if @max_total_bytes > 0 do
+        Float.round(total_bytes / @max_total_bytes * 100, 1)
+      else
+        0.0
+      end
+
+    stats = %{
+      hot_count: hot_count,
+      hot_bytes: hot_bytes,
+      warm_bytes: warm_bytes,
+      total_bytes: total_bytes,
+      utilization: utilization,
+      max_hot_entries: @max_hot_entries,
+      max_warm_bytes: @max_warm_bytes,
+      max_total_bytes: @max_total_bytes
+    }
+
+    {:reply, stats, state}
+  end
+
+  @impl true
+  def handle_call({:evict_lowest, count}, _from, state) do
+    evicted = do_evict_lowest(count)
+    {:reply, evicted, state}
+  end
+
+  @impl true
+  def handle_cast({:store_embedding, trace_id, vector}, state) do
+    :ets.insert(@embedding_table, {trace_id, vector})
+    :dets.insert(@embedding_file, {trace_id, vector})
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_call({:search_by_embedding, query_vector, opts}, _from, state) do
+    limit = Keyword.get(opts, :limit, 10)
+    threshold = Keyword.get(opts, :threshold, 0.3)
+    results = do_embedding_search(query_vector, limit, threshold)
+    {:reply, results, state}
   end
 
   @impl true
@@ -385,6 +491,42 @@ defmodule Kudzu.Storage do
   end
   defp query_mnesia_by_purpose(_purpose, _limit), do: []
 
+  defp do_evict_lowest(count) do
+    now = DateTime.utc_now()
+
+    # Collect all warm traces with their eviction scores
+    scored =
+      :dets.foldl(fn {id, record}, acc ->
+        hours_since_access =
+          case record.last_accessed do
+            %DateTime{} = last ->
+              DateTime.diff(now, last, :second) / 3600.0
+            _ ->
+              # If last_accessed is not a DateTime, treat as very stale
+              720.0
+          end
+
+        access_count = record.access_count || 0
+        score = access_count / (1 + hours_since_access)
+        [{id, score} | acc]
+      end, [], @warm_file)
+
+    # Sort by score ascending (lowest = least valuable = evict first)
+    to_evict =
+      scored
+      |> Enum.sort_by(fn {_id, score} -> score end)
+      |> Enum.take(count)
+
+    # Delete the selected traces
+    Enum.each(to_evict, fn {id, _score} ->
+      :dets.delete(@warm_file, id)
+    end)
+
+    deleted = length(to_evict)
+    Logger.info("[Storage] Evicted #{deleted} lowest-value traces from warm tier")
+    deleted
+  end
+
   defp retrieve_cold(trace_id) do
     try do
       case :mnesia.transaction(fn -> :mnesia.read({:kudzu_traces, trace_id}) end) do
@@ -411,4 +553,88 @@ defmodule Kudzu.Storage do
       _ -> :not_found
     end
   end
+
+  # --- Embedding helpers ---
+
+  defp load_embeddings_from_dets do
+    count = :dets.foldl(fn {trace_id, vector}, acc ->
+      :ets.insert(@embedding_table, {trace_id, vector})
+      acc + 1
+    end, 0, @embedding_file)
+
+    if count > 0 do
+      Logger.info("[Storage] Loaded #{count} embeddings from DETS")
+    end
+  end
+
+  defp maybe_async_embed(trace) do
+    text = extract_text_content(trace)
+    if text && String.length(text) > 10 do
+      trace_id = trace.id
+      Task.start(fn ->
+        # Brief delay to avoid flooding Ollama during bulk operations
+        Process.sleep(100)
+        case Kudzu.Embedding.embed(text, timeout: 15_000) do
+          {:ok, vector} ->
+            store_embedding(trace_id, vector)
+          {:error, _reason} ->
+            :ok  # Silent fail — embedding will happen during backfill
+        end
+      end)
+    end
+  end
+
+  defp extract_text_content(trace) do
+    hint = trace.reconstruction_hint || %{}
+    cond do
+      is_binary(Map.get(hint, "content")) -> Map.get(hint, "content")
+      is_binary(Map.get(hint, :content)) -> Map.get(hint, :content)
+      is_binary(Map.get(hint, "text")) -> Map.get(hint, "text")
+      is_binary(Map.get(hint, :text)) -> Map.get(hint, :text)
+      is_binary(Map.get(hint, "summary")) -> Map.get(hint, "summary")
+      is_binary(Map.get(hint, :summary)) -> Map.get(hint, :summary)
+      is_binary(Map.get(hint, "message")) -> Map.get(hint, "message")
+      is_binary(Map.get(hint, :message)) -> Map.get(hint, :message)
+      is_binary(Map.get(hint, "query")) -> Map.get(hint, "query")
+      is_binary(Map.get(hint, :query)) -> Map.get(hint, :query)
+      is_map(hint) ->
+        subj = Map.get(hint, "subject") || Map.get(hint, :subject)
+        rel = Map.get(hint, "relation") || Map.get(hint, :relation)
+        obj = Map.get(hint, "object") || Map.get(hint, :object)
+        if subj && rel && obj, do: "#{subj} #{rel} #{obj}", else: nil
+      true -> nil
+    end
+  end
+
+  defp do_embedding_search(query_vector, limit, threshold) do
+    scored =
+      :ets.foldl(fn {trace_id, vector}, acc ->
+        sim = Kudzu.Embedding.cosine_similarity(query_vector, vector)
+        if sim >= threshold do
+          [{trace_id, sim} | acc]
+        else
+          acc
+        end
+      end, [], @embedding_table)
+
+    top_ids =
+      scored
+      |> Enum.sort_by(fn {_id, sim} -> sim end, :desc)
+      |> Enum.take(limit)
+
+    Enum.map(top_ids, fn {trace_id, similarity} ->
+      record = case :ets.lookup(@hot_table, trace_id) do
+        [{^trace_id, rec}] -> rec
+        [] ->
+          case :dets.lookup(@warm_file, trace_id) do
+            [{^trace_id, rec}] -> rec
+            [] -> nil
+          end
+      end
+
+      %{trace_id: trace_id, similarity: similarity, record: record}
+    end)
+    |> Enum.reject(fn %{record: r} -> is_nil(r) end)
+  end
+
 end

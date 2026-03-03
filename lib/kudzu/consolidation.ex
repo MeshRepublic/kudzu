@@ -91,9 +91,27 @@ defmodule Kudzu.Consolidation do
   @doc """
   Semantic query: encode a natural language query and probe memory.
   """
-  @spec semantic_query(String.t(), float()) :: [{atom(), float()}]
+  @doc """
+  Search traces by semantic similarity using Ollama embeddings.
+  Returns list of %{trace_id, similarity, record} maps with actual content.
+  Falls back to HRR-based search if embeddings are unavailable.
+
+  This is a direct function (not GenServer call) to avoid blocking.
+  """
+  @spec semantic_query(String.t(), float()) :: [map()]
   def semantic_query(query_text, threshold \\ 0.1) do
-    GenServer.call(__MODULE__, {:semantic_query, query_text, threshold})
+    case Kudzu.Embedding.embed(query_text) do
+      {:ok, query_vector} ->
+        Kudzu.Storage.search_by_embedding(query_vector, limit: 10, threshold: threshold)
+
+      {:error, _reason} ->
+        # Fallback: use GenServer-based HRR search
+        try do
+          GenServer.call(__MODULE__, {:semantic_query_hrr, query_text, threshold}, 10_000)
+        catch
+          :exit, _ -> []
+        end
+    end
   end
 
   # Server Callbacks
@@ -184,18 +202,22 @@ defmodule Kudzu.Consolidation do
   end
 
   @impl true
-  def handle_call({:semantic_query, query_text, threshold}, _from, state) do
+  def handle_call({:semantic_query_hrr, query_text, threshold}, _from, state) do
+    # HRR fallback (purpose-level only)
     query_vec = Encoder.encode_query(query_text, state.hrr_codebook, state.encoder_state)
 
-    matches = state.consolidated_vectors
+    results = state.consolidated_vectors
     |> Enum.map(fn {purpose, vec} ->
       similarity = HRR.similarity(query_vec, vec)
       {purpose, similarity}
     end)
     |> Enum.filter(fn {_purpose, sim} -> sim >= threshold end)
     |> Enum.sort_by(fn {_purpose, sim} -> sim end, :desc)
+    |> Enum.map(fn {purpose, sim} ->
+      %{trace_id: nil, similarity: sim, record: %{purpose: purpose}}
+    end)
 
-    {:reply, matches, state}
+    {:reply, results, state}
   end
 
   @impl true
