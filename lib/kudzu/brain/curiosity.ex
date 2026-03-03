@@ -6,11 +6,15 @@ defmodule Kudzu.Brain.Curiosity do
   1. Desire-driven — desires imply knowledge gaps
   2. Gap-driven — working memory dead ends become questions
   3. Salience-driven — unexplored high-salience traces
+
+  Enhanced with `generate_research_questions/4` for web-search-effective
+  question generation with deduplication and rephrasing.
   """
 
   alias Kudzu.Brain.WorkingMemory
 
   @max_questions 5
+  @max_research_questions 3
 
   @desire_themes %{
     "health" => [
@@ -40,6 +44,59 @@ defmodule Kudzu.Brain.Curiosity do
     ]
   }
 
+  # Maps silo domain names to searchable keywords for rephrasing
+  @domain_keywords %{
+    "erlang" => "Erlang OTP",
+    "elixir" => "Elixir language",
+    "beam" => "BEAM virtual machine",
+    "otp" => "Erlang OTP",
+    "distributed" => "distributed systems",
+    "networking" => "network protocols",
+    "linux" => "Linux system administration",
+    "health" => "system health monitoring",
+    "fault_tolerance" => "fault tolerance recovery",
+    "patterns" => "software design patterns",
+    "learning" => "machine learning patterns",
+    "self" => "self-monitoring autonomous systems",
+    "security" => "system security hardening",
+    "storage" => "data storage persistence",
+    "web" => "web technologies"
+  }
+
+  # Question word prefixes to strip during rephrasing
+  @question_prefixes [
+    "what is the ",
+    "what is ",
+    "what are the ",
+    "what are ",
+    "what does ",
+    "what do ",
+    "how does ",
+    "how do ",
+    "how can i ",
+    "how can ",
+    "how should i ",
+    "how should ",
+    "how to ",
+    "why is the ",
+    "why is ",
+    "why are ",
+    "why does ",
+    "why do ",
+    "where is ",
+    "where are ",
+    "when does ",
+    "when do ",
+    "which ",
+    "can i ",
+    "can ",
+    "should i ",
+    "should "
+  ]
+
+  @doc """
+  Generate up to 5 raw curiosity questions from desires, gaps, and salience.
+  """
   def generate(desires, %WorkingMemory{} = wm, silo_domains) do
     desire_qs = generate_from_desires(desires, silo_domains)
     gap_qs = generate_from_gaps(wm)
@@ -49,6 +106,54 @@ defmodule Kudzu.Brain.Curiosity do
     |> Enum.uniq()
     |> Enum.take(@max_questions)
   end
+
+  @doc """
+  Enhanced question generation for web research.
+
+  Takes an additional `researched_topics` MapSet to avoid repeating research.
+  Returns up to 3 questions rephrased for web search effectiveness.
+
+  ## Parameters
+    - `desires` - list of desire strings
+    - `wm` - WorkingMemory struct
+    - `silo_domains` - list of silo domain name strings
+    - `researched_topics` - MapSet of already-researched normalized topic strings
+  """
+  def generate_research_questions(desires, %WorkingMemory{} = wm, silo_domains, %MapSet{} = researched_topics) do
+    desires
+    |> generate(wm, silo_domains)
+    |> filter_researched(researched_topics)
+    |> Enum.map(&rephrase_for_search(&1, silo_domains))
+    |> Enum.uniq()
+    |> Enum.take(@max_research_questions)
+  end
+
+  @doc """
+  Normalize a topic string for deduplication.
+  Downcases, strips punctuation, and trims whitespace.
+  """
+  def normalize_topic(topic) do
+    topic
+    |> String.downcase()
+    |> String.replace(~r/[^\w\s]/u, "")
+    |> String.trim()
+    |> String.replace(~r/\s+/, " ")
+  end
+
+  @doc """
+  Rephrase a question into a web-search-effective query.
+
+  Strips question words, removes trailing question marks, and enriches
+  with contextual keywords based on active silo domains.
+  """
+  def rephrase_for_search(question, silo_domains) do
+    question
+    |> strip_question_form()
+    |> enrich_with_domain_keywords(silo_domains)
+    |> String.trim()
+  end
+
+  # --- Existing generators (unchanged) ---
 
   def generate_from_desires(desires, silo_domains) do
     desires
@@ -97,6 +202,58 @@ defmodule Kudzu.Brain.Curiosity do
       _ -> []
     catch
       :exit, _ -> []
+    end
+  end
+
+  # --- Private helpers ---
+
+  defp filter_researched(questions, researched_topics) do
+    Enum.reject(questions, fn q ->
+      normalized = normalize_topic(q)
+      MapSet.member?(researched_topics, normalized)
+    end)
+  end
+
+  defp strip_question_form(question) do
+    # Remove trailing question mark
+    stripped = String.replace(question, ~r/\?\s*$/, "")
+
+    # Remove leading question words (case-insensitive)
+    lower = String.downcase(stripped)
+
+    prefix_match =
+      @question_prefixes
+      |> Enum.find(fn prefix -> String.starts_with?(lower, prefix) end)
+
+    case prefix_match do
+      nil ->
+        stripped
+
+      prefix ->
+        # Remove the prefix, preserving original casing of the remainder
+        prefix_len = String.length(prefix)
+        String.slice(stripped, prefix_len..-1//1)
+    end
+  end
+
+  defp enrich_with_domain_keywords(query, silo_domains) do
+    # Find relevant domain keywords that are not already in the query
+    query_lower = String.downcase(query)
+
+    relevant_keywords =
+      silo_domains
+      |> Enum.map(fn domain ->
+        domain_lower = String.downcase(domain)
+        Map.get(@domain_keywords, domain_lower)
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.reject(fn kw -> String.contains?(query_lower, String.downcase(kw)) end)
+      # Only add the single most relevant keyword to keep queries focused
+      |> Enum.take(1)
+
+    case relevant_keywords do
+      [] -> query
+      [keyword] -> "#{query} #{keyword}"
     end
   end
 

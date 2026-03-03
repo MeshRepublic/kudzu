@@ -3,6 +3,13 @@ import Config
 # Telemetry console logging (set to true for debug output)
 config :kudzu, telemetry_console: false
 
+# HRR backend: Kudzu.HRR.NxBackend (Nx tensors) or nil (legacy pure-Elixir)
+config :kudzu, :hrr_backend, Kudzu.HRR.NxBackend
+
+# Use EXLA (XLA GPU/CPU) as the default Nx backend
+# Routes all Nx tensor operations through XLA — uses CUDA GPU when available
+config :nx, :default_backend, EXLA.Backend
+
 # Ollama LLM configuration
 # Can be overridden per-hologram with :ollama_url option
 config :kudzu,
@@ -88,3 +95,6 @@ end
 # Example distributed configuration (uncomment and modify for your setup)
 # config :kudzu,
 #   ollama_url: "http://<tailscale-ip>:11434"  # Tailscale IP of Ollama server
+
+# EXLA default defn compiler — routes defn functions through XLA
+config :nx, :default_defn_options, [compiler: EXLA]
