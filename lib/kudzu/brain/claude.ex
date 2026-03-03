@@ -220,6 +220,33 @@ defmodule Kudzu.Brain.Claude do
   end
 
   @doc """
+  Makes a simple single-turn API call to Claude (no tools, no streaming).
+
+  Returns `{:ok, response_text, usage}` on success or `{:error, reason}`.
+
+  ## Options
+
+    * `:model` — model ID (default "claude-sonnet-4-20250514")
+    * `:max_tokens` — max response tokens (default 4096)
+  """
+  @spec simple_message(String.t(), String.t(), keyword()) ::
+          {:ok, String.t(), map()} | {:error, term()}
+  def simple_message(api_key, prompt, opts \\ []) do
+    model = Keyword.get(opts, :model, "claude-sonnet-4-20250514")
+    max_tokens = Keyword.get(opts, :max_tokens, @default_max_tokens)
+
+    messages = [%{role: "user", content: prompt}]
+
+    case call(api_key, messages, [], model: model, max_tokens: max_tokens) do
+      {:ok, %Response{text: text, usage: usage}} ->
+        {:ok, text, usage}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Makes a streaming HTTP POST to the Claude Messages API.
 
   Like `call/4` but sets `"stream": true` in the request body and uses

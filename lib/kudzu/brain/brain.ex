@@ -1,6 +1,6 @@
 defmodule Kudzu.Brain do
   @moduledoc """
-  Brain GenServer — desire-driven wake cycles with thinking-layer reasoning.
+  Brain GenServer — always-awake autonomous learning with tiered reasoning.
 
   The Brain is the autonomous executive layer of Kudzu. It wakes periodically,
   runs health checks (the "pre-check gate"), and when anomalies are detected,
@@ -26,9 +26,11 @@ defmodule Kudzu.Brain do
   The Brain supports interactive chat via `chat/2`. Messages flow through:
 
   1. Tier 1 — Reflexes check for known patterns
-  2. Thinking Layer — Thought process with working memory priming
-  3. Tier 3 — Claude API (if thought didn't fully resolve)
-  4. Distiller extracts knowledge from Claude responses
+  2. Tier 2 — Semantic Recall from stored traces (free)
+  3. Tier 3 — Web Search for external knowledge (free)
+  4. Tier 4 — Silo Inference via Thought reasoning (free)
+  5. Tier 5 — Claude API as absolute last resort (paid)
+  6. Distiller extracts knowledge from Claude responses
 
   ## Desires
 
@@ -48,6 +50,7 @@ defmodule Kudzu.Brain do
   alias Kudzu.Brain.Thought
   alias Kudzu.Brain.Curiosity
   alias Kudzu.Brain.Distiller
+  alias Kudzu.Brain.WebLearner
 
   @initial_desires [
     "Maintain Kudzu system health and recover from failures",
@@ -62,6 +65,27 @@ defmodule Kudzu.Brain do
   @retry_delay 10_000
   @consolidation_staleness_ms 1_200_000
 
+  # Activity loop intervals (always-awake mode)
+  @activity_tick 10_000          # Check for overdue activities every 10s
+  @health_interval 60_000        # Health checks: every 1 minute
+  @curiosity_interval 120_000    # Curiosity exploration: every 2 minutes
+  @web_learning_interval 300_000 # Web research: every 5 minutes
+  @distillation_interval 600_000 # Knowledge distillation: every 10 minutes
+  @storage_interval 1_800_000    # Storage monitoring: every 30 minutes
+
+  @curriculum_prompt """
+  You are building a learning curriculum. Generate a structured list of topics
+  someone must master to become an expert in: %TOPIC%
+
+  Return ONLY a valid JSON array of strings, ordered from foundational to advanced.
+  Include 30-80 topics depending on domain breadth (30 for narrow topics, up to 80
+  for broad domains). Each topic should be specific enough to research in a single
+  web search session.
+
+  Example format:
+  ["Topic one", "Topic two", "Topic three"]
+  """
+
   defstruct [
     :hologram_id,
     :hologram_pid,
@@ -69,10 +93,18 @@ defmodule Kudzu.Brain do
     :budget,
     :working_memory,
     desires: @initial_desires,
-    status: :sleeping,
+    status: :active,
     cycle_interval: @default_cycle_interval,
     cycle_count: 0,
-    config: %{}
+    config: %{},
+    # Activity tracking (always-awake mode)
+    last_health_check: nil,
+    last_curiosity: nil,
+    last_web_learning: nil,
+    last_distillation: nil,
+    last_storage_check: nil,
+    researched_topics: MapSet.new(),
+    learning_goals: []
   ]
 
   # ── Client API ──────────────────────────────────────────────────────
@@ -253,7 +285,7 @@ defmodule Kudzu.Brain do
         end
         new_state = %{state | hologram_pid: pid, hologram_id: id}
         new_state = %{new_state | working_memory: WorkingMemory.new()}
-        schedule_wake_cycle(new_state.cycle_interval)
+        schedule_activity_cycle()
         {:noreply, new_state}
 
       {:error, reason} ->
@@ -266,38 +298,79 @@ defmodule Kudzu.Brain do
     end
   end
 
-  def handle_info(:wake_cycle, %{hologram_id: nil} = state) do
-    Logger.debug("[Brain] Skipping wake cycle — no hologram attached")
-    schedule_wake_cycle(state.cycle_interval)
+  # Backward compatibility: :wake_cycle forwards to :activity_cycle
+  def handle_info(:wake_cycle, state) do
+    send(self(), :activity_cycle)
     {:noreply, state}
   end
 
-  def handle_info(:wake_cycle, state) do
-    new_count = state.cycle_count + 1
-    Logger.debug("[Brain] Wake cycle ##{new_count}")
+  def handle_info(:activity_cycle, %{hologram_id: nil} = state) do
+    Logger.debug("[Brain] Skipping activity cycle — no hologram attached")
+    schedule_activity_cycle()
+    {:noreply, state}
+  end
 
-    state = %{state | cycle_count: new_count, status: :reasoning}
+  def handle_info(:activity_cycle, state) do
+    now = System.monotonic_time(:millisecond)
+    state = %{state | status: :active}
 
-    state = case pre_check(state) do
-      :sleep ->
-        Logger.debug("[Brain] Pre-check nominal — exploring curiosity")
-        # No anomalies — pursue curiosity instead
-        maybe_explore_curiosity(state)
+    # Run the most overdue activity (wrapped in trap_exit + try/catch for resilience)
+    # Trap exits temporarily so linked Task.async crashes don't kill the Brain
+    old_trap = Process.flag(:trap_exit, true)
+    state =
+      try do
+        cond do
+          overdue?(state.last_health_check, @health_interval, now) ->
+            Logger.debug("[Brain] Activity: health check")
+            run_health_check(%{state | last_health_check: now})
 
-      {:wake, anomalies} ->
-        Logger.info("[Brain] Cycle #{new_count}: #{length(anomalies)} anomalies")
-        reason(state, anomalies)
-    end
+          overdue?(state.last_distillation, @distillation_interval, now) ->
+            Logger.debug("[Brain] Activity: distillation")
+            run_distillation_cycle(%{state | last_distillation: now})
 
-    # Decay working memory at end of each cycle
+          overdue?(state.last_storage_check, @storage_interval, now) ->
+            Logger.debug("[Brain] Activity: storage check")
+            run_storage_check(%{state | last_storage_check: now})
+
+          overdue?(state.last_web_learning, @web_learning_interval, now) ->
+            Logger.debug("[Brain] Activity: web learning")
+            run_web_learning(%{state | last_web_learning: now})
+
+          overdue?(state.last_curiosity, @curiosity_interval, now) ->
+            Logger.debug("[Brain] Activity: curiosity")
+            run_curiosity(%{state | last_curiosity: now})
+
+          true ->
+            state  # Nothing overdue — idle tick
+        end
+      catch
+        kind, reason ->
+          Logger.warning("[Brain] Activity crashed: #{inspect(kind)}: #{inspect(reason)}")
+          state  # Return unchanged state on crash
+      after
+        Process.flag(:trap_exit, old_trap)
+        # Flush any trapped EXIT messages so they don't pile up
+        receive do
+          {:EXIT, _pid, _reason} -> :ok
+        after
+          0 -> :ok
+        end
+      end
+
+    # Decay working memory periodically
     state = if state.working_memory do
-      %{state | working_memory: WorkingMemory.decay(state.working_memory, 0.05)}
+      %{state | working_memory: WorkingMemory.decay(state.working_memory, 0.01)}
     else
       state
     end
 
-    schedule_wake_cycle(state.cycle_interval)
-    {:noreply, %{state | status: :sleeping}}
+    schedule_activity_cycle()
+    {:noreply, state}
+  end
+
+  def handle_info({:web_learning_complete, question}, state) do
+    normalized = question |> String.downcase() |> String.replace(~r/[^\w\s]/, "") |> String.trim()
+    {:noreply, %{state | researched_topics: MapSet.put(state.researched_topics, normalized)}}
   end
 
   def handle_info({:thought_result, thought_id, result}, state) do
@@ -521,15 +594,396 @@ defmodule Kudzu.Brain do
         {response, 1, [], 0.0, state}
 
       {:escalate, _alerts} ->
-        # Escalation from chat — fall through to thinking layer
-        chat_think_then_claude(state, message)
+        # Escalation from chat — fall through to directive check then escalation
+        handle_directive_or_escalate(state, message)
 
       :pass ->
-        # No reflex match — try thinking layer
-        chat_think_then_claude(state, message)
+        # No reflex match — try directive check then escalation
+        handle_directive_or_escalate(state, message)
     end
   end
 
+  # ── Directive Parsing (Learn X, progress) ───────────────────────────
+
+  defp handle_directive_or_escalate(state, message) do
+    case parse_directive(message) do
+      {:learn, topic} ->
+        start_learning_goal(state, topic)
+
+      :progress ->
+        report_learning_progress(state)
+
+      :not_directive ->
+        chat_escalate(state, message)
+    end
+  end
+
+  defp parse_directive(message) do
+    trimmed = String.trim(message)
+    cond do
+      Regex.match?(~r/^learn\s+/i, trimmed) ->
+        topic = Regex.replace(~r/^learn\s+/i, trimmed, "") |> String.trim() |> String.trim(".")
+        if String.length(topic) > 2, do: {:learn, topic}, else: :not_directive
+
+      Regex.match?(~r/^(learning\s+)?progress\??$/i, trimmed) ->
+        :progress
+
+      Regex.match?(~r/^what have you learned/i, trimmed) ->
+        :progress
+
+      Regex.match?(~r/^learning\s+goals?\??$/i, trimmed) ->
+        :progress
+
+      true ->
+        :not_directive
+    end
+  end
+
+  defp report_learning_progress(state) do
+    alias Kudzu.Brain.LearningGoal
+
+    case state.learning_goals do
+      [] ->
+        {"No active learning goals. Say 'Learn <topic>' to start one.", :reflex, [], 0.0, state}
+
+      goals ->
+        active = Enum.find(goals, &(&1.status == :active))
+        queued = Enum.filter(goals, &(&1.status == :queued))
+        completed = Enum.filter(goals, &(&1.status == :complete))
+
+        parts = []
+
+        parts = if active do
+          [LearningGoal.progress_report(active) | parts]
+        else
+          ["No active learning goal." | parts]
+        end
+
+        parts = if queued != [] do
+          queued_list = Enum.map_join(queued, "\n", &("  - #{&1.topic}"))
+          ["Queued:\n#{queued_list}" | parts]
+        else
+          parts
+        end
+
+        parts = if completed != [] do
+          done_list = Enum.map_join(completed, "\n", &("  - #{&1.topic} (#{&1.completed_count} topics)"))
+          ["Completed goals:\n#{done_list}" | parts]
+        else
+          parts
+        end
+
+        response = parts |> Enum.reverse() |> Enum.join("\n\n")
+        {response, :reflex, [], 0.0, state}
+    end
+  end
+
+  defp start_learning_goal(state, topic) do
+    alias Kudzu.Brain.LearningGoal
+
+    normalized = String.downcase(topic)
+    existing = Enum.find(state.learning_goals, fn g ->
+      g.status in [:active, :queued] and String.downcase(g.topic) == normalized
+    end)
+
+    if existing do
+      {"Already learning '#{topic}'. Say 'progress' to check status.", :reflex, [], 0.0, state}
+    else
+      Logger.info("[Brain] Generating curriculum for: #{topic}")
+
+      case generate_curriculum(state, topic) do
+        {:ok, items, cost} ->
+          goal = LearningGoal.new(topic, items)
+
+          goal = if Enum.any?(state.learning_goals, &(&1.status == :active)) do
+            %{goal | status: :queued}
+          else
+            goal
+          end
+
+          goals = state.learning_goals ++ [goal]
+          state = %{state | learning_goals: goals}
+
+          record_trace(state, :memory, %{
+            source: "learning_goal_created",
+            topic: topic,
+            curriculum_size: length(items),
+            status: goal.status,
+            goal_id: goal.id
+          })
+
+          status_word = if goal.status == :active, do: "Started", else: "Queued"
+          response = "#{status_word} learning '#{topic}' — #{length(items)} topics to cover.\n\n" <>
+            "First 5 topics:\n" <>
+            (items |> Enum.take(5) |> Enum.map_join("\n", &("  - #{&1}")))
+
+          {response, :reflex, [], cost, state}
+
+        {:error, reason} ->
+          {"Failed to generate curriculum: #{inspect(reason)}", :reflex, [], 0.0, state}
+      end
+    end
+  end
+
+  defp generate_curriculum(state, topic) do
+    api_key = state.config[:api_key]
+
+    if is_nil(api_key) or api_key == "" do
+      {:error, :no_api_key}
+    else
+      prompt = String.replace(@curriculum_prompt, "%TOPIC%", topic)
+
+      case Kudzu.Brain.Claude.simple_message(api_key, prompt) do
+        {:ok, response_text, usage} ->
+          cost = Budget.calculate_cost(usage)
+          case parse_curriculum_json(response_text) do
+            {:ok, items} -> {:ok, items, cost}
+            {:error, _} -> {:error, :json_parse_failed}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  defp parse_curriculum_json(text) do
+    cleaned = text
+    |> String.replace(~r/```json\s*/m, "")
+    |> String.replace(~r/```\s*/m, "")
+    |> String.trim()
+
+    case Jason.decode(cleaned) do
+      {:ok, items} when is_list(items) ->
+        items = items
+        |> Enum.filter(&is_binary/1)
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+
+        if length(items) > 0, do: {:ok, items}, else: {:error, :empty}
+
+      _ ->
+        lines = cleaned
+        |> String.split("\n", trim: true)
+        |> Enum.map(fn line ->
+          line
+          |> String.replace(~r/^\d+[\.\)]\s*/, "")
+          |> String.replace(~r/^[-*]\s*/, "")
+          |> String.trim()
+          |> String.trim("\"")
+        end)
+        |> Enum.reject(&(&1 == ""))
+
+        if length(lines) >= 5, do: {:ok, lines}, else: {:error, :too_few_items}
+    end
+  end
+
+  # ── Tiered Query Escalation Pipeline (Phase 5) ──────────────────────
+  #
+  # Tier 1: Semantic Recall  — search stored traces (free)
+  # Tier 2: Silo Inference   — Thought reasoning chain (free, instant)
+  # Tier 3: Web Search       — research on the web (free, slow)
+  # Tier 4: Claude API       — LLM reasoning (paid, last resort)
+  #
+  # Each tier enriches context for the next. Claude only fires if all
+  # free tiers fail to produce a confident answer.
+
+  # Tier 1: Semantic Recall  — search stored traces (free)
+  # Tier 2: Silo Inference   — Thought reasoning chain (free, instant)
+  # Tier 3: Web Search       — research on the web (free, slow)
+  # Tier 4: Claude API       — LLM reasoning (paid, last resort)
+  #
+  # Each tier enriches context for the next. Claude only fires if all
+  # free tiers fail to produce a confident answer.
+
+  defp chat_escalate(state, message) do
+    # Accumulate context from each tier for potential Claude enrichment
+    context = %{recall_results: [], web_findings: nil, thought_result: nil}
+
+    # ── Tier 1: Semantic Recall (free) ──
+    Logger.info("[Brain] Escalation Tier 1: Semantic Recall")
+    recall_results = try do
+      Kudzu.Consolidation.semantic_query(message, 0.0)
+    catch
+      _, _ -> []
+    end
+
+    top_score = case recall_results do
+      [{_purpose, score} | _] -> score
+      _ -> 0.0
+    end
+
+    context = %{context | recall_results: recall_results}
+
+    if top_score > 0.6 do
+      # Strong recall match — synthesize response from stored knowledge
+      response = format_recall_response(message, recall_results)
+
+      record_trace(state, :thought, %{
+        source: "chat_escalation",
+        tier: "recall",
+        top_score: top_score,
+        matches: length(recall_results),
+        message: String.slice(message, 0, 200)
+      })
+
+      Logger.info("[Brain] Escalation resolved at Tier 1 (recall, score=#{Float.round(top_score, 3)})")
+      {response, :recall, [], 0.0, state}
+    else
+      # ── Tier 2: Silo Inference (free, instant) ──
+      Logger.info("[Brain] Escalation Tier 2: Silo Inference (Thought)")
+      priming = if state.working_memory do
+        WorkingMemory.get_priming_concepts(state.working_memory, 5)
+      else
+        []
+      end
+
+      thought_result = Thought.run(message,
+        monarch_pid: self(),
+        timeout: 10_000,
+        priming: priming
+      )
+
+      state = integrate_thought(state, thought_result)
+      context = %{context | thought_result: thought_result}
+
+      if thought_result.resolution == :found and thought_result.confidence > 0.5 do
+        response = format_thought_result(message, thought_result)
+
+        record_trace(state, :thought, %{
+          source: "chat_escalation",
+          tier: "synthesis",
+          resolution: thought_result.resolution,
+          confidence: thought_result.confidence,
+          chain_length: length(thought_result.chain),
+          message: String.slice(message, 0, 200)
+        })
+
+        Logger.info("[Brain] Escalation resolved at Tier 2 (synthesis, confidence=#{Float.round(thought_result.confidence, 3)})")
+        {response, :synthesis, [], 0.0, state}
+      else
+        # ── Tier 3: Web Search (free, slow) ──
+        Logger.info("[Brain] Escalation Tier 3: Web Search")
+        web_result = try do
+          WebLearner.research(message)
+        catch
+          _, _ -> {:error, :crashed}
+        end
+
+        context = case web_result do
+          {:ok, findings} -> %{context | web_findings: findings}
+          _ -> context
+        end
+
+        web_found = match?({:ok, %{chains_stored: n}} when n > 0, web_result)
+
+        if web_found do
+          {:ok, findings} = web_result
+          response = format_web_response(message, findings)
+
+          record_trace(state, :thought, %{
+            source: "chat_escalation",
+            tier: "web",
+            pages_read: findings.pages_read,
+            chains_stored: findings.chains_stored,
+            message: String.slice(message, 0, 200)
+          })
+
+          Logger.info("[Brain] Escalation resolved at Tier 3 (web, #{findings.chains_stored} chains)")
+          {response, :web, [], 0.0, state}
+        else
+          # ── Tier 4: Claude API (paid, last resort) ──
+          Logger.info("[Brain] Escalation Tier 4: Claude API (all free tiers exhausted)")
+          enhanced_message = build_enriched_message(message, context)
+
+          record_trace(state, :thought, %{
+            source: "chat_escalation",
+            tier: "claude",
+            reason: "free_tiers_exhausted",
+            recall_top_score: top_score,
+            thought_resolution: thought_result.resolution,
+            thought_confidence: thought_result.confidence,
+            message: String.slice(message, 0, 200)
+          })
+
+          {response_text, tier, tool_calls, cost, new_state} =
+            chat_with_claude(state, enhanced_message)
+
+          # Distill knowledge from Claude's response
+          new_state = if tier == 3 and response_text != "" do
+            distill_claude_response(new_state, response_text)
+          else
+            new_state
+          end
+
+          {response_text, tier, tool_calls, cost, new_state}
+        end
+      end
+    end
+  end
+
+  defp format_recall_response(_message, recall_results) do
+    matches = recall_results
+    |> Enum.take(5)
+    |> Enum.map(fn {purpose, similarity} ->
+      "- #{purpose} (relevance: #{Float.round(similarity, 3)})"
+    end)
+    |> Enum.join("\n")
+
+    "Based on my stored knowledge:\n\n#{matches}\n\n" <>
+      "I found relevant information in my memory traces. " <>
+      "The strongest match was in the #{elem(List.first(recall_results), 0)} domain."
+  end
+
+  defp format_web_response(_message, findings) do
+    "I researched this on the web and found relevant information.\n\n" <>
+      "Pages read: #{findings.pages_read}\n" <>
+      "Knowledge chains extracted: #{findings.chains_stored}\n\n" <>
+      "The findings have been stored in my knowledge base for future reference."
+  end
+
+  defp build_enriched_message(message, context) do
+    parts = [message]
+
+    # Add recall context
+    parts = if context.recall_results != [] do
+      recall_summary = context.recall_results
+      |> Enum.take(5)
+      |> Enum.map(fn {purpose, sim} -> "#{purpose} (#{Float.round(sim, 3)})" end)
+      |> Enum.join(", ")
+
+      parts ++ ["\n\n[Memory recall found related purposes: #{recall_summary}]"]
+    else
+      parts
+    end
+
+    # Add web findings context
+    parts = case context.web_findings do
+      %{pages_read: pages, chains_stored: chains} when chains > 0 ->
+        parts ++ ["\n[Web research: #{pages} pages read, #{chains} knowledge chains extracted]"]
+      _ -> parts
+    end
+
+    # Add thought context
+    parts = case context.thought_result do
+      %Thought.Result{chain: chain} when chain != [] ->
+        chain_summary = chain
+        |> Enum.map(fn
+          %{concept: c, source: src} -> "#{c} (from #{src})"
+          {concept, _score, source} -> "#{concept} (from #{source})"
+          _ -> ""
+        end)
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.join(", ")
+
+        parts ++ ["\n[Silo reasoning found related concepts: #{chain_summary}]"]
+      _ -> parts
+    end
+
+    Enum.join(parts)
+  end
+
+  # Original chat_think_then_claude kept as fallback
   defp chat_think_then_claude(state, message) do
     # Get priming concepts from working memory
     priming = if state.working_memory do
@@ -797,15 +1251,90 @@ defmodule Kudzu.Brain do
         {response, 1, [], 0.0, state}
 
       {:escalate, _alerts} ->
-        # Escalation from chat — fall through to thinking layer
-        chat_think_then_claude_stream(state, message, stream_to)
+        # Escalation from chat — fall through to escalation pipeline
+        chat_escalate_stream(state, message, stream_to)
 
       :pass ->
-        # No reflex match — try thinking layer
-        chat_think_then_claude_stream(state, message, stream_to)
+        # No reflex match — try escalation pipeline
+        chat_escalate_stream(state, message, stream_to)
     end
   end
 
+  defp chat_escalate_stream(state, message, stream_to) do
+    context = %{recall_results: [], web_findings: nil, thought_result: nil}
+
+    # Tier 1: Semantic Recall
+    send(stream_to, {:thinking, :recall, "Searching stored knowledge..."})
+    recall_results = try do
+      Kudzu.Consolidation.semantic_query(message, 0.0)
+    catch
+      _, _ -> []
+    end
+
+    top_score = case recall_results do
+      [{_purpose, score} | _] -> score
+      _ -> 0.0
+    end
+
+    context = %{context | recall_results: recall_results}
+
+    if top_score > 0.6 do
+      response = format_recall_response(message, recall_results)
+      record_trace(state, :thought, %{source: "chat_escalation", tier: "recall", top_score: top_score})
+      send(stream_to, {:chunk, response})
+      {response, :recall, [], 0.0, state}
+    else
+      # Tier 2: Silo Inference
+      send(stream_to, {:thinking, :synthesis, "Running silo inference..."})
+      priming = if state.working_memory do
+        WorkingMemory.get_priming_concepts(state.working_memory, 5)
+      else
+        []
+      end
+
+      thought_result = Thought.run(message, monarch_pid: self(), timeout: 10_000, priming: priming)
+      state = integrate_thought(state, thought_result)
+      context = %{context | thought_result: thought_result}
+
+      if thought_result.resolution == :found and thought_result.confidence > 0.5 do
+        response = format_thought_result(message, thought_result)
+        record_trace(state, :thought, %{source: "chat_escalation", tier: "synthesis", confidence: thought_result.confidence})
+        send(stream_to, {:chunk, response})
+        {response, :synthesis, [], 0.0, state}
+      else
+        # Tier 3: Web Search
+        send(stream_to, {:thinking, :web, "Searching the web..."})
+        web_result = try do
+          WebLearner.research(message)
+        catch
+          _, _ -> {:error, :crashed}
+        end
+
+        context = case web_result do
+          {:ok, findings} -> %{context | web_findings: findings}
+          _ -> context
+        end
+
+        web_found = match?({:ok, %{chains_stored: n}} when n > 0, web_result)
+
+        if web_found do
+          {:ok, findings} = web_result
+          response = format_web_response(message, findings)
+          record_trace(state, :thought, %{source: "chat_escalation", tier: "web", chains_stored: findings.chains_stored})
+          send(stream_to, {:chunk, response})
+          {response, :web, [], 0.0, state}
+        else
+          # Tier 4: Claude API
+          send(stream_to, {:thinking, :claude, "Consulting Claude API..."})
+          enhanced_message = build_enriched_message(message, context)
+          record_trace(state, :thought, %{source: "chat_escalation", tier: "claude", reason: "free_tiers_exhausted"})
+          chat_with_claude_stream(state, enhanced_message, stream_to)
+        end
+      end
+    end
+  end
+
+  # Original chat_think_then_claude_stream kept as fallback
   defp chat_think_then_claude_stream(state, message, stream_to) do
     send(stream_to, {:thinking, :thought, "Running thought process..."})
 
@@ -1173,5 +1702,217 @@ defmodule Kudzu.Brain do
 
   defp schedule_wake_cycle(interval) do
     Process.send_after(self(), :wake_cycle, interval)
+  end
+
+  defp schedule_activity_cycle do
+    Process.send_after(self(), :activity_cycle, @activity_tick)
+  end
+
+  defp overdue?(nil, _interval, _now), do: true
+  defp overdue?(last, interval, now) do
+    (now - last) >= interval
+  end
+
+  # ── Activity Handlers ────────────────────────────────────────────
+
+  defp run_health_check(state) do
+    new_count = state.cycle_count + 1
+    state = %{state | cycle_count: new_count}
+
+    case pre_check(state) do
+      :sleep ->
+        state
+
+      {:wake, anomalies} ->
+        Logger.info("[Brain] Health check: #{length(anomalies)} anomalies")
+        reason(state, anomalies)
+    end
+  end
+
+  defp run_curiosity(state) do
+    # Run curiosity asynchronously to avoid blocking the Brain
+    brain_pid = self()
+    hologram_pid = state.hologram_pid
+    desires = state.desires
+    wm = state.working_memory || WorkingMemory.new()
+    silo_domains = get_silo_domains_for_activity()
+
+    Task.start(fn ->
+      try do
+        questions = Curiosity.generate(desires, wm, silo_domains)
+
+        if question = List.first(questions) do
+          thought_result = Thought.run(question,
+            monarch_pid: brain_pid,
+            timeout: 8_000,
+            priming: []
+          )
+
+          if hologram_pid do
+            Kudzu.Hologram.record_trace(hologram_pid, :thought, %{
+              source: "curiosity",
+              question: question,
+              resolution: thought_result.resolution,
+              confidence: thought_result.confidence
+            })
+          end
+        end
+      catch
+        kind, reason ->
+          Logger.warning("[Brain] Async curiosity crashed: #{inspect(kind)}: #{inspect(reason)}")
+      end
+    end)
+
+    state
+  end
+
+  defp run_web_learning(state) do
+    # Generate a curiosity question, then research it on the web
+    # Run asynchronously so we don't block the Brain GenServer
+    silo_domains = get_silo_domains_for_activity()
+    wm = state.working_memory || WorkingMemory.new()
+    questions = Curiosity.generate(state.desires, wm, silo_domains)
+
+    # Filter out already-researched topics
+    question =
+      questions
+      |> Enum.reject(fn q ->
+        normalized = q |> String.downcase() |> String.replace(~r/[^\w\s]/, "") |> String.trim()
+        MapSet.member?(state.researched_topics, normalized)
+      end)
+      |> List.first()
+
+    if question do
+      brain_pid = self()
+      hologram_pid = state.hologram_pid
+
+      # Fire-and-forget: run web learning in a separate unlinked process
+      Task.start(fn ->
+        try do
+          # First try Thought
+          thought_result = Thought.run(question,
+            monarch_pid: brain_pid,
+            timeout: 8_000,
+            priming: []
+          )
+
+          if thought_result.resolution in [:no_match, :partial] do
+            # Thought didn't know — research on the web
+            case Kudzu.Brain.WebLearner.research(question) do
+              {:ok, result} ->
+                # Record trace directly on the hologram
+                if hologram_pid do
+                  Kudzu.Hologram.record_trace(hologram_pid, :discovery, %{
+                    source: "web_learning",
+                    question: question,
+                    pages_read: result.pages_read,
+                    chains_stored: result.chains_stored
+                  })
+                end
+
+                # Notify brain to track as researched
+                send(brain_pid, {:web_learning_complete, question})
+
+              {:error, reason} ->
+                Logger.warning("[Brain] Web learning failed: #{inspect(reason)}")
+            end
+          else
+            Logger.debug("[Brain] Web learning skipped — Thought resolved: #{question}")
+          end
+        catch
+          kind, reason ->
+            Logger.warning("[Brain] Async web learning crashed: #{inspect(kind)}: #{inspect(reason)}")
+        end
+      end)
+
+      state
+    else
+      state
+    end
+  end
+
+  defp run_distillation_cycle(state) do
+    Logger.info("[Brain] Running distillation cycle (Phase 3)")
+
+    try do
+      result = Distiller.review_knowledge()
+
+      record_trace(state, :observation, %{
+        source: "distillation_cycle",
+        action: "knowledge_review",
+        reviewed: result.reviewed,
+        merged: result.merged,
+        pruned: result.pruned
+      })
+
+      Logger.info(
+        "[Brain] Distillation complete: " <>
+        "#{result.reviewed} reviewed, #{result.merged} merged, #{result.pruned} pruned"
+      )
+    rescue
+      e ->
+        Logger.warning("[Brain] Distillation cycle failed: #{inspect(e)}")
+    catch
+      kind, reason ->
+        Logger.warning("[Brain] Distillation cycle crashed: #{inspect(kind)}: #{inspect(reason)}")
+    end
+
+    state
+  end
+
+  defp run_storage_check(state) do
+    try do
+      stats = Kudzu.Storage.detailed_stats()
+
+      Logger.info(
+        "[Brain] Storage: hot=#{stats.hot_count} entries (#{div(stats.hot_bytes, 1024)}KB), " <>
+        "warm=#{div(stats.warm_bytes, 1024)}KB, " <>
+        "total=#{div(stats.total_bytes, 1048576)}MB, " <>
+        "utilization=#{stats.utilization}%"
+      )
+
+      # Evict if utilization exceeds 80%
+      evicted =
+        if stats.utilization > 80.0 do
+          count = Kudzu.Storage.evict_lowest(100)
+          Logger.warning("[Brain] Storage utilization #{stats.utilization}% > 80% — evicted #{count} traces")
+          count
+        else
+          0
+        end
+
+      # Record metrics as a trace
+      record_trace(state, :observation, %{
+        type: "storage_check",
+        hot_count: stats.hot_count,
+        hot_bytes: stats.hot_bytes,
+        warm_bytes: stats.warm_bytes,
+        total_bytes: stats.total_bytes,
+        utilization: stats.utilization,
+        evicted: evicted
+      })
+
+      state
+    catch
+      kind, reason ->
+        Logger.warning("[Brain] Storage check failed: #{inspect(kind)}: #{inspect(reason)}")
+        state
+    end
+  end
+
+  defp get_silo_domains_for_activity do
+    try do
+      case Kudzu.Silo.list() do
+        domains when is_list(domains) ->
+          Enum.map(domains, fn
+            {domain, _, _} -> domain
+            domain when is_binary(domain) -> domain
+            _ -> nil
+          end) |> Enum.reject(&is_nil/1)
+        _ -> []
+      end
+    catch
+      _, _ -> []
+    end
   end
 end
