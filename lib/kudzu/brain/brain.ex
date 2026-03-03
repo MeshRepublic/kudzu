@@ -285,6 +285,15 @@ defmodule Kudzu.Brain do
         end
         new_state = %{state | hologram_pid: pid, hologram_id: id}
         new_state = %{new_state | working_memory: WorkingMemory.new()}
+        # Restore persisted learning goals
+        goals = restore_learning_goals(pid)
+        new_state = %{new_state | learning_goals: goals}
+        if goals != [] do
+          active = Enum.find(goals, &(&1.status == :active))
+          if active do
+            Logger.info("[Brain] Restored learning goal: #{active.topic} (#{active.completed_count}/#{length(active.topics)})")
+          end
+        end
         schedule_activity_cycle()
         {:noreply, new_state}
 
@@ -405,6 +414,7 @@ defmodule Kudzu.Brain do
       end
     end
 
+    persist_learning_goals(state, goals)
     {:noreply, %{state | learning_goals: goals}}
   end
 
@@ -743,6 +753,8 @@ defmodule Kudzu.Brain do
 
           goals = state.learning_goals ++ [goal]
           state = %{state | learning_goals: goals}
+
+          persist_learning_goals(state, goals)
 
           record_trace(state, :memory, %{
             source: "learning_goal_created",
@@ -1597,6 +1609,100 @@ defmodule Kudzu.Brain do
         _ -> :ok
       end
     end
+  end
+
+  # ── Learning Goal Persistence ──────────────────────────────────────
+
+  defp persist_learning_goals(state, goals) do
+    if state.hologram_pid do
+      serialized = Enum.map(goals, fn g ->
+        %{
+          id: g.id,
+          topic: g.topic,
+          status: to_string(g.status),
+          created_at: DateTime.to_iso8601(g.created_at),
+          topics: Enum.map(g.topics, fn {t, s} -> %{topic: t, status: to_string(s)} end),
+          current_index: g.current_index,
+          completed_count: g.completed_count,
+          failed_count: g.failed_count
+        }
+      end)
+
+      try do
+        Kudzu.Hologram.record_trace(state.hologram_pid, :session_context, %{
+          source: "learning_goals_state",
+          goals: serialized
+        })
+      rescue
+        _ -> :ok
+      end
+    end
+  end
+
+  defp restore_learning_goals(hologram_pid) do
+    alias Kudzu.Brain.LearningGoal
+
+    # Find the most recent learning_goals_state trace
+    traces = try do
+      Kudzu.Hologram.recall(hologram_pid, :session_context)
+    catch
+      _, _ -> []
+    end
+
+    goal_trace = traces
+    |> Enum.filter(fn t ->
+      hint = Map.get(t, :reconstruction_hint, %{})
+      source = Map.get(hint, :source, Map.get(hint, "source", nil))
+      source == "learning_goals_state"
+    end)
+    |> List.last()  # most recent (traces are typically in chronological order)
+
+    case goal_trace do
+      %{reconstruction_hint: %{goals: serialized}} when is_list(serialized) ->
+        deserialize_goals(serialized)
+
+      %{reconstruction_hint: %{"goals" => serialized}} when is_list(serialized) ->
+        deserialize_goals(serialized)
+
+      _ ->
+        []
+    end
+  end
+
+  defp deserialize_goals(serialized) do
+    alias Kudzu.Brain.LearningGoal
+
+    Enum.map(serialized, fn g ->
+      topics = (g["topics"] || g[:topics] || [])
+      |> Enum.map(fn t ->
+        topic = t["topic"] || t[:topic] || ""
+        status = case t["status"] || t[:status] do
+          "complete" -> :complete
+          "failed" -> :failed
+          _ -> :pending
+        end
+        {topic, status}
+      end)
+
+      %LearningGoal{
+        id: g["id"] || g[:id],
+        topic: g["topic"] || g[:topic],
+        status: case g["status"] || g[:status] do
+          "active" -> :active
+          "queued" -> :queued
+          "complete" -> :complete
+          _ -> :active
+        end,
+        created_at: case DateTime.from_iso8601(to_string(g["created_at"] || g[:created_at] || "")) do
+          {:ok, dt, _} -> dt
+          _ -> DateTime.utc_now()
+        end,
+        topics: topics,
+        current_index: g["current_index"] || g[:current_index] || 0,
+        completed_count: g["completed_count"] || g[:completed_count] || 0,
+        failed_count: g["failed_count"] || g[:failed_count] || 0
+      }
+    end)
   end
 
   # ── Helpers ─────────────────────────────────────────────────────────
