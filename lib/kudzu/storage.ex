@@ -192,10 +192,7 @@ defmodule Kudzu.Storage do
     :ets.insert(@hot_table, {trace.id, record})
     :dets.insert(@warm_file, {trace.id, record})
 
-    # Async: embed traces with textual content (if not already embedded)
-    if :ets.lookup(@embedding_table, trace.id) == [] do
-      maybe_async_embed(trace)
-    end
+    # Embedding happens via periodic batch (see embed_batch/0)
 
     {:reply, :ok, state}
   end
@@ -334,6 +331,11 @@ defmodule Kudzu.Storage do
   end
 
   @impl true
+  def handle_call({:embed_batch, batch_size}, _from, state) do
+    count = do_embed_batch(batch_size)
+    {:reply, count, state}
+  end
+
   def handle_call({:search_by_embedding, query_vector, opts}, _from, state) do
     limit = Keyword.get(opts, :limit, 10)
     threshold = Keyword.get(opts, :threshold, 0.3)
@@ -573,7 +575,7 @@ defmodule Kudzu.Storage do
       trace_id = trace.id
       Task.start(fn ->
         # Brief delay to avoid flooding Ollama during bulk operations
-        Process.sleep(100)
+        Process.sleep(2000 + :rand.uniform(3000))
         case Kudzu.Embedding.embed(text, timeout: 15_000) do
           {:ok, vector} ->
             store_embedding(trace_id, vector)
@@ -604,6 +606,35 @@ defmodule Kudzu.Storage do
         if subj && rel && obj, do: "#{subj} #{rel} #{obj}", else: nil
       true -> nil
     end
+  end
+
+  defp do_embed_batch(batch_size) do
+    # Find traces in hot tier that don't have embeddings yet
+    all_trace_ids = :ets.foldl(fn {id, _trace}, acc -> [id | acc] end, [], @hot_table)
+
+    unembedded = all_trace_ids
+    |> Enum.filter(fn id -> :ets.lookup(@embedding_table, id) == [] end)
+    |> Enum.take(batch_size)
+
+    Enum.reduce(unembedded, 0, fn trace_id, count ->
+      case :ets.lookup(@hot_table, trace_id) do
+        [{_, trace}] ->
+          text = extract_text_content(trace)
+          if text && String.length(text) > 10 do
+            case Kudzu.Embedding.embed(text, timeout: 30_000) do
+              {:ok, vector} ->
+                store_embedding(trace_id, vector)
+                count + 1
+              {:error, _reason} ->
+                count
+            end
+          else
+            count
+          end
+        [] ->
+          count
+      end
+    end)
   end
 
   defp do_embedding_search(query_vector, limit, threshold) do

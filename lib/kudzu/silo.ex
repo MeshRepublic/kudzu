@@ -144,4 +144,53 @@ defmodule Kudzu.Silo do
         []
     end
   end
+
+  @doc """
+  Semantic search within a silo using Ollama embeddings.
+
+  More accurate than HRR-based probe/2. Embeds the query and compares
+  against stored trace embeddings for this silo's hologram.
+  """
+  @spec semantic_probe(String.t(), String.t(), keyword()) :: [map()]
+  def semantic_probe(domain, query, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 10)
+    threshold = Keyword.get(opts, :threshold, 0.1)
+
+    with {:ok, pid} <- find(domain),
+         {:ok, query_vector} <- Kudzu.Embedding.embed(query) do
+      state = :sys.get_state(pid)
+
+      state.traces
+      |> Map.values()
+      |> Enum.map(fn trace ->
+        case :ets.lookup(:kudzu_embeddings, trace.id) do
+          [{_, vector}] ->
+            sim = Kudzu.Embedding.cosine_similarity(query_vector, vector)
+            if sim >= threshold do
+              %{
+                trace_id: trace.id,
+                similarity: sim,
+                data: trace.reconstruction_hint,
+                purpose: trace.purpose
+              }
+            end
+
+          [] ->
+            nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.sort_by(& &1.similarity, :desc)
+      |> Enum.take(limit)
+    else
+      {:error, :not_found} -> []
+      {:error, _reason} ->
+        # Embedding unavailable, fall back to HRR probe
+        probe(domain, query)
+        |> Enum.take(limit)
+        |> Enum.map(fn {hint, sim} ->
+          %{trace_id: nil, similarity: sim, data: hint, purpose: :discovery}
+        end)
+    end
+  end
 end

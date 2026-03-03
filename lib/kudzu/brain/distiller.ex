@@ -10,6 +10,8 @@ defmodule Kudzu.Brain.Distiller do
   Uses pattern matching, not LLMs.
   """
 
+  require Logger
+
   @relational_patterns [
     {~r/(.+?)\s+(?:is caused by|caused by|because of)\s+(.+)/i, "caused_by"},
     {~r/(.+?)\s+because\s+(.+)/i, "because"},
@@ -24,6 +26,25 @@ defmodule Kudzu.Brain.Distiller do
   ]
 
   @stop_words ~w(the a an is are was were be been being have has had do does did will would shall should may might can could i you we they it this that these those my your our their its some any)
+
+  # Relations scored higher are more meaningful/specific
+  @relation_quality %{
+    "caused_by" => 1.0,
+    "causes" => 1.0,
+    "requires" => 0.9,
+    "because" => 0.85,
+    "produces" => 0.8,
+    "provides" => 0.75,
+    "uses" => 0.7,
+    "contains" => 0.65,
+    "is_a" => 0.6,
+    "relates_to" => 0.3
+  }
+
+  @prune_threshold 0.15
+  @ollama_url "http://localhost:11434"
+  @extract_model "llama4:scout"
+  @extract_timeout 180_000
 
   @doc """
   Run the full distillation pipeline on text.
@@ -44,10 +65,26 @@ defmodule Kudzu.Brain.Distiller do
   Extract causal/relational chains from text as {subject, relation, object} triples.
   """
   def extract_chains(text) when is_binary(text) do
-    text
-    |> split_sentences()
-    |> Enum.flat_map(&extract_from_sentence/1)
-    |> Enum.uniq()
+    ollama_result = try do
+      extract_with_ollama(text)
+    rescue
+      e -> {:error, {:crashed, Exception.message(e)}}
+    catch
+      :exit, e -> {:error, {:exit, inspect(e) |> String.slice(0, 200)}}
+    end
+
+    case ollama_result do
+      {:ok, chains} when chains != [] ->
+        Logger.debug("[Distiller] Ollama extracted #{length(chains)} chains")
+        chains
+
+      other ->
+        Logger.debug("[Distiller] Ollama fallback: #{inspect(other) |> String.slice(0, 200)}")
+        text
+        |> split_sentences()
+        |> Enum.flat_map(&extract_from_sentence/1)
+        |> Enum.uniq()
+    end
   end
 
   @doc """
@@ -110,7 +147,270 @@ defmodule Kudzu.Brain.Distiller do
     end)
   end
 
+  @doc """
+  Review all stored relationship triples across silos.
+
+  1. Collects all relationship triples from all silos
+  2. Merges redundant triples (same normalized subject/relation/object)
+  3. Scores usefulness based on specificity and relation quality
+  4. Prunes triples scoring below threshold
+
+  Returns %{reviewed: count, merged: count, pruned: count}
+  """
+  def review_knowledge(opts \\ []) do
+    threshold = Keyword.get(opts, :threshold, @prune_threshold)
+
+    # Step 1: Collect all relationship triples from silos
+    triples = collect_all_triples()
+    total_count = length(triples)
+
+    # Step 2: Merge redundant triples
+    {merged_triples, merge_count} = merge_redundant(triples)
+
+    # Step 3: Compute term frequencies for specificity scoring
+    term_freqs = compute_term_frequencies(merged_triples)
+
+    # Step 4: Score each triple
+    scored = Enum.map(merged_triples, fn triple ->
+      score = score_triple(triple, term_freqs)
+      Map.put(triple, :score, score)
+    end)
+
+    # Step 5: Prune below threshold
+    {keep, prune} = Enum.split_with(scored, fn t -> t.score >= threshold end)
+    prune_count = length(prune)
+
+    # Step 6: Actually delete pruned triples from their silos
+    Enum.each(prune, fn triple ->
+      delete_triple_from_silo(triple)
+    end)
+
+    Logger.info(
+      "[Distiller] Knowledge review: #{total_count} reviewed, " <>
+      "#{merge_count} merged, #{prune_count} pruned, #{length(keep)} kept"
+    )
+
+    %{reviewed: total_count, merged: merge_count, pruned: prune_count}
+  end
+
+  # --- Knowledge review helpers ---
+
+  defp collect_all_triples do
+    try do
+      Kudzu.Silo.list()
+      |> Enum.flat_map(fn {domain, pid, _id} ->
+        try do
+          state = :sys.get_state(pid)
+
+          state.traces
+          |> Map.values()
+          |> Enum.filter(fn trace ->
+            hint = trace.reconstruction_hint
+            is_map(hint) and
+              Map.get(hint, :type, Map.get(hint, "type")) == "relationship"
+          end)
+          |> Enum.map(fn trace ->
+            hint = trace.reconstruction_hint
+            %{
+              subject: normalize_term(to_string(Map.get(hint, :subject, Map.get(hint, "subject", "")))),
+              relation: to_string(Map.get(hint, :relation, Map.get(hint, "relation", "relates_to"))),
+              object: normalize_term(to_string(Map.get(hint, :object, Map.get(hint, "object", "")))),
+              domain: domain,
+              trace_id: trace.id,
+              silo_pid: pid
+            }
+          end)
+        rescue
+          _ -> []
+        catch
+          :exit, _ -> []
+        end
+      end)
+    rescue
+      _ -> []
+    catch
+      :exit, _ -> []
+    end
+  end
+
+  defp merge_redundant(triples) do
+    # Group by normalized {subject, relation, object}
+    grouped =
+      Enum.group_by(triples, fn t ->
+        {t.subject, t.relation, t.object}
+      end)
+
+    merge_count =
+      grouped
+      |> Enum.map(fn {_key, group} -> length(group) - 1 end)
+      |> Enum.sum()
+
+    # Keep one representative from each group, delete the rest
+    merged =
+      Enum.map(grouped, fn {_key, [keeper | duplicates]} ->
+        # Delete duplicate traces from their silos
+        Enum.each(duplicates, fn dup ->
+          delete_triple_from_silo(dup)
+        end)
+
+        keeper
+      end)
+
+    {merged, merge_count}
+  end
+
+  defp compute_term_frequencies(triples) do
+    triples
+    |> Enum.flat_map(fn t -> [t.subject, t.object] end)
+    |> Enum.frequencies()
+  end
+
+  defp score_triple(triple, term_freqs) do
+    # Relation quality score (0.0 - 1.0)
+    rel_score = Map.get(@relation_quality, triple.relation, 0.5)
+
+    # Specificity: inverse frequency of terms (rarer = more specific = higher score)
+    max_freq = term_freqs |> Map.values() |> Enum.max(fn -> 1 end)
+    subj_freq = Map.get(term_freqs, triple.subject, 1)
+    obj_freq = Map.get(term_freqs, triple.object, 1)
+
+    # Specificity ranges 0.0-1.0: terms appearing once get 1.0, most frequent gets ~0.1
+    subj_spec = if max_freq > 1, do: 1.0 - (subj_freq - 1) / max_freq, else: 1.0
+    obj_spec = if max_freq > 1, do: 1.0 - (obj_freq - 1) / max_freq, else: 1.0
+    specificity = (subj_spec + obj_spec) / 2.0
+
+    # Combined score: 60% relation quality, 40% specificity
+    0.6 * rel_score + 0.4 * specificity
+  end
+
+  defp delete_triple_from_silo(triple) do
+    try do
+      # Remove the trace from the hologram's in-memory state
+      # We send a call to update state — but hologram doesn't expose trace deletion,
+      # so we use the silo pid to get state and remove the trace via :sys
+      pid = triple.silo_pid
+      trace_id = triple.trace_id
+
+      if Process.alive?(pid) do
+        state = :sys.get_state(pid)
+        new_traces = Map.delete(state.traces, trace_id)
+        :sys.replace_state(pid, fn s -> %{s | traces: new_traces} end)
+      end
+    rescue
+      _ -> :ok
+    catch
+      :exit, _ -> :ok
+    end
+  end
+
   # --- Private helpers ---
+
+  defp extract_with_ollama(text) do
+    :inets.start()
+    excerpt = if String.length(text) > 3000, do: String.slice(text, 0, 3000), else: text
+
+    prompt = "Extract key factual relationships from this text. Return ONLY a JSON array of objects with \"subject\", \"relation\", and \"object\" fields.\n\nValid relations: caused_by, causes, requires, uses, is_a, contains, relates_to, produces, provides, because\n\nExample: [{\"subject\": \"Linux\", \"relation\": \"uses\", \"object\": \"systemd for init\"}]\n\nText:\n#{excerpt}\n\nJSON:"
+
+    body = Jason.encode!(%{
+      model: @extract_model,
+      prompt: prompt,
+      stream: false,
+      options: %{num_predict: 1000, temperature: 0.1},
+      keep_alive: "10m"
+    })
+
+    request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
+
+    case :httpc.request(:post, request, [{:timeout, @extract_timeout}], []) do
+      {:ok, {{_, 200, _}, _, response_body}} ->
+        case Jason.decode(to_string(response_body)) do
+          {:ok, %{"response" => response}} ->
+            Logger.debug("[Distiller] Ollama response (first 200): #{String.slice(response, 0, 500)}")
+            {:ok, parse_json_triples(response)}
+          _ ->
+            {:error, :parse_failed}
+        end
+
+      {:ok, {{_, status, _}, _, err_body}} ->
+        Logger.warning("[Distiller] Ollama HTTP #{status}: #{String.slice(to_string(err_body), 0, 200)}")
+        {:error, {:http_error, status}}
+
+      {:error, reason} ->
+        Logger.warning("[Distiller] Ollama request failed: #{inspect(reason)}")
+        {:error, :ollama_unavailable}
+    end
+  end
+
+  defp parse_json_triples(response) do
+    # Try multiple strategies to find JSON array in response
+    json_str = find_json_array(response)
+
+    case json_str do
+      nil ->
+        Logger.debug("[Distiller] No JSON array found in response")
+        []
+
+      str ->
+        case Jason.decode(str) do
+          {:ok, items} when is_list(items) ->
+            items
+            |> Enum.map(fn item when is_map(item) ->
+              subject = Map.get(item, "subject", "") |> to_string() |> normalize_term()
+              relation = Map.get(item, "relation", "relates_to") |> to_string()
+              object = Map.get(item, "object", "") |> to_string() |> normalize_term()
+
+              relation = if relation in ~w(caused_by causes requires uses is_a contains relates_to produces provides because) do
+                relation
+              else
+                "relates_to"
+              end
+
+              if String.length(subject) > 1 and String.length(object) > 1 do
+                {subject, relation, object}
+              end
+            _ -> nil
+            end)
+            |> Enum.reject(&is_nil/1)
+            |> Enum.uniq()
+
+          {:error, reason} ->
+            Logger.debug("[Distiller] JSON decode failed: #{inspect(reason)}")
+            []
+
+          _ ->
+            []
+        end
+    end
+  end
+
+  defp find_json_array(text) do
+    trimmed = String.trim(text)
+
+    # Strategy 1: Direct JSON decode (response is just a JSON array)
+    case Jason.decode(trimmed) do
+      {:ok, items} when is_list(items) -> trimmed
+      _ ->
+        # Strategy 2: Extract from markdown code fences
+        case Regex.run(~r//, trimmed) do
+          [_, inner] ->
+            inner = String.trim(inner)
+            case Jason.decode(inner) do
+              {:ok, _} -> inner
+              _ -> find_json_array_bare(trimmed)
+            end
+          _ ->
+            find_json_array_bare(trimmed)
+        end
+    end
+  end
+
+  defp find_json_array_bare(text) do
+    # Strategy 3: Find [ ... ] containing at least one {
+    case Regex.run(~r/\[\s*\{[\s\S]*?\}\s*\]/, text) do
+      [match] -> match
+      _ -> nil
+    end
+  end
 
   defp split_sentences(text) do
     text
@@ -140,7 +440,13 @@ defmodule Kudzu.Brain.Distiller do
   end
 
   defp normalize_term(term) do
-    term
+    safe = case :unicode.characters_to_binary(to_string(term)) do
+      {:error, valid, _} -> valid
+      {:incomplete, valid, _} -> valid
+      binary when is_binary(binary) -> binary
+    end
+
+    safe
     |> String.trim()
     |> String.downcase()
     |> String.replace(~r/\s+/, "_")

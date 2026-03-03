@@ -103,6 +103,7 @@ defmodule Kudzu.Brain do
     last_web_learning: nil,
     last_distillation: nil,
     last_storage_check: nil,
+    web_learning_active: false,
     researched_topics: MapSet.new(),
     learning_goals: []
   ]
@@ -341,9 +342,9 @@ defmodule Kudzu.Brain do
             Logger.debug("[Brain] Activity: storage check")
             run_storage_check(%{state | last_storage_check: now})
 
-          overdue?(state.last_web_learning, @web_learning_interval, now) ->
+          overdue?(state.last_web_learning, @web_learning_interval, now) and not state.web_learning_active ->
             Logger.debug("[Brain] Activity: web learning")
-            run_web_learning(%{state | last_web_learning: now})
+            run_web_learning(%{state | last_web_learning: now, web_learning_active: true})
 
           overdue?(state.last_curiosity, @curiosity_interval, now) ->
             Logger.debug("[Brain] Activity: curiosity")
@@ -375,6 +376,10 @@ defmodule Kudzu.Brain do
 
     schedule_activity_cycle()
     {:noreply, state}
+  end
+
+  def handle_info(:web_learning_done, state) do
+    {:noreply, %{state | web_learning_active: false}}
   end
 
   def handle_info({:learning_progress, goal_id, _topic_index, result}, state) do
@@ -1985,10 +1990,12 @@ defmodule Kudzu.Brain do
                   })
                 end
                 send(brain_pid, {:learning_progress, goal_id, topic_index, :complete})
+                send(brain_pid, :web_learning_done)
 
               {:error, reason} ->
                 Logger.warning("[Brain] Learning topic failed: #{topic} — #{inspect(reason)}")
                 send(brain_pid, {:learning_progress, goal_id, topic_index, :failed})
+              send(brain_pid, :web_learning_done)
             end
           catch
             kind, reason ->
@@ -2125,6 +2132,16 @@ defmodule Kudzu.Brain do
         "total=#{div(stats.total_bytes, 1048576)}MB, " <>
         "utilization=#{stats.utilization}%"
       )
+
+      # Embed unembedded traces (batch of 3 per cycle)
+      embedded = try do
+        Kudzu.Storage.embed_batch(3)
+      catch
+        _, _ -> 0
+      end
+      if embedded > 0 do
+        Logger.debug("[Brain] Embedded #{embedded} traces")
+      end
 
       # Evict if utilization exceeds 80%
       evicted =
