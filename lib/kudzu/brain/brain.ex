@@ -368,6 +368,46 @@ defmodule Kudzu.Brain do
     {:noreply, state}
   end
 
+  def handle_info({:learning_progress, goal_id, _topic_index, result}, state) do
+    alias Kudzu.Brain.LearningGoal
+
+    goals = Enum.map(state.learning_goals, fn goal ->
+      if goal.id == goal_id do
+        case result do
+          :complete -> LearningGoal.complete_current(goal)
+          :failed -> LearningGoal.fail_current(goal)
+        end
+      else
+        goal
+      end
+    end)
+
+    # If the active goal just completed, activate the next queued goal
+    goals = maybe_activate_next_goal(goals)
+
+    # Log progress
+    active = Enum.find(goals, &(&1.id == goal_id))
+    if active do
+      total = length(active.topics)
+      done = active.completed_count
+      Logger.info("[Brain] Learning progress: #{active.topic} — #{done}/#{total} (#{result})")
+
+      if active.status == :complete do
+        Logger.info("[Brain] Learning goal complete: #{active.topic}")
+        record_trace(state, :discovery, %{
+          source: "learning_goal_complete",
+          topic: active.topic,
+          goal_id: goal_id,
+          completed: active.completed_count,
+          failed: active.failed_count,
+          total: total
+        })
+      end
+    end
+
+    {:noreply, %{state | learning_goals: goals}}
+  end
+
   def handle_info({:web_learning_complete, question}, state) do
     normalized = question |> String.downcase() |> String.replace(~r/[^\w\s]/, "") |> String.trim()
     {:noreply, %{state | researched_topics: MapSet.put(state.researched_topics, normalized)}}
@@ -1767,6 +1807,67 @@ defmodule Kudzu.Brain do
   end
 
   defp run_web_learning(state) do
+    alias Kudzu.Brain.LearningGoal
+
+    # Priority: active learning goal topics over curiosity questions
+    case get_learning_topic(state) do
+      {:learning, topic, goal_id, topic_index} ->
+        Logger.info("[Brain] Web learning: curriculum topic '#{topic}' (goal=#{goal_id})")
+        brain_pid = self()
+        hologram_pid = state.hologram_pid
+
+        Task.start(fn ->
+          try do
+            result = Kudzu.Brain.WebLearner.research(topic)
+
+            case result do
+              {:ok, findings} ->
+                if hologram_pid do
+                  Kudzu.Hologram.record_trace(hologram_pid, :learning, %{
+                    source: "directed_learning",
+                    goal_id: goal_id,
+                    topic: topic,
+                    pages_read: findings.pages_read,
+                    chains_stored: findings.chains_stored
+                  })
+                end
+                send(brain_pid, {:learning_progress, goal_id, topic_index, :complete})
+
+              {:error, reason} ->
+                Logger.warning("[Brain] Learning topic failed: #{topic} — #{inspect(reason)}")
+                send(brain_pid, {:learning_progress, goal_id, topic_index, :failed})
+            end
+          catch
+            kind, reason ->
+              Logger.warning("[Brain] Learning topic crashed: #{inspect(kind)}: #{inspect(reason)}")
+              send(brain_pid, {:learning_progress, goal_id, topic_index, :failed})
+          end
+        end)
+
+        state
+
+      :no_learning_topic ->
+        # Fall back to curiosity-driven web learning (existing behavior)
+        run_curiosity_web_learning(state)
+    end
+  end
+
+  defp get_learning_topic(state) do
+    alias Kudzu.Brain.LearningGoal
+
+    case Enum.find(state.learning_goals, &(&1.status == :active)) do
+      %LearningGoal{id: goal_id} = goal ->
+        case LearningGoal.next_topic(goal) do
+          {topic, index} -> {:learning, topic, goal_id, index}
+          nil -> :no_learning_topic
+        end
+      nil ->
+        :no_learning_topic
+    end
+  end
+
+
+  defp run_curiosity_web_learning(state) do
     # Generate a curiosity question, then research it on the web
     # Run asynchronously so we don't block the Brain GenServer
     silo_domains = get_silo_domains_for_activity()
@@ -1830,6 +1931,7 @@ defmodule Kudzu.Brain do
       state
     end
   end
+
 
   defp run_distillation_cycle(state) do
     Logger.info("[Brain] Running distillation cycle (Phase 3)")
@@ -1915,4 +2017,19 @@ defmodule Kudzu.Brain do
       _, _ -> []
     end
   end
+
+  defp maybe_activate_next_goal(goals) do
+    has_active = Enum.any?(goals, &(&1.status == :active))
+
+    if has_active do
+      goals
+    else
+      case Enum.find_index(goals, &(&1.status == :queued)) do
+        nil -> goals
+        idx ->
+          List.update_at(goals, idx, &(%{&1 | status: :active}))
+      end
+    end
+  end
+
 end
