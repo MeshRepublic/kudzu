@@ -219,7 +219,29 @@ defmodule Kudzu.Node do
       started_at: DateTime.utc_now()
     }
 
+    # Auto-connect to known mesh peers after startup
+    if node() != :nonode@nohost do
+      Process.send_after(self(), :auto_connect, 3_000)
+    end
+
     {:ok, state}
+  end
+
+  @impl true
+  def handle_info(:auto_connect, state) do
+    peers = known_mesh_peers()
+    connected = Enum.filter(peers, fn peer ->
+      peer != node() and Node.connect(peer) == true
+    end)
+
+    if connected != [] do
+      Logger.info("[Node] Auto-connected to mesh peers: #{inspect(connected)}")
+      {:noreply, %{state | mesh_status: :connected, connected_peers: Node.list()}}
+    else
+      # Retry in 30 seconds
+      Process.send_after(self(), :auto_connect, 30_000)
+      {:noreply, state}
+    end
   end
 
   @impl true
@@ -324,6 +346,11 @@ defmodule Kudzu.Node do
 
   defp generate_node_id do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+  end
+
+  defp known_mesh_peers do
+    # Known Kudzu nodes on the Tailscale mesh
+    [:"kudzu@100.70.67.110", :"kudzu@100.123.253.17"]
   end
 
   defp detect_capabilities do

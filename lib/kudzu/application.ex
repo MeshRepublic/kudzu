@@ -21,44 +21,28 @@ defmodule Kudzu.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      # Registry for hologram discovery
-      # Keys: {:id, hologram_id} or {:purpose, purpose_atom}
+    role = System.get_env("KUDZU_ROLE", "full")
+
+    core_children = [
       {Registry, keys: :duplicate, name: Kudzu.Registry},
-
-      # PubSub for real-time events (WebSocket channels)
       {Phoenix.PubSub, name: Kudzu.PubSub},
-
-      # Tiered storage: ETS (hot) → DETS (warm) → Mnesia (cold)
       {Kudzu.Storage, []},
-
-      # Node management: mesh connectivity, capabilities
       {Kudzu.Node, []},
-
-      # Beam-let execution substrate (must start before holograms)
       {Kudzu.Beamlet.Supervisor, []},
-
-      # Persistent hologram registry (must start before DynamicSupervisor)
       {Kudzu.HologramRegistry, []},
-
-      # DynamicSupervisor for spawning holograms on demand
       {DynamicSupervisor, strategy: :one_for_one, name: Kudzu.HologramSupervisor},
-
-      # Telemetry supervisor for metrics
       {Kudzu.Telemetry, []},
-
-      # Memory consolidation daemon (biomimetic memory processing)
-      {Kudzu.Consolidation, []},
-
-      # Brain — desire-driven wake cycles with pre-check health gate
-      Kudzu.Brain,
-
-      # MCP session manager
-      KudzuWeb.MCP.Session,
-
-      # Consolidated endpoint — MCP + REST API + WebSocket on port 4001
-      KudzuWeb.MCP.Endpoint
+      {Kudzu.Consolidation, []}
     ]
+
+    full_children = if role == "worker" do
+      Logger.info("[Application] Starting as WORKER node (no Brain, no web endpoint)")
+      []
+    else
+      [Kudzu.Brain, KudzuWeb.MCP.Session, KudzuWeb.MCP.Endpoint]
+    end
+
+    children = core_children ++ full_children
 
     opts = [strategy: :one_for_one, name: Kudzu.Supervisor]
     result = Supervisor.start_link(children, opts)
