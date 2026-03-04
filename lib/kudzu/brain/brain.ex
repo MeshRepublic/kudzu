@@ -51,6 +51,8 @@ defmodule Kudzu.Brain do
   alias Kudzu.Brain.Curiosity
   alias Kudzu.Brain.Distiller
   alias Kudzu.Brain.WebLearner
+  alias Kudzu.Brain.Vectors.Router, as: VectorRouter
+  alias Kudzu.Brain.CurriculumGenerator
 
   @initial_desires [
     "Maintain Kudzu system health and recover from failures",
@@ -73,18 +75,7 @@ defmodule Kudzu.Brain do
   @distillation_interval 600_000 # Knowledge distillation: every 10 minutes
   @storage_interval 1_800_000    # Storage monitoring: every 30 minutes
 
-  @curriculum_prompt """
-  You are building a learning curriculum. Generate a structured list of topics
-  someone must master to become an expert in: %TOPIC%
-
-  Return ONLY a valid JSON array of strings, ordered from foundational to advanced.
-  Include 30-80 topics depending on domain breadth (30 for narrow topics, up to 80
-  for broad domains). Each topic should be specific enough to research in a single
-  web search session.
-
-  Example format:
-  ["Topic one", "Topic two", "Topic three"]
-  """
+  # Curriculum prompt moved to CurriculumGenerator module
 
   defstruct [
     :hologram_id,
@@ -799,58 +790,10 @@ defmodule Kudzu.Brain do
     end
   end
 
-  defp generate_curriculum(state, topic) do
-    api_key = state.config[:api_key]
-
-    if is_nil(api_key) or api_key == "" do
-      {:error, :no_api_key}
-    else
-      prompt = String.replace(@curriculum_prompt, "%TOPIC%", topic)
-
-      case Kudzu.Brain.Claude.simple_message(api_key, prompt) do
-        {:ok, response_text, usage} ->
-          input = (usage["input_tokens"] || 0) / 1_000_000 * 3.0
-          output = (usage["output_tokens"] || 0) / 1_000_000 * 15.0
-          cost = Float.round(input + output, 4)
-          case parse_curriculum_json(response_text) do
-            {:ok, items} -> {:ok, items, cost}
-            {:error, _} -> {:error, :json_parse_failed}
-          end
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-    end
-  end
-
-  defp parse_curriculum_json(text) do
-    cleaned = text
-    |> String.replace(~r/```json\s*/m, "")
-    |> String.replace(~r/```\s*/m, "")
-    |> String.trim()
-
-    case Jason.decode(cleaned) do
-      {:ok, items} when is_list(items) ->
-        items = items
-        |> Enum.filter(&is_binary/1)
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == ""))
-
-        if length(items) > 0, do: {:ok, items}, else: {:error, :empty}
-
-      _ ->
-        lines = cleaned
-        |> String.split("\n", trim: true)
-        |> Enum.map(fn line ->
-          line
-          |> String.replace(~r/^\d+[\.\)]\s*/, "")
-          |> String.replace(~r/^[-*]\s*/, "")
-          |> String.trim()
-          |> String.trim("\"")
-        end)
-        |> Enum.reject(&(&1 == ""))
-
-        if length(lines) >= 5, do: {:ok, lines}, else: {:error, :too_few_items}
+  defp generate_curriculum(_state, topic) do
+    case CurriculumGenerator.generate(topic) do
+      {:ok, items} -> {:ok, items, 0.0}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -1976,7 +1919,7 @@ defmodule Kudzu.Brain do
 
         Task.start(fn ->
           try do
-            result = Kudzu.Brain.WebLearner.research(topic)
+            result = VectorRouter.learn(topic)
 
             case result do
               {:ok, findings} ->
@@ -1985,8 +1928,8 @@ defmodule Kudzu.Brain do
                     source: "directed_learning",
                     goal_id: goal_id,
                     topic: topic,
-                    pages_read: findings.pages_read,
-                    chains_stored: findings.chains_stored
+                    vector: Map.get(findings, :vector, "unknown"),
+                    content_preview: findings.content |> String.slice(0, 200)
                   })
                 end
                 send(brain_pid, {:learning_progress, goal_id, topic_index, :complete})
@@ -1995,7 +1938,7 @@ defmodule Kudzu.Brain do
               {:error, reason} ->
                 Logger.warning("[Brain] Learning topic failed: #{topic} — #{inspect(reason)}")
                 send(brain_pid, {:learning_progress, goal_id, topic_index, :failed})
-              send(brain_pid, :web_learning_done)
+                send(brain_pid, :web_learning_done)
             end
           catch
             kind, reason ->
@@ -2059,15 +2002,15 @@ defmodule Kudzu.Brain do
 
           if thought_result.resolution in [:no_match, :partial] do
             # Thought didn't know — research on the web
-            case Kudzu.Brain.WebLearner.research(question) do
+            case VectorRouter.learn(question) do
               {:ok, result} ->
                 # Record trace directly on the hologram
                 if hologram_pid do
                   Kudzu.Hologram.record_trace(hologram_pid, :discovery, %{
-                    source: "web_learning",
+                    source: "vector_learning",
                     question: question,
-                    pages_read: result.pages_read,
-                    chains_stored: result.chains_stored
+                    vector: Map.get(result, :vector, "unknown"),
+                    content_preview: result.content |> String.slice(0, 200)
                   })
                 end
 
@@ -2075,7 +2018,7 @@ defmodule Kudzu.Brain do
                 send(brain_pid, {:web_learning_complete, question})
 
               {:error, reason} ->
-                Logger.warning("[Brain] Web learning failed: #{inspect(reason)}")
+                Logger.warning("[Brain] Vector learning failed: #{inspect(reason)}")
             end
           else
             Logger.debug("[Brain] Web learning skipped — Thought resolved: #{question}")

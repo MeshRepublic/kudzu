@@ -17,6 +17,7 @@ defmodule Kudzu.Hologram.Runner do
   require Logger
 
   alias Kudzu.{Hologram, Constitution}
+  alias Kudzu.Brain.Vectors.Router, as: VectorRouter
 
   @default_cycle_interval 60_000
   @research_cooldown 300_000
@@ -214,19 +215,18 @@ defmodule Kudzu.Hologram.Runner do
               "[Runner:#{short_id(holo_id)}] Researching: #{String.slice(to_string(topic), 0, 80)}"
             )
 
-            case Kudzu.Brain.WebLearner.research(to_string(topic)) do
+            case VectorRouter.learn(to_string(topic)) do
               {:ok, result} ->
                 Logger.info(
-                  "[Runner:#{short_id(holo_id)}] Research done: #{result.pages_read} pages, #{result.chains_stored} chains"
+                  "[Runner:#{short_id(holo_id)}] Research done via #{Map.get(result, :vector, "unknown")}"
                 )
 
                 try do
                   Hologram.record_trace(holo_pid, :discovery, %{
                     type: "research_finding",
                     topic: to_string(topic),
-                    pages_read: result.pages_read,
-                    chains_stored: result.chains_stored,
-                    summaries_stored: Map.get(result, :summaries_stored, 0)
+                    vector: Map.get(result, :vector, "unknown"),
+                    content_preview: result.content |> String.slice(0, 200)
                   })
                 catch
                   _, _ -> :ok
