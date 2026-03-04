@@ -39,7 +39,7 @@ defmodule Kudzu.Application do
       Logger.info("[Application] Starting as WORKER node (no Brain, no web endpoint)")
       []
     else
-      [Kudzu.Brain, KudzuWeb.MCP.Session, KudzuWeb.MCP.Endpoint]
+      [Kudzu.Brain.ActivityIndicator, Kudzu.Brain, KudzuWeb.MCP.Session, KudzuWeb.MCP.Endpoint]
     end
 
     children = core_children ++ full_children

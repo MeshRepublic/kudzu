@@ -53,6 +53,7 @@ defmodule Kudzu.Brain do
   alias Kudzu.Brain.WebLearner
   alias Kudzu.Brain.Vectors.Router, as: VectorRouter
   alias Kudzu.Brain.CurriculumGenerator
+  alias Kudzu.Brain.ActivityIndicator
 
   @initial_desires [
     "Maintain Kudzu system health and recover from failures",
@@ -136,7 +137,7 @@ defmodule Kudzu.Brain do
   """
   @spec chat(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def chat(message, opts \\ []) do
-    GenServer.call(__MODULE__, {:chat, message, opts}, 120_000)
+    GenServer.call(__MODULE__, {:chat, message, opts}, 300_000)
   end
 
   @doc """
@@ -196,6 +197,7 @@ defmodule Kudzu.Brain do
 
   def handle_call({:chat, message, opts}, _from, state) do
     Logger.info("[Brain] Chat message received: #{String.slice(message, 0, 100)}")
+    ActivityIndicator.start_activity(:reasoning, "thinking: #{String.slice(message, 0, 60)}")
 
     # Record user message as a trace
     record_trace(state, :observation, %{
@@ -205,6 +207,7 @@ defmodule Kudzu.Brain do
 
     # Run reasoning pipeline adapted for chat
     {response_text, tier, tool_calls, cost, new_state} = chat_reason(state, message, opts)
+    ActivityIndicator.stop_activity(:reasoning)
 
     # Record brain response as a trace
     record_trace(new_state, :thought, %{
@@ -323,15 +326,24 @@ defmodule Kudzu.Brain do
         cond do
           overdue?(state.last_health_check, @health_interval, now) ->
             Logger.debug("[Brain] Activity: health check")
-            run_health_check(%{state | last_health_check: now})
+            ActivityIndicator.start_activity(:health_check, "health check")
+            result = run_health_check(%{state | last_health_check: now})
+            ActivityIndicator.stop_activity(:health_check)
+            result
 
           overdue?(state.last_distillation, @distillation_interval, now) ->
             Logger.debug("[Brain] Activity: distillation")
-            run_distillation_cycle(%{state | last_distillation: now})
+            ActivityIndicator.start_activity(:distilling, "distilling knowledge")
+            result = run_distillation_cycle(%{state | last_distillation: now})
+            ActivityIndicator.stop_activity(:distilling)
+            result
 
           overdue?(state.last_storage_check, @storage_interval, now) ->
             Logger.debug("[Brain] Activity: storage check")
-            run_storage_check(%{state | last_storage_check: now})
+            ActivityIndicator.start_activity(:storage, "checking storage")
+            result = run_storage_check(%{state | last_storage_check: now})
+            ActivityIndicator.stop_activity(:storage)
+            result
 
           overdue?(state.last_web_learning, @web_learning_interval, now) and not state.web_learning_active ->
             Logger.debug("[Brain] Activity: web learning")
@@ -753,8 +765,12 @@ defmodule Kudzu.Brain do
       {"Already learning '#{topic}'. Say 'progress' to check status.", :reflex, [], 0.0, state}
     else
       Logger.info("[Brain] Generating curriculum for: #{topic}")
+      ActivityIndicator.start_activity(:curriculum, "generating curriculum: #{String.slice(topic, 0, 40)}")
 
-      case generate_curriculum(state, topic) do
+      result = generate_curriculum(state, topic)
+      ActivityIndicator.stop_activity(:curriculum)
+
+      case result do
         {:ok, items, cost} ->
           goal = LearningGoal.new(topic, items)
 
@@ -1918,17 +1934,20 @@ defmodule Kudzu.Brain do
         hologram_pid = state.hologram_pid
 
         Task.start(fn ->
+          ActivityIndicator.start_activity(:learning, "learning: #{String.slice(topic, 0, 50)}")
           try do
             result = VectorRouter.learn(topic)
 
             case result do
               {:ok, findings} ->
+                vector_name = Map.get(findings, :vector, "unknown")
+                ActivityIndicator.stop_activity(:learning)
                 if hologram_pid do
                   Kudzu.Hologram.record_trace(hologram_pid, :learning, %{
                     source: "directed_learning",
                     goal_id: goal_id,
                     topic: topic,
-                    vector: Map.get(findings, :vector, "unknown"),
+                    vector: vector_name,
                     content_preview: findings.content |> String.slice(0, 200)
                   })
                 end
@@ -1936,12 +1955,14 @@ defmodule Kudzu.Brain do
                 send(brain_pid, :web_learning_done)
 
               {:error, reason} ->
+                ActivityIndicator.stop_activity(:learning)
                 Logger.warning("[Brain] Learning topic failed: #{topic} — #{inspect(reason)}")
                 send(brain_pid, {:learning_progress, goal_id, topic_index, :failed})
                 send(brain_pid, :web_learning_done)
             end
           catch
             kind, reason ->
+              ActivityIndicator.stop_activity(:learning)
               Logger.warning("[Brain] Learning topic crashed: #{inspect(kind)}: #{inspect(reason)}")
               send(brain_pid, {:learning_progress, goal_id, topic_index, :failed})
           end
@@ -1992,6 +2013,7 @@ defmodule Kudzu.Brain do
 
       # Fire-and-forget: run web learning in a separate unlinked process
       Task.start(fn ->
+        ActivityIndicator.start_activity(:curiosity_learn, "curious: #{String.slice(question, 0, 50)}")
         try do
           # First try Thought
           thought_result = Thought.run(question,
@@ -2001,9 +2023,10 @@ defmodule Kudzu.Brain do
           )
 
           if thought_result.resolution in [:no_match, :partial] do
-            # Thought didn't know — research on the web
+            # Thought didn't know — research via vectors
             case VectorRouter.learn(question) do
               {:ok, result} ->
+                ActivityIndicator.stop_activity(:curiosity_learn)
                 # Record trace directly on the hologram
                 if hologram_pid do
                   Kudzu.Hologram.record_trace(hologram_pid, :discovery, %{
@@ -2018,13 +2041,16 @@ defmodule Kudzu.Brain do
                 send(brain_pid, {:web_learning_complete, question})
 
               {:error, reason} ->
+                ActivityIndicator.stop_activity(:curiosity_learn)
                 Logger.warning("[Brain] Vector learning failed: #{inspect(reason)}")
             end
           else
+            ActivityIndicator.stop_activity(:curiosity_learn)
             Logger.debug("[Brain] Web learning skipped — Thought resolved: #{question}")
           end
         catch
           kind, reason ->
+            ActivityIndicator.stop_activity(:curiosity_learn)
             Logger.warning("[Brain] Async web learning crashed: #{inspect(kind)}: #{inspect(reason)}")
         end
       end)
