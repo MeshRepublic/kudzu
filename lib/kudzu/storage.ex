@@ -33,6 +33,7 @@ defmodule Kudzu.Storage do
   # Embedding storage (separate from traces for performance)
   @embedding_table :kudzu_embeddings
   @embedding_file ~c"/home/eel/kudzu_data/dets/embeddings.dets"
+  @content_hash_table :kudzu_content_hashes
 
   # Aging thresholds
   @hot_to_warm_seconds 3600        # 1 hour without access → warm
@@ -143,6 +144,7 @@ defmodule Kudzu.Storage do
 
     # Initialize embedding index
     :ets.new(@embedding_table, [:named_table, :set, :public, read_concurrency: true])
+    :ets.new(@content_hash_table, [:named_table, :set, :public, read_concurrency: true])
     {:ok, _} = :dets.open_file(@embedding_file, [type: :set])
     load_embeddings_from_dets()
 
@@ -382,27 +384,43 @@ defmodule Kudzu.Storage do
 
   defp do_age_traces do
     now = DateTime.utc_now()
-    hot_threshold = DateTime.add(now, -@hot_to_warm_seconds)
-    warm_threshold = DateTime.add(now, -@warm_to_cold_seconds)
 
-    # Hot → Warm
     demoted_to_warm =
       :ets.foldl(fn {id, record}, acc ->
-        if DateTime.compare(record.last_accessed, hot_threshold) == :lt and
-           record.importance != :critical do
-          :dets.insert(@warm_file, {id, record})
-          :ets.delete(@hot_table, id)
-          acc + 1
-        else
+        if record.importance == :critical do
           acc
+        else
+          factor = salience_age_factor(record)
+          effective_seconds = trunc(@hot_to_warm_seconds * factor)
+          effective_threshold = DateTime.add(now, -effective_seconds)
+          should_demote = DateTime.compare(record.last_accessed, effective_threshold) == :lt
+
+          if should_demote do
+            :dets.insert(@warm_file, {id, record})
+            :ets.delete(@hot_table, id)
+            acc + 1
+          else
+            acc
+          end
         end
       end, 0, @hot_table)
 
-    # Warm → Cold (if Mnesia ready)
-    demoted_to_cold = 0  # TODO: implement when Mnesia schema is ready
+    demoted_to_cold = 0
 
     Logger.debug("Aging cycle: #{demoted_to_warm} to warm, #{demoted_to_cold} to cold")
     {demoted_to_warm, demoted_to_cold}
+  end
+
+  defp salience_age_factor(record) do
+    base = case record.importance do
+      :critical -> 999
+      :high -> 4
+      :normal -> 1
+      :low -> 0.5
+      _ -> 1
+    end
+    access_boost = min((record.access_count || 0) / 10.0, 2.0)
+    base + access_boost
   end
 
   defp query_ets_by_purpose(purpose, limit) do
@@ -613,7 +631,6 @@ defmodule Kudzu.Storage do
   end
 
   defp do_embed_batch(batch_size) do
-    # Find traces in hot tier that don't have embeddings yet
     all_trace_ids = :ets.foldl(fn {id, _trace}, acc -> [id | acc] end, [], @hot_table)
 
     unembedded = all_trace_ids
@@ -625,12 +642,22 @@ defmodule Kudzu.Storage do
         [{_, trace}] ->
           text = extract_text_content(trace)
           if text && String.length(text) > 10 do
-            case Kudzu.Embedding.embed(text, timeout: 30_000) do
-              {:ok, vector} ->
-                store_embedding(trace_id, vector)
+            content_hash = :crypto.hash(:sha256, text) |> Base.encode16(case: :lower)
+
+            case :ets.lookup(@content_hash_table, content_hash) do
+              [{^content_hash, cached_vector}] ->
+                store_embedding(trace_id, cached_vector)
                 count + 1
-              {:error, _reason} ->
-                count
+
+              [] ->
+                case Kudzu.Embedding.embed(text, timeout: 30_000) do
+                  {:ok, vector} ->
+                    store_embedding(trace_id, vector)
+                    :ets.insert(@content_hash_table, {content_hash, vector})
+                    count + 1
+                  {:error, _reason} ->
+                    count
+                end
             end
           else
             count
