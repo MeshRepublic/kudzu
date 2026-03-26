@@ -111,6 +111,7 @@ defmodule KudzuWeb.Router do
     # Storage stats
     scope "/storage" do
       get "/stats", StorageController, :stats
+      get "/temporal", StorageController, :temporal
     end
   end
 end

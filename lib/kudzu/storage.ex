@@ -91,6 +91,11 @@ defmodule Kudzu.Storage do
     GenServer.call(__MODULE__, {:query_hologram, hologram_id, opts}, 30_000)
   end
 
+  @doc "Query traces created between two DateTimes"
+  def query_temporal(from_dt, to_dt, opts \\ []) do
+    GenServer.call(__MODULE__, {:query_temporal, from_dt, to_dt, opts}, 30_000)
+  end
+
   @doc "Force aging cycle (for testing or manual cleanup)"
   def age_traces do
     GenServer.call(__MODULE__, :age_traces, 60_000)
@@ -198,6 +203,9 @@ defmodule Kudzu.Storage do
     # Write to both hot (fast reads) and warm (durable) tiers
     :ets.insert(@hot_table, {trace.id, record})
     :dets.insert(@warm_file, {trace.id, record})
+
+    # Broadcast new trace for event-driven reactions
+    Phoenix.PubSub.broadcast(Kudzu.PubSub, "traces:new", {:trace_stored, record})
 
     # Embedding happens via periodic batch (see embed_batch/1)
 
@@ -347,6 +355,43 @@ defmodule Kudzu.Storage do
     threshold = Keyword.get(opts, :threshold, 0.3)
     results = do_embedding_search(query_vector, limit, threshold)
     {:reply, results, state}
+  end
+
+  @impl true
+  def handle_call({:query_temporal, from_dt, to_dt, opts}, _from, state) do
+    limit = Keyword.get(opts, :limit, 100)
+    purpose = Keyword.get(opts, :purpose, nil)
+
+    hot_results = :ets.foldl(fn {_id, record}, acc ->
+      in_range = DateTime.compare(record.created_at, from_dt) in [:gt, :eq] and
+                 DateTime.compare(record.created_at, to_dt) in [:lt, :eq]
+      matches_purpose = is_nil(purpose) or record.purpose == purpose
+
+      if in_range and matches_purpose and length(acc) < limit do
+        [record | acc]
+      else
+        acc
+      end
+    end, [], @hot_table)
+
+    warm_results = :dets.foldl(fn {_id, record}, acc ->
+      in_range = DateTime.compare(record.created_at, from_dt) in [:gt, :eq] and
+                 DateTime.compare(record.created_at, to_dt) in [:lt, :eq]
+      matches_purpose = is_nil(purpose) or record.purpose == purpose
+      remaining = limit - length(hot_results)
+
+      if in_range and matches_purpose and length(acc) < remaining do
+        [record | acc]
+      else
+        acc
+      end
+    end, [], @warm_file)
+
+    all = (hot_results ++ warm_results)
+    |> Enum.sort_by(& &1.created_at, {:desc, DateTime})
+    |> Enum.take(limit)
+
+    {:reply, all, state}
   end
 
   @impl true

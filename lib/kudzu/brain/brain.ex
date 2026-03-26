@@ -316,6 +316,7 @@ defmodule Kudzu.Brain do
           end
         end
         schedule_activity_cycle()
+        Phoenix.PubSub.subscribe(Kudzu.PubSub, "traces:new")
         {:noreply, new_state}
 
       {:error, reason} ->
@@ -463,6 +464,28 @@ defmodule Kudzu.Brain do
     {:noreply, state}
   end
 
+
+  @impl true
+  def handle_info({:trace_stored, record}, state) do
+    if record.importance in [:critical, :high] do
+      Logger.info("[Brain] High-importance trace detected, triggering distillation")
+      Task.start(fn ->
+        text = case record.reconstruction_hint do
+          %{content: c} when is_binary(c) -> c
+          %{"content" => c} when is_binary(c) -> c
+          _ -> nil
+        end
+        if text && String.length(text) > 20 do
+          try do
+            Kudzu.Brain.Distiller.distill(text, [])
+          rescue
+            _ -> :ok
+          end
+        end
+      end)
+    end
+    {:noreply, state}
+  end
   def handle_info(msg, state) do
     Logger.debug("[Brain] Unexpected message: #{inspect(msg)}")
     {:noreply, state}
