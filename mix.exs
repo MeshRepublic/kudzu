@@ -30,7 +30,7 @@ defmodule Kudzu.MixProject do
       {:plug_cowboy, "~> 2.6"},
       {:cors_plug, "~> 3.0"},
       {:nx, "~> 0.9"},
-      {:exla, "~> 0.9"}
+      {:exla, "~> 0.9", runtime: false}
     ]
   end
 end
