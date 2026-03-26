@@ -163,6 +163,13 @@ defmodule Kudzu.Brain do
     GenServer.cast(__MODULE__, {:chat_stream, message, stream_to, opts})
   end
 
+  @doc "Get Brain status for metrics"
+  def status do
+    GenServer.call(__MODULE__, :status, 5_000)
+  rescue
+    _ -> %{status: :not_running}
+  end
+
   # ── Server Callbacks ────────────────────────────────────────────────
 
   @impl true
@@ -189,6 +196,23 @@ defmodule Kudzu.Brain do
   @impl true
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
+  end
+
+  @impl true
+  def handle_call(:status, _from, state) do
+    status = %{
+      status: state.status,
+      cycle_count: state.cycle_count,
+      hologram_id: state.hologram_id,
+      learning_goals: length(state.learning_goals),
+      researched_topics: MapSet.size(state.researched_topics),
+      web_learning_active: state.web_learning_active,
+      last_health_check: state.last_health_check,
+      last_curiosity: state.last_curiosity,
+      last_web_learning: state.last_web_learning,
+      last_distillation: state.last_distillation
+    }
+    {:reply, status, state}
   end
 
   def handle_call({:chat, _message, _opts}, _from, %{hologram_id: nil} = state) do

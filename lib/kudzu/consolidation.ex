@@ -79,6 +79,13 @@ defmodule Kudzu.Consolidation do
     GenServer.call(__MODULE__, :get_codebook)
   end
 
+  @doc "Get consolidation daemon status"
+  def status do
+    GenServer.call(__MODULE__, :status, 5_000)
+  rescue
+    _ -> %{status: :unavailable}
+  end
+
   @doc """
   Query consolidated memory using HRR probe.
   Returns traces that match the query vector above threshold.
@@ -186,6 +193,18 @@ defmodule Kudzu.Consolidation do
   @impl true
   def handle_call(:get_codebook, _from, state) do
     {:reply, state.hrr_codebook, state}
+  end
+
+  @impl true
+  def handle_call(:status, _from, state) do
+    status = %{
+      status: :running,
+      last_light_cycle: state.last_consolidation,
+      last_deep_cycle: state.last_deep_consolidation,
+      light_cycle_count: state.stats.consolidations,
+      deep_cycle_count: state.stats.deep_consolidations
+    }
+    {:reply, status, state}
   end
 
   @impl true
