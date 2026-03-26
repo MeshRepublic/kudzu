@@ -21,6 +21,8 @@ defmodule Kudzu.Application do
 
   @impl true
   def start(_type, _args) do
+    ensure_nx_backend()
+
     role = System.get_env("KUDZU_ROLE", "full")
 
     core_children = [
@@ -55,9 +57,9 @@ defmodule Kudzu.Application do
           Process.sleep(1000)
           try do
             reconstructed = Kudzu.HologramRegistry.reconstruct_all()
-            Logger.info("[Application] Reconstructed \#{length(reconstructed)} holograms on startup")
+            Logger.info("[Application] Reconstructed #{length(reconstructed)} holograms on startup")
           rescue
-            e -> Logger.warning("[Application] Hologram reconstruction failed: \#{inspect(e)}")
+            e -> Logger.warning("[Application] Hologram reconstruction failed: #{inspect(e)}")
           end
         end)
       _ -> :ok
@@ -108,7 +110,7 @@ defmodule Kudzu.Application do
   @doc """
   Find a hologram by ID.
   """
-  @spec find_by_id(String.t()) :: {:ok, pid()} | {:error, :not_found}
+  @spec find_by_id(String.t()) :: {:ok, pid()} | {:error, term()}
   def find_by_id(id) do
     case Registry.lookup(Kudzu.Registry, {:id, id}) do
       [{pid, _}] -> {:ok, pid}
@@ -141,5 +143,41 @@ defmodule Kudzu.Application do
     DynamicSupervisor.which_children(Kudzu.HologramSupervisor)
     |> Enum.map(fn {_, pid, _, _} -> pid end)
     |> Enum.filter(&is_pid/1)
+  end
+
+  # --- EXLA Startup Watchdog ---
+  # EXLA/XLA tensor compilation can hang indefinitely during startup.
+  # This smoke-tests Nx with a 15-second timeout. If EXLA hangs or errors,
+  # we fall back to Nx.BinaryBackend and disable EXLA-dependent HRR,
+  # allowing the legacy pure-Elixir FFT path to be used instead.
+  defp ensure_nx_backend do
+    task = Task.async(fn ->
+      try do
+        t = Nx.tensor([1.0, 2.0, 3.0])
+        Nx.sum(t) |> Nx.to_number()
+      rescue
+        e -> {:error, e}
+      end
+    end)
+
+    case Task.yield(task, 15_000) || Task.shutdown(task, :brutal_kill) do
+      {:ok, {:error, reason}} ->
+        Logger.warning("[EXLA Watchdog] Nx smoke test raised: #{inspect(reason)}. Falling back to BinaryBackend.")
+        fallback_to_binary_backend()
+
+      {:ok, _result} ->
+        Logger.info("[EXLA Watchdog] Nx backend OK (smoke test passed in <15s)")
+
+      nil ->
+        Logger.error("[EXLA Watchdog] Nx smoke test timed out after 15s! Falling back to BinaryBackend.")
+        fallback_to_binary_backend()
+    end
+  end
+
+  defp fallback_to_binary_backend do
+    Nx.default_backend(Nx.BinaryBackend)
+    Application.put_env(:nx, :default_defn_options, [compiler: Nx.Defn.Evaluator])
+    Application.put_env(:kudzu, :hrr_backend, nil)
+    Logger.info("[EXLA Watchdog] Switched to Nx.BinaryBackend + Nx.Defn.Evaluator. HRR will use legacy pure-Elixir FFT.")
   end
 end
