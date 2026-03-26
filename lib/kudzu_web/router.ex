@@ -13,6 +13,11 @@ defmodule KudzuWeb.Router do
     get "/health", HealthController, :index
   end
 
+  # Metrics - no auth required
+  scope "/", KudzuWeb do
+    get "/metrics", MetricsController, :index
+  end
+
   # Brain chat — auth handled in controller (needed for SSE before chunked mode)
   scope "/api/v1/brain", KudzuWeb do
     post "/chat", BrainChatController, :chat
@@ -101,6 +106,11 @@ defmodule KudzuWeb.Router do
       get "/", BeamletController, :index
       get "/:id", BeamletController, :show
       get "/capabilities/:capability", BeamletController, :by_capability
+    end
+
+    # Storage stats
+    scope "/storage" do
+      get "/stats", StorageController, :stats
     end
   end
 end
