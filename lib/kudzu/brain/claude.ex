@@ -203,7 +203,7 @@ defmodule Kudzu.Brain.Claude do
 
     request = {@api_url, headers, ~c"application/json", json_body}
 
-    case :httpc.request(:post, request, http_opts, []) do
+    case Kudzu.HTTP.request(:post, request, http_opts) do
       {:ok, {{_http_ver, 200, _reason}, _resp_headers, resp_body}} ->
         parsed = Jason.decode!(to_string(resp_body))
         {:ok, parse_response(parsed)}
@@ -285,7 +285,7 @@ defmodule Kudzu.Brain.Claude do
 
     request = {@api_url, headers, ~c"application/json", json_body}
 
-    case :httpc.request(:post, request, http_opts, [{:sync, false}, {:stream, :self}]) do
+    case Kudzu.HTTP.request(:post, request, http_opts, [{:sync, false}, {:stream, :self}]) do
       {:ok, request_id} ->
         collect_stream(request_id, stream_to)
 

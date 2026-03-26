@@ -22,6 +22,7 @@ defmodule Kudzu.Application do
   @impl true
   def start(_type, _args) do
     ensure_nx_backend()
+    Kudzu.HTTP.ensure_started()
 
     role = System.get_env("KUDZU_ROLE", "full")
 

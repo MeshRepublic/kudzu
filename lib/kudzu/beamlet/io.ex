@@ -92,13 +92,10 @@ defmodule Kudzu.Beamlet.IO do
       headers = Map.get(req, :headers, [])
       timeout = Map.get(req, :timeout, 30_000)
 
-      :inets.start()
-      :ssl.start()
-
       url_charlist = to_charlist(url)
       http_headers = Enum.map(headers, fn {k, v} -> {to_charlist(k), to_charlist(v)} end)
 
-      case :httpc.request(:get, {url_charlist, http_headers}, [{:timeout, timeout}], []) do
+      case Kudzu.HTTP.request(:get, {url_charlist, http_headers}, [{:timeout, timeout}]) do
         {:ok, {{_, status, _}, resp_headers, body}} ->
           {:ok, %{status: status, headers: resp_headers, body: to_string(body)}}
 
@@ -120,15 +117,12 @@ defmodule Kudzu.Beamlet.IO do
       headers = Map.get(req, :headers, [])
       timeout = Map.get(req, :timeout, 30_000)
 
-      :inets.start()
-      :ssl.start()
-
       url_charlist = to_charlist(url)
       http_headers = Enum.map(headers, fn {k, v} -> {to_charlist(k), to_charlist(v)} end)
 
       request = {url_charlist, http_headers, to_charlist(content_type), body}
 
-      case :httpc.request(:post, request, [{:timeout, timeout}], []) do
+      case Kudzu.HTTP.request(:post, request, [{:timeout, timeout}]) do
         {:ok, {{_, status, _}, resp_headers, resp_body}} ->
           {:ok, %{status: status, headers: resp_headers, body: to_string(resp_body)}}
 

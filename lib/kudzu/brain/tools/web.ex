@@ -176,7 +176,7 @@ defmodule Kudzu.Brain.Tools.Web do
     encoded_query = URI.encode_www_form(query)
     url = @searxng_url ++ String.to_charlist("?q=#{encoded_query}&format=json")
 
-    case :httpc.request(
+    case Kudzu.HTTP.request(
            :get,
            {url, [{~c"User-Agent", @user_agent}]},
            [timeout: @http_timeout, connect_timeout: 5000],
@@ -218,7 +218,7 @@ defmodule Kudzu.Brain.Tools.Web do
 
     ssl_opts = ssl_options()
 
-    case :httpc.request(
+    case Kudzu.HTTP.request(
            :get,
            {url, [{~c"User-Agent", @user_agent}]},
            [timeout: @http_timeout, connect_timeout: 5000] ++ ssl_opts,
@@ -310,7 +310,7 @@ defmodule Kudzu.Brain.Tools.Web do
         []
       end
 
-    case :httpc.request(
+    case Kudzu.HTTP.request(
            :get,
            {charlist_url, [{~c"User-Agent", @user_agent}]},
            [timeout: @http_timeout, connect_timeout: 5000] ++ ssl_opts,
@@ -433,7 +433,6 @@ defmodule Kudzu.Brain.Tools.Web do
   end
 
   defp ensure_httpc_started do
-    :inets.start()
-    :ssl.start()
+    Kudzu.HTTP.ensure_started()
   end
 end

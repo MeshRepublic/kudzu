@@ -3,7 +3,7 @@ defmodule KudzuWeb.MCP.Handlers.System do
 
   def handle("kudzu_health", _params) do
     ollama_ok = try do
-      case :httpc.request(:get, {~c"http://localhost:11434/api/tags", []}, [timeout: 2000], []) do
+      case Kudzu.HTTP.request(:get, {~c"http://localhost:11434/api/tags", []}, [timeout: 2000]) do
         {:ok, {{_, 200, _}, _, _}} -> true
         _ -> false
       end

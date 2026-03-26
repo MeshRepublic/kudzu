@@ -306,7 +306,6 @@ defmodule Kudzu.Brain.Distiller do
   # --- Private helpers ---
 
   defp extract_with_ollama(text) do
-    :inets.start()
     excerpt = if String.length(text) > 3000, do: String.slice(text, 0, 3000), else: text
 
     prompt = "Extract key factual relationships from this text. Return ONLY a JSON array of objects with \"subject\", \"relation\", and \"object\" fields.\n\nValid relations: caused_by, causes, requires, uses, is_a, contains, relates_to, produces, provides, because\n\nExample: [{\"subject\": \"Linux\", \"relation\": \"uses\", \"object\": \"systemd for init\"}]\n\nText:\n#{excerpt}\n\nJSON:"
@@ -321,7 +320,7 @@ defmodule Kudzu.Brain.Distiller do
 
     request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
 
-    case :httpc.request(:post, request, [{:timeout, @extract_timeout}], []) do
+    case Kudzu.HTTP.request(:post, request, [{:timeout, @extract_timeout}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"response" => response}} ->

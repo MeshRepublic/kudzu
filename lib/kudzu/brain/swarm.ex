@@ -235,7 +235,6 @@ defmodule Kudzu.Brain.Swarm do
   end
 
   defp decompose_with_ollama(question, n) do
-    :inets.start()
 
     prompt =
       "Break this research question into exactly #{n} focused sub-questions that can be researched independently. Each sub-question should cover a distinct aspect. Return ONLY a JSON array of strings, no other text.\n\nQuestion: #{question}\n\nJSON:"
@@ -252,7 +251,7 @@ defmodule Kudzu.Brain.Swarm do
     request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
 
     try do
-      case :httpc.request(:post, request, [{:timeout, @synthesis_timeout}], []) do
+      case Kudzu.HTTP.request(:post, request, [{:timeout, @synthesis_timeout}]) do
         {:ok, {{_, 200, _}, _, response_body}} ->
           case Jason.decode(to_string(response_body)) do
             {:ok, %{"response" => response}} ->
@@ -423,7 +422,6 @@ defmodule Kudzu.Brain.Swarm do
   # Synthesis
 
   defp synthesize_findings(swarm_id, findings) do
-    :inets.start()
 
     findings_text =
       findings
@@ -460,7 +458,7 @@ defmodule Kudzu.Brain.Swarm do
     request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
 
     try do
-      case :httpc.request(:post, request, [{:timeout, @synthesis_timeout}], []) do
+      case Kudzu.HTTP.request(:post, request, [{:timeout, @synthesis_timeout}]) do
         {:ok, {{_, 200, _}, _, response_body}} ->
           case Jason.decode(to_string(response_body)) do
             {:ok, %{"response" => synthesis}} ->

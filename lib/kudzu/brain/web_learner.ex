@@ -241,7 +241,6 @@ defmodule Kudzu.Brain.WebLearner do
   end
 
   defp summarize_with_ollama(text) do
-    :inets.start()
     excerpt = String.slice(text, 0, 4000)
     prompt = "Summarize the following text in 2-3 concise paragraphs. Focus on key facts, concepts, and relationships. Be factual and specific.\n\nText:\n#{excerpt}\n\nSummary:"
 
@@ -255,7 +254,7 @@ defmodule Kudzu.Brain.WebLearner do
 
     request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
 
-    case :httpc.request(:post, request, [{:timeout, @summary_timeout}], []) do
+    case Kudzu.HTTP.request(:post, request, [{:timeout, @summary_timeout}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"response" => summary}} ->

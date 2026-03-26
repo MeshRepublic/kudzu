@@ -52,7 +52,7 @@ defmodule Kudzu.Brain.Vectors.OllamaTeacher do
   @impl true
   def available? do
     url = get_ollama_url()
-    case :httpc.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5_000}], []) do
+    case Kudzu.HTTP.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5_000}]) do
       {:ok, {{_, 200, _}, _, _}} -> true
       _ -> false
     end
@@ -124,7 +124,7 @@ defmodule Kudzu.Brain.Vectors.OllamaTeacher do
 
     request = {~c"#{url}/api/generate", [], ~c"application/json", body}
 
-    case :httpc.request(:post, request, [{:timeout, @timeout}], []) do
+    case Kudzu.HTTP.request(:post, request, [{:timeout, @timeout}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"response" => text}} -> {:ok, text}

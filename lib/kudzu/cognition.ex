@@ -103,8 +103,7 @@ defmodule Kudzu.Cognition do
   @spec available?(String.t() | nil) :: boolean()
   def available?(ollama_url \\ nil) do
     url = ollama_url || get_ollama_url()
-    :inets.start()
-    case :httpc.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5000}], []) do
+    case Kudzu.HTTP.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5000}]) do
       {:ok, {{_, 200, _}, _, _}} -> true
       _ -> false
     end
@@ -116,8 +115,7 @@ defmodule Kudzu.Cognition do
   @spec list_models(String.t() | nil) :: {:ok, [String.t()]} | {:error, term()}
   def list_models(ollama_url \\ nil) do
     url = ollama_url || get_ollama_url()
-    :inets.start()
-    case :httpc.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 10_000}], []) do
+    case Kudzu.HTTP.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 10_000}]) do
       {:ok, {{_, 200, _}, _, body}} ->
         case Jason.decode(to_string(body)) do
           {:ok, %{"models" => models}} ->
@@ -134,8 +132,6 @@ defmodule Kudzu.Cognition do
   # Call Ollama generate API
   defp call_ollama(ollama_url, model, prompt, temperature) do
     # Ensure inets is started
-    :inets.start()
-    :ssl.start()
 
     body = Jason.encode!(%{
       model: model,
@@ -154,7 +150,7 @@ defmodule Kudzu.Cognition do
       body
     }
 
-    case :httpc.request(:post, request, [{:timeout, @timeout}], []) do
+    case Kudzu.HTTP.request(:post, request, [{:timeout, @timeout}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"response" => response}} ->

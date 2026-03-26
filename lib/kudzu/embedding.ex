@@ -29,8 +29,6 @@ defmodule Kudzu.Embedding do
 
     body = Jason.encode!(%{model: model, input: text})
 
-    :inets.start()
-
     request = {
       ~c"#{url}/api/embed",
       [],
@@ -38,7 +36,7 @@ defmodule Kudzu.Embedding do
       body
     }
 
-    case :httpc.request(:post, request, [{:timeout, timeout}], []) do
+    case Kudzu.HTTP.request(:post, request, [{:timeout, timeout}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"embeddings" => [vector | _]}} ->
@@ -70,8 +68,6 @@ defmodule Kudzu.Embedding do
 
     body = Jason.encode!(%{model: model, input: texts})
 
-    :inets.start()
-
     request = {
       ~c"#{url}/api/embed",
       [],
@@ -79,7 +75,7 @@ defmodule Kudzu.Embedding do
       body
     }
 
-    case :httpc.request(:post, request, [{:timeout, @timeout * 2}], []) do
+    case Kudzu.HTTP.request(:post, request, [{:timeout, @timeout * 2}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"embeddings" => vectors}} when is_list(vectors) ->
@@ -126,9 +122,8 @@ defmodule Kudzu.Embedding do
   @spec available?(keyword()) :: boolean()
   def available?(opts \\ []) do
     url = Keyword.get(opts, :ollama_url, @default_ollama_url)
-    :inets.start()
 
-    case :httpc.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5000}], []) do
+    case Kudzu.HTTP.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5000}]) do
       {:ok, {{_, 200, _}, _, _}} -> true
       _ -> false
     end

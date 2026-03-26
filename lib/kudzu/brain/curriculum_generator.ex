@@ -55,7 +55,7 @@ defmodule Kudzu.Brain.CurriculumGenerator do
 
     request = {~c"#{url}/api/generate", [], ~c"application/json", body}
 
-    case :httpc.request(:post, request, [{:timeout, @timeout}], []) do
+    case Kudzu.HTTP.request(:post, request, [{:timeout, @timeout}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"response" => text}} -> {:ok, text}
