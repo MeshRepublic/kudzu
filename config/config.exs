@@ -37,8 +37,8 @@ config :kudzu, KudzuWeb.MCP.Endpoint,
 # API authentication (disabled by default for development)
 # Enable and set API keys for production
 config :kudzu, :api_auth,
-  enabled: false,
-  api_keys: []
+  enabled: true,
+  api_keys: String.split(System.get_env("KUDZU_API_KEY") || "dev-kudzu-key-2026", ",", trim: true)
 
 # CORS allowed origins (use specific origins in production)
 config :kudzu, :cors_origins, ["*"]
