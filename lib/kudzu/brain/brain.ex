@@ -307,6 +307,8 @@ defmodule Kudzu.Brain do
         # Restore persisted learning goals
         goals = restore_learning_goals(pid)
         new_state = %{new_state | learning_goals: goals}
+        topics = restore_researched_topics(pid)
+        new_state = %{new_state | researched_topics: topics}
         if goals != [] do
           active = Enum.find(goals, &(&1.status == :active))
           if active do
@@ -1666,7 +1668,8 @@ defmodule Kudzu.Brain do
       try do
         Kudzu.Hologram.record_trace(state.hologram_pid, :session_context, %{
           source: "learning_goals_state",
-          goals: serialized
+          goals: serialized,
+          researched_topics: MapSet.to_list(state.researched_topics)
         })
       rescue
         _ -> :ok
@@ -1738,6 +1741,34 @@ defmodule Kudzu.Brain do
         failed_count: g["failed_count"] || g[:failed_count] || 0
       }
     end)
+  end
+
+  defp restore_researched_topics(hologram_pid) do
+    traces = try do
+      Kudzu.Hologram.recall(hologram_pid, :session_context)
+    catch
+      _, _ -> []
+    end
+
+    goal_trace = traces
+    |> Enum.filter(fn t ->
+      hint = Map.get(t, :reconstruction_hint, %{})
+      source = Map.get(hint, :source, Map.get(hint, "source", nil))
+      source == "learning_goals_state"
+    end)
+    |> List.last()
+
+    case goal_trace do
+      %{reconstruction_hint: hint} ->
+        topics_list = Map.get(hint, :researched_topics, Map.get(hint, "researched_topics", []))
+        case topics_list do
+          list when is_list(list) -> MapSet.new(list)
+          _ -> MapSet.new()
+        end
+
+      _ ->
+        MapSet.new()
+    end
   end
 
   # ── Helpers ─────────────────────────────────────────────────────────

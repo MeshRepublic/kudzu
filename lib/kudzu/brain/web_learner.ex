@@ -19,6 +19,45 @@ defmodule Kudzu.Brain.WebLearner do
   @summary_model "llama4:scout"
   @summary_timeout 180_000
 
+  # ── URL dedup & domain rate limiting ──────────────────────────────
+  @visited_urls_table :kudzu_visited_urls
+  @domain_rate_table :kudzu_domain_rates
+  @domain_cooldown_seconds 60
+
+  defp ensure_tables do
+    if :ets.whereis(@visited_urls_table) == :undefined do
+      :ets.new(@visited_urls_table, [:named_table, :set, :public])
+    end
+    if :ets.whereis(@domain_rate_table) == :undefined do
+      :ets.new(@domain_rate_table, [:named_table, :set, :public])
+    end
+  end
+
+  defp url_visited?(url) do
+    ensure_tables()
+    :ets.lookup(@visited_urls_table, url) != []
+  end
+
+  defp mark_url_visited(url) do
+    ensure_tables()
+    :ets.insert(@visited_urls_table, {url, DateTime.utc_now()})
+  end
+
+  defp domain_rate_limited?(url) do
+    ensure_tables()
+    domain = URI.parse(url).host || ""
+    case :ets.lookup(@domain_rate_table, domain) do
+      [{^domain, last_hit}] -> DateTime.diff(DateTime.utc_now(), last_hit) < @domain_cooldown_seconds
+      [] -> false
+    end
+  end
+
+  defp mark_domain_hit(url) do
+    ensure_tables()
+    domain = URI.parse(url).host || ""
+    :ets.insert(@domain_rate_table, {domain, DateTime.utc_now()})
+  end
+
   @doc """
   Research a question: search the web, read top results, distill into
   relational knowledge, store in silos.
@@ -55,6 +94,7 @@ defmodule Kudzu.Brain.WebLearner do
 
   @doc """
   Read the top N results from a search. Returns list of page maps.
+  Skips already-visited URLs and rate-limits per domain (1 req/min).
   """
   def read_top_results(%{results: results}, opts) when is_list(results) do
     limit = Keyword.get(opts, :limit, @max_read_pages)
@@ -64,15 +104,28 @@ defmodule Kudzu.Brain.WebLearner do
     |> Enum.map(fn result ->
       url = Map.get(result, :url, Map.get(result, "url", ""))
 
-      if url != "" do
-        case WebRead.execute(%{"url" => url}) do
-          {:ok, page} -> page
-          {:error, reason} ->
-            Logger.debug("[WebLearner] Failed to read #{url}: #{inspect(reason)}")
-            nil
-        end
-      else
-        nil
+      cond do
+        url == "" ->
+          nil
+
+        url_visited?(url) ->
+          Logger.debug("[WebLearner] Skipping #{url} (already visited)")
+          nil
+
+        domain_rate_limited?(url) ->
+          Logger.debug("[WebLearner] Skipping #{url} (domain rate-limited)")
+          nil
+
+        true ->
+          mark_url_visited(url)
+          mark_domain_hit(url)
+
+          case WebRead.execute(%{"url" => url}) do
+            {:ok, page} -> page
+            {:error, reason} ->
+              Logger.debug("[WebLearner] Failed to read #{url}: #{inspect(reason)}")
+              nil
+          end
       end
     end)
     |> Enum.reject(&is_nil/1)

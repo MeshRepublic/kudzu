@@ -153,6 +153,18 @@ defmodule Kudzu.Brain.Curiosity do
     |> String.trim()
   end
 
+  @doc "Filter out questions that have already been explored (by Jaro distance)."
+  def filter_explored(questions, explored_set) when is_list(questions) do
+    Enum.reject(questions, fn q ->
+      normalized = String.downcase(String.trim(q))
+      MapSet.member?(explored_set, normalized) or
+        Enum.any?(explored_set, fn explored ->
+          String.jaro_distance(normalized, explored) > 0.85
+        end)
+    end)
+  end
+  def filter_explored(questions, _), do: questions
+
   # --- Existing generators (unchanged) ---
 
   def generate_from_desires(desires, silo_domains) do
