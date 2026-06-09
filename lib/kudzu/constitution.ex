@@ -57,7 +57,13 @@ defmodule Kudzu.Constitution do
   alias Kudzu.Constitution.{Cautious, KudzuEvolve, MeshRepublic, Open}
 
   @type framework :: :mesh_republic | :cautious | :open | :kudzu_evolve | module()
-  @type action :: {atom(), map()} | atom()
+  # FIXME (post-Phase-5 follow-up): action type carries 3-tuple shape
+  # ({record_trace, purpose, hints} / {query_peer, peer_id, purpose} / etc.)
+  # from Cognition.parse_actions/1. Constitution normalize_action/1 converts
+  # these to {atom, map} before evaluation. Cleaner fix is to normalize at
+  # the Cognition.parse_actions/1 boundary so all action consumers see a
+  # uniform {atom, map} type. Tracked separately from Phase 5 type-discipline.
+  @type action :: {atom(), map()} | {atom(), term(), term()} | atom()
   @type decision :: :permitted | {:denied, atom()} | {:requires_consensus, float()}
 
   @frameworks %{
