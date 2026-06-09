@@ -46,4 +46,15 @@ defmodule Kudzu.Constitution.Open do
 
   @impl true
   def validate_trace(_trace, _state), do: :valid
+
+  @impl true
+  @doc """
+  Bootstrap default — distillation is not implemented for `Open`.
+
+  `Open` is a hand-coded permissive framework, not the product of
+  distillation from accumulated traces. See `Kudzu.Constitution`'s
+  module documentation for the intended emergent-framework workflow.
+  """
+  @spec distill([Kudzu.Trace.t()]) :: {:error, :not_implemented}
+  def distill(_traces), do: {:error, :not_implemented}
 end

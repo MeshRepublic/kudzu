@@ -13,6 +13,7 @@ defmodule Kudzu.Constitution do
   - `:mesh_republic` - Distributed, transparent, anti-centralization
   - `:cautious` - Highly restrictive, explicit permission required
   - `:open` - No constraints (testing only)
+  - `:kudzu_evolve` - Meta-learning, optimization-focused
 
   ## Example
 
@@ -24,6 +25,33 @@ defmodule Kudzu.Constitution do
 
       # Audit a decision
       Kudzu.Constitution.audit(:mesh_republic, trace, :permitted, state)
+
+  ## Bootstrap defaults vs. emergent frameworks
+
+  The 4 included constitutions are **bootstrap defaults**. They were
+  hand-written so the system has a working enforcement substrate before
+  the distillation pipeline is in place. They are *not* the canonical
+  path for creating constitutions — they are stand-ins.
+
+  The intended workflow is `distill/1` (see `Kudzu.Constitution.Behaviour`):
+  accumulate traces in a domain (e.g. Linux system administration) and
+  crystallize them into a behavioral framework. After enough data has
+  been gathered, "Linux sysadmin" becomes a framework — the same way
+  the US Constitution is itself a crystallization of accumulated political
+  experience.
+
+  None of the 4 defaults implement `distill/1` yet — each returns
+  `{:error, :not_implemented}`. The callback exists in the behaviour so
+  the gap is visible at the contract level, and so the eventual
+  distillation pipeline has a fixed interface to satisfy.
+
+  See the `expertise:linux_sysadmin_test_v2` silo on titan for an example
+  of distilled-knowledge input that the real `distill/1` implementation
+  will consume: 733 triples extracted from 5 Linux sysadmin pages, 97.8%
+  useful rate, 278 distinct relations. That is the substrate; when it is
+  large enough and diverse enough, distillation can crystallize it into
+  a constitution that knows what "good Linux sysadmin behavior" looks
+  like in operational terms.
   """
 
   alias Kudzu.Constitution.{MeshRepublic, Cautious, Open, KudzuEvolve}
@@ -157,5 +185,23 @@ defmodule Kudzu.Constitution do
       {name, permitted?(name, action, state)}
     end)
     |> Map.new()
+  end
+
+  @doc """
+  Attempt to distill a new constitution from accumulated traces, using
+  the given framework module as the distillation strategy.
+
+  All 4 bootstrap defaults return `{:error, :not_implemented}` — this
+  function is here so the eventual distillation pipeline can be invoked
+  through the same dispatcher pattern as the rest of the constitution
+  API. See `Kudzu.Constitution.Behaviour.distill/1` and this module's
+  "Bootstrap defaults vs. emergent frameworks" doc section.
+  """
+  @spec distill(framework(), [Kudzu.Trace.t()]) :: {:ok, module()} | {:error, term()}
+  def distill(framework, traces) do
+    case get_framework(framework) do
+      nil -> {:error, :unknown_constitution}
+      mod -> mod.distill(traces)
+    end
   end
 end

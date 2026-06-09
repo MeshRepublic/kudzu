@@ -152,6 +152,18 @@ defmodule Kudzu.Constitution.MeshRepublic do
     end
   end
 
+  @impl true
+  @doc """
+  Bootstrap default — distillation is not implemented for `MeshRepublic`.
+
+  `MeshRepublic` is a hand-coded framework encoding distributed-governance
+  principles, not the product of distillation from accumulated traces.
+  See `Kudzu.Constitution`'s module documentation for the intended
+  emergent-framework workflow.
+  """
+  @spec distill([Kudzu.Trace.t()]) :: {:error, :not_implemented}
+  def distill(_traces), do: {:error, :not_implemented}
+
   # Private functions
 
   defp normalize_action({type, params}) when is_atom(type) and is_map(params), do: {type, params}

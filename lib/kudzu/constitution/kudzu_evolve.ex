@@ -240,6 +240,20 @@ defmodule Kudzu.Constitution.KudzuEvolve do
     end
   end
 
+  @impl true
+  @doc """
+  Bootstrap default — distillation is not implemented for `KudzuEvolve`.
+
+  Even the meta-learning framework is itself hand-coded — the principles
+  that govern *how* an agent learns weren't themselves emergent. See
+  `Kudzu.Constitution`'s module documentation for the intended
+  emergent-framework workflow. When `distill/1` lands for real, the
+  ideal first target is to distill a successor to `KudzuEvolve` from
+  the accumulated traces of agents running under it.
+  """
+  @spec distill([Kudzu.Trace.t()]) :: {:error, :not_implemented}
+  def distill(_traces), do: {:error, :not_implemented}
+
   # ============================================================================
   # Evolution-Specific Functions (can be called by holograms)
   # ============================================================================

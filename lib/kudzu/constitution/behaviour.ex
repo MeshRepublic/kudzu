@@ -12,9 +12,21 @@ defmodule Kudzu.Constitution.Behaviour do
   - audit/2 - Record constitutional decisions for transparency
   - consensus_required?/2 - Does this action need distributed agreement?
   - validate_trace/2 - Verify a trace complies with constitution
+  - distill/1 - Crystallize a constitution from accumulated traces
 
   Frameworks can be hot-swapped at runtime, changing permissible actions
   without modifying the underlying cognition architecture.
+
+  ## Bootstrap vs. emergent frameworks
+
+  The included constitutions (`MeshRepublic`, `Cautious`, `Open`,
+  `KudzuEvolve`) are bootstrap defaults: hand-coded so the system has
+  *something* to enforce before the distillation pipeline is in place.
+  The intended path for creating new constitutions is `distill/1`:
+  accumulate enough traces in a domain (e.g. Linux sysadmin) and
+  crystallize them into a behavioral framework. The 4 defaults all stub
+  `distill/1` as `{:error, :not_implemented}` to make the gap visible
+  in the contract.
   """
 
   @type action :: {atom(), map()}
@@ -77,6 +89,32 @@ defmodule Kudzu.Constitution.Behaviour do
   Get human-readable description of the constitutional principles.
   """
   @callback principles() :: [String.t()]
+
+  @doc """
+  Distill a constitution from accumulated traces.
+
+  This is the intended path for creating constitutions: gather enough
+  traces in a domain (e.g. Linux sysadmin), aggregate, and crystallize
+  a behavioral framework. The 4 hand-coded implementations are bootstrap
+  defaults; their `distill/1` returns `{:error, :not_implemented}` to
+  make the gap visible.
+
+  When a real distillation pipeline lands (likely consuming
+  `Kudzu.Brain.Distiller` + `Kudzu.Silo` output — see the
+  `expertise:linux_sysadmin_test_v2` silo for the kind of input this
+  will see, 733 triples at 97.8% useful), this is the contract it
+  satisfies.
+
+  ## Return values
+
+  - `{:ok, module}` - a module that itself implements
+    `Kudzu.Constitution.Behaviour`, ready to be registered and used.
+  - `{:error, :not_implemented}` - the implementation is a bootstrap
+    default with no distillation logic yet.
+  - `{:error, term}` - distillation attempted but failed (insufficient
+    traces, contradictory signals, etc.).
+  """
+  @callback distill(traces :: [Kudzu.Trace.t()]) :: {:ok, module()} | {:error, term()}
 
   @optional_callbacks [consensus_required?: 2, validate_trace: 2, principles: 0]
 end

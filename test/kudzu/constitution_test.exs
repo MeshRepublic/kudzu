@@ -2,11 +2,11 @@ defmodule Kudzu.ConstitutionTest do
   use ExUnit.Case, async: true
 
   alias Kudzu.{Constitution, Hologram, Application}
-  alias Kudzu.Constitution.{MeshRepublic, Cautious, Open}
+  alias Kudzu.Constitution.{MeshRepublic, Cautious, Open, KudzuEvolve}
 
   describe "Constitution behaviour" do
     test "all frameworks implement required callbacks" do
-      frameworks = [MeshRepublic, Cautious, Open]
+      frameworks = [MeshRepublic, Cautious, Open, KudzuEvolve]
 
       Enum.each(frameworks, fn mod ->
         Code.ensure_loaded!(mod)
@@ -14,7 +14,49 @@ defmodule Kudzu.ConstitutionTest do
         assert function_exported?(mod, :constrain, 2)
         assert function_exported?(mod, :audit, 3)
         assert function_exported?(mod, :name, 0)
+        assert function_exported?(mod, :distill, 1)
       end)
+    end
+  end
+
+  describe "Constitution.distill/1 - bootstrap defaults" do
+    # Phase 4.1: the 4 hand-coded constitutions are bootstrap stubs.
+    # distill/1 is the contract for emergent frameworks; until the
+    # distillation pipeline lands, every default returns :not_implemented.
+    # These tests pin that contract so the gap stays visible.
+
+    test "all 4 bootstrap constitutions stub distill/1 as :not_implemented" do
+      for mod <- [MeshRepublic, Cautious, Open, KudzuEvolve] do
+        assert mod.distill([]) == {:error, :not_implemented},
+               "#{inspect(mod)}.distill/1 should return {:error, :not_implemented} for empty traces"
+      end
+    end
+
+    test "distill/1 returns :not_implemented regardless of trace content" do
+      trace_lists = [
+        [],
+        [%{id: "a", origin: "x", timestamp: %{}, purpose: :observation}],
+        Enum.map(1..50, fn i ->
+          %{id: "t#{i}", origin: "origin", timestamp: %{}, purpose: :discovery}
+        end)
+      ]
+
+      for mod <- [MeshRepublic, Cautious, Open, KudzuEvolve],
+          traces <- trace_lists do
+        assert mod.distill(traces) == {:error, :not_implemented},
+               "#{inspect(mod)}.distill/1 should be :not_implemented for #{length(traces)} traces"
+      end
+    end
+
+    test "Constitution.distill/2 dispatches by framework atom" do
+      for framework <- [:mesh_republic, :cautious, :open, :kudzu_evolve] do
+        assert Constitution.distill(framework, []) == {:error, :not_implemented}
+      end
+    end
+
+    test "Constitution.distill/2 returns :unknown_constitution for unknown framework" do
+      assert Constitution.distill(:nonexistent_framework, []) ==
+               {:error, :unknown_constitution}
     end
   end
 
