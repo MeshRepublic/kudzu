@@ -44,6 +44,7 @@ defmodule Kudzu.Brain.ReflexesTest do
         {:anomaly, %{check: :consolidation, reason: "stale"}},
         {:anomaly, %{check: :storage, reason: "unreachable"}}
       ]
+
       assert {:act, _actions} = Reflexes.check(anomalies)
     end
 
@@ -52,6 +53,7 @@ defmodule Kudzu.Brain.ReflexesTest do
         {:anomaly, %{check: :something_unknown, reason: "weird"}},
         {:anomaly, %{check: :storage, reason: "unreachable"}}
       ]
+
       assert {:escalate, _} = Reflexes.check(anomalies)
     end
   end

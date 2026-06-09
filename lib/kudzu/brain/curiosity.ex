@@ -119,7 +119,12 @@ defmodule Kudzu.Brain.Curiosity do
     - `silo_domains` - list of silo domain name strings
     - `researched_topics` - MapSet of already-researched normalized topic strings
   """
-  def generate_research_questions(desires, %WorkingMemory{} = wm, silo_domains, %MapSet{} = researched_topics) do
+  def generate_research_questions(
+        desires,
+        %WorkingMemory{} = wm,
+        silo_domains,
+        %MapSet{} = researched_topics
+      ) do
     desires
     |> generate(wm, silo_domains)
     |> filter_researched(researched_topics)
@@ -157,12 +162,14 @@ defmodule Kudzu.Brain.Curiosity do
   def filter_explored(questions, explored_set) when is_list(questions) do
     Enum.reject(questions, fn q ->
       normalized = String.downcase(String.trim(q))
+
       MapSet.member?(explored_set, normalized) or
         Enum.any?(explored_set, fn explored ->
           String.jaro_distance(normalized, explored) > 0.85
         end)
     end)
   end
+
   def filter_explored(questions, _), do: questions
 
   # --- Existing generators (unchanged) ---
@@ -203,6 +210,7 @@ defmodule Kudzu.Brain.Curiosity do
   def generate_from_salience(limit) do
     try do
       state = Kudzu.Consolidation.stats()
+
       if state[:traces_processed] && state[:traces_processed] > 0 do
         Kudzu.Consolidation.semantic_query("important unresolved", 0.3)
         |> Enum.take(limit)
@@ -271,17 +279,29 @@ defmodule Kudzu.Brain.Curiosity do
 
   defp classify_desire(desire) do
     desire_lower = String.downcase(desire)
+
     cond do
-      String.contains?(desire_lower, "health") or String.contains?(desire_lower, "recover") -> "health"
-      String.contains?(desire_lower, "self-model") or String.contains?(desire_lower, "architecture") -> "self-model"
-      String.contains?(desire_lower, "learn") or String.contains?(desire_lower, "pattern") -> "learn"
-      String.contains?(desire_lower, "fault") or String.contains?(desire_lower, "distributed") -> "fault tolerance"
-      true -> "knowledge gaps"
+      String.contains?(desire_lower, "health") or String.contains?(desire_lower, "recover") ->
+        "health"
+
+      String.contains?(desire_lower, "self-model") or
+          String.contains?(desire_lower, "architecture") ->
+        "self-model"
+
+      String.contains?(desire_lower, "learn") or String.contains?(desire_lower, "pattern") ->
+        "learn"
+
+      String.contains?(desire_lower, "fault") or String.contains?(desire_lower, "distributed") ->
+        "fault tolerance"
+
+      true ->
+        "knowledge gaps"
     end
   end
 
   defp has_silo_coverage?(theme, silo_domains) do
     domain_set = MapSet.new(silo_domains |> Enum.map(&String.downcase/1))
+
     case theme do
       "health" -> MapSet.member?(domain_set, "health")
       "self-model" -> MapSet.member?(domain_set, "self")

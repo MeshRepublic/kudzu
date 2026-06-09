@@ -59,10 +59,12 @@ defmodule Kudzu.ProtocolTest do
 
     test "roundtrips query response with traces" do
       clock = VectorClock.new("agent-1")
+
       traces = [
         Trace.new("agent-1", :test, ["agent-1"]),
         Trace.new("agent-2", :test, ["agent-2"])
       ]
+
       original = Protocol.query_response("agent-1", clock, traces, ["agent-3"])
 
       {:ok, encoded} = Protocol.encode(original)

@@ -24,12 +24,18 @@ defmodule Kudzu.Brain.Activities do
   alias Kudzu.Brain.WorkingMemory
 
   # Activity loop intervals (always-awake mode)
-  @activity_tick 10_000          # Check for overdue activities every 10s
-  @health_interval 60_000        # Health checks: every 1 minute
-  @curiosity_interval 120_000    # Curiosity exploration: every 2 minutes
-  @web_learning_interval 300_000 # Web research: every 5 minutes
-  @distillation_interval 600_000 # Knowledge distillation: every 10 minutes
-  @storage_interval 1_800_000    # Storage monitoring: every 30 minutes
+  # Check for overdue activities every 10s
+  @activity_tick 10_000
+  # Health checks: every 1 minute
+  @health_interval 60_000
+  # Curiosity exploration: every 2 minutes
+  @curiosity_interval 120_000
+  # Web research: every 5 minutes
+  @web_learning_interval 300_000
+  # Knowledge distillation: every 10 minutes
+  @distillation_interval 600_000
+  # Storage monitoring: every 30 minutes
+  @storage_interval 1_800_000
 
   @consolidation_staleness_ms 1_200_000
 
@@ -51,6 +57,7 @@ defmodule Kudzu.Brain.Activities do
     # Run the most overdue activity (wrapped in trap_exit + try/catch for resilience)
     # Trap exits temporarily so linked Task.async crashes don't kill the Brain
     old_trap = Process.flag(:trap_exit, true)
+
     state =
       try do
         cond do
@@ -75,7 +82,8 @@ defmodule Kudzu.Brain.Activities do
             ActivityIndicator.stop_activity(:storage)
             result
 
-          overdue?(state.last_web_learning, @web_learning_interval, now) and not state.web_learning_active ->
+          overdue?(state.last_web_learning, @web_learning_interval, now) and
+              not state.web_learning_active ->
             Logger.debug("[Brain] Activity: web learning")
             run_web_learning(%{state | last_web_learning: now, web_learning_active: true})
 
@@ -84,12 +92,14 @@ defmodule Kudzu.Brain.Activities do
             run_curiosity(%{state | last_curiosity: now})
 
           true ->
-            state  # Nothing overdue — idle tick
+            # Nothing overdue — idle tick
+            state
         end
       catch
         kind, reason ->
           Logger.warning("[Brain] Activity crashed: #{inspect(kind)}: #{inspect(reason)}")
-          state  # Return unchanged state on crash
+          # Return unchanged state on crash
+          state
       after
         Process.flag(:trap_exit, old_trap)
         # Flush any trapped EXIT messages so they don't pile up
@@ -167,9 +177,11 @@ defmodule Kudzu.Brain.Activities do
       goals
     else
       case Enum.find_index(goals, &(&1.status == :queued)) do
-        nil -> goals
+        nil ->
+          goals
+
         idx ->
-          List.update_at(goals, idx, &(%{&1 | status: :active}))
+          List.update_at(goals, idx, &%{&1 | status: :active})
       end
     end
   end
@@ -203,11 +215,12 @@ defmodule Kudzu.Brain.Activities do
         questions = Curiosity.generate(desires, wm, silo_domains)
 
         if question = List.first(questions) do
-          thought_result = Thought.run(question,
-            monarch_pid: brain_pid,
-            timeout: 8_000,
-            priming: []
-          )
+          thought_result =
+            Thought.run(question,
+              monarch_pid: brain_pid,
+              timeout: 8_000,
+              priming: []
+            )
 
           if hologram_pid do
             Kudzu.Hologram.record_trace(hologram_pid, :thought, %{
@@ -237,6 +250,7 @@ defmodule Kudzu.Brain.Activities do
 
         Task.start(fn ->
           ActivityIndicator.start_activity(:learning, "learning: #{String.slice(topic, 0, 50)}")
+
           try do
             result = VectorRouter.learn(topic)
 
@@ -244,6 +258,7 @@ defmodule Kudzu.Brain.Activities do
               {:ok, findings} ->
                 vector_name = Map.get(findings, :vector, "unknown")
                 ActivityIndicator.stop_activity(:learning)
+
                 if hologram_pid do
                   Kudzu.Hologram.record_trace(hologram_pid, :learning, %{
                     source: "directed_learning",
@@ -253,6 +268,7 @@ defmodule Kudzu.Brain.Activities do
                     content_preview: findings.content |> String.slice(0, 200)
                   })
                 end
+
                 send(brain_pid, {:learning_progress, goal_id, topic_index, :complete})
                 send(brain_pid, :web_learning_done)
 
@@ -265,7 +281,11 @@ defmodule Kudzu.Brain.Activities do
           catch
             kind, reason ->
               ActivityIndicator.stop_activity(:learning)
-              Logger.warning("[Brain] Learning topic crashed: #{inspect(kind)}: #{inspect(reason)}")
+
+              Logger.warning(
+                "[Brain] Learning topic crashed: #{inspect(kind)}: #{inspect(reason)}"
+              )
+
               send(brain_pid, {:learning_progress, goal_id, topic_index, :failed})
           end
         end)
@@ -285,6 +305,7 @@ defmodule Kudzu.Brain.Activities do
           {topic, index} -> {:learning, topic, goal_id, index}
           nil -> :no_learning_topic
         end
+
       nil ->
         :no_learning_topic
     end
@@ -312,14 +333,19 @@ defmodule Kudzu.Brain.Activities do
 
       # Fire-and-forget: run web learning in a separate unlinked process
       Task.start(fn ->
-        ActivityIndicator.start_activity(:curiosity_learn, "curious: #{String.slice(question, 0, 50)}")
+        ActivityIndicator.start_activity(
+          :curiosity_learn,
+          "curious: #{String.slice(question, 0, 50)}"
+        )
+
         try do
           # First try Thought
-          thought_result = Thought.run(question,
-            monarch_pid: brain_pid,
-            timeout: 8_000,
-            priming: []
-          )
+          thought_result =
+            Thought.run(question,
+              monarch_pid: brain_pid,
+              timeout: 8_000,
+              priming: []
+            )
 
           if thought_result.resolution in [:no_match, :partial] do
             # Thought didn't know — research via vectors
@@ -350,7 +376,10 @@ defmodule Kudzu.Brain.Activities do
         catch
           kind, reason ->
             ActivityIndicator.stop_activity(:curiosity_learn)
-            Logger.warning("[Brain] Async web learning crashed: #{inspect(kind)}: #{inspect(reason)}")
+
+            Logger.warning(
+              "[Brain] Async web learning crashed: #{inspect(kind)}: #{inspect(reason)}"
+            )
         end
       end)
 
@@ -376,7 +405,7 @@ defmodule Kudzu.Brain.Activities do
 
       Logger.info(
         "[Brain] Distillation complete: " <>
-        "#{result.reviewed} reviewed, #{result.merged} merged, #{result.pruned} pruned"
+          "#{result.reviewed} reviewed, #{result.merged} merged, #{result.pruned} pruned"
       )
     rescue
       e ->
@@ -395,17 +424,19 @@ defmodule Kudzu.Brain.Activities do
 
       Logger.info(
         "[Brain] Storage: hot=#{stats.hot_count} entries (#{div(stats.hot_bytes, 1024)}KB), " <>
-        "warm=#{div(stats.warm_bytes, 1024)}KB, " <>
-        "total=#{div(stats.total_bytes, 1048576)}MB, " <>
-        "utilization=#{stats.utilization}%"
+          "warm=#{div(stats.warm_bytes, 1024)}KB, " <>
+          "total=#{div(stats.total_bytes, 1_048_576)}MB, " <>
+          "utilization=#{stats.utilization}%"
       )
 
       # Embed unembedded traces (batch of 3 per cycle)
-      embedded = try do
-        Kudzu.Storage.embed_batch(3)
-      catch
-        _, _ -> 0
-      end
+      embedded =
+        try do
+          Kudzu.Storage.embed_batch(3)
+        catch
+          _, _ -> 0
+        end
+
       if embedded > 0 do
         Logger.debug("[Brain] Embedded #{embedded} traces")
       end
@@ -414,7 +445,11 @@ defmodule Kudzu.Brain.Activities do
       evicted =
         if stats.utilization > 80.0 do
           count = Kudzu.Storage.evict_lowest(100)
-          Logger.warning("[Brain] Storage utilization #{stats.utilization}% > 80% — evicted #{count} traces")
+
+          Logger.warning(
+            "[Brain] Storage utilization #{stats.utilization}% > 80% — evicted #{count} traces"
+          )
+
           count
         else
           0
@@ -447,8 +482,11 @@ defmodule Kudzu.Brain.Activities do
             {domain, _, _} -> domain
             domain when is_binary(domain) -> domain
             _ -> nil
-          end) |> Enum.reject(&is_nil/1)
-        _ -> []
+          end)
+          |> Enum.reject(&is_nil/1)
+
+        _ ->
+          []
       end
     catch
       _, _ -> []
@@ -456,8 +494,9 @@ defmodule Kudzu.Brain.Activities do
   end
 
   defp overdue?(nil, _interval, _now), do: true
+
   defp overdue?(last, interval, now) do
-    (now - last) >= interval
+    now - last >= interval
   end
 
   # ── Pre-Check Gate ──────────────────────────────────────────────────
@@ -489,8 +528,7 @@ defmodule Kudzu.Brain.Activities do
 
     cond do
       is_nil(last) ->
-        {:anomaly,
-         %{check: :consolidation_recency, reason: "No consolidation has ever run"}}
+        {:anomaly, %{check: :consolidation_recency, reason: "No consolidation has ever run"}}
 
       is_struct(last, DateTime) ->
         age_ms = DateTime.diff(DateTime.utc_now(), last, :millisecond)

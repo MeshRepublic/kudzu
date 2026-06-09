@@ -60,15 +60,17 @@ defmodule Kudzu.Reconsolidation do
   @doc """
   Reconsolidate a trace and persist the changes.
   """
-  @spec reconsolidate_and_persist(Trace.t(), String.t(), map()) :: {:ok, Trace.t()} | {:error, term()}
+  @spec reconsolidate_and_persist(Trace.t(), String.t(), map()) ::
+          {:ok, Trace.t()} | {:error, term()}
   def reconsolidate_and_persist(%Trace{} = trace, hologram_id, context \\ %{}) do
     reconsolidated = reconsolidate(trace, context)
 
     # Persist to storage
-    importance = case reconsolidated.salience do
-      %Salience{importance: imp} -> imp
-      _ -> :normal
-    end
+    importance =
+      case reconsolidated.salience do
+        %Salience{importance: imp} -> imp
+        _ -> :normal
+      end
 
     case Storage.store(reconsolidated, hologram_id, importance) do
       :ok -> {:ok, reconsolidated}
@@ -100,6 +102,7 @@ defmodule Kudzu.Reconsolidation do
   """
   @spec stability(Trace.t()) :: float()
   def stability(%Trace{salience: nil}), do: 0.5
+
   def stability(%Trace{salience: salience}) do
     # Stability increases with:
     # - More consolidations
@@ -108,13 +111,15 @@ defmodule Kudzu.Reconsolidation do
 
     consolidation_factor = min(salience.consolidation_count / 10.0, 1.0)
     novelty_factor = 1.0 - salience.novelty
-    importance_factor = case salience.importance do
-      :critical -> 1.0
-      :high -> 0.8
-      :normal -> 0.5
-      :low -> 0.3
-      :trivial -> 0.1
-    end
+
+    importance_factor =
+      case salience.importance do
+        :critical -> 1.0
+        :high -> 0.8
+        :normal -> 0.5
+        :low -> 0.3
+        :trivial -> 0.1
+      end
 
     (consolidation_factor * 0.4 + novelty_factor * 0.3 + importance_factor * 0.3)
     |> max(0.0)
@@ -148,11 +153,15 @@ defmodule Kudzu.Reconsolidation do
   def apply_modification(%Trace{} = trace, :strengthen_association, related_purpose) do
     # Add or strengthen association to related purpose
     current_associations = Map.get(trace.reconstruction_hint, :associations, [])
-    updated_associations = [related_purpose | current_associations] |> Enum.uniq() |> Enum.take(10)
 
-    %{trace |
-      reconstruction_hint: Map.put(trace.reconstruction_hint, :associations, updated_associations),
-      salience: strengthen_salience_associations(trace.salience)
+    updated_associations =
+      [related_purpose | current_associations] |> Enum.uniq() |> Enum.take(10)
+
+    %{
+      trace
+      | reconstruction_hint:
+          Map.put(trace.reconstruction_hint, :associations, updated_associations),
+        salience: strengthen_salience_associations(trace.salience)
     }
   end
 
@@ -161,15 +170,15 @@ defmodule Kudzu.Reconsolidation do
     current_context = Map.get(trace.reconstruction_hint, :context, %{})
     merged_context = Map.merge(current_context, new_context)
 
-    %{trace |
-      reconstruction_hint: Map.put(trace.reconstruction_hint, :context, merged_context)
-    }
+    %{trace | reconstruction_hint: Map.put(trace.reconstruction_hint, :context, merged_context)}
   end
 
-  def apply_modification(%Trace{} = trace, :update_emotional_valence, valence) when is_number(valence) do
+  def apply_modification(%Trace{} = trace, :update_emotional_valence, valence)
+      when is_number(valence) do
     case trace.salience do
       nil ->
         trace
+
       salience ->
         %{trace | salience: Salience.set_emotional_valence(salience, valence)}
     end
@@ -180,26 +189,32 @@ defmodule Kudzu.Reconsolidation do
   # Private functions
 
   defp integrate_context(%Trace{} = trace, context) when map_size(context) == 0, do: trace
+
   defp integrate_context(%Trace{} = trace, context) do
     # Only integrate if context has relevant keys
     relevant_keys = [:recall_purpose, :recall_query, :related_traces]
 
-    integrable = context
-    |> Map.take(relevant_keys)
-    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
-    |> Map.new()
+    integrable =
+      context
+      |> Map.take(relevant_keys)
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+      |> Map.new()
 
     if map_size(integrable) > 0 do
       current_recall_history = Map.get(trace.reconstruction_hint, :recall_history, [])
+
       new_recall = %{
         at: DateTime.utc_now(),
         context: integrable
       }
+
       # Keep last 5 recall events
       updated_history = [new_recall | current_recall_history] |> Enum.take(5)
 
-      %{trace |
-        reconstruction_hint: Map.put(trace.reconstruction_hint, :recall_history, updated_history)
+      %{
+        trace
+        | reconstruction_hint:
+            Map.put(trace.reconstruction_hint, :recall_history, updated_history)
       }
     else
       trace
@@ -213,14 +228,15 @@ defmodule Kudzu.Reconsolidation do
 
       related when is_list(related) ->
         # Extract purposes from related traces
-        related_purposes = related
-        |> Enum.map(fn
-          %Trace{purpose: p} -> p
-          %{purpose: p} -> p
-          _ -> nil
-        end)
-        |> Enum.reject(&is_nil/1)
-        |> Enum.uniq()
+        related_purposes =
+          related
+          |> Enum.map(fn
+            %Trace{purpose: p} -> p
+            %{purpose: p} -> p
+            _ -> nil
+          end)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.uniq()
 
         if related_purposes != [] do
           current_associations = Map.get(trace.reconstruction_hint, :associations, [])
@@ -250,6 +266,7 @@ defmodule Kudzu.Reconsolidation do
   end
 
   defp strengthen_salience_associations(nil), do: nil
+
   defp strengthen_salience_associations(%Salience{} = salience) do
     Salience.strengthen_associations(salience, 0.05)
   end

@@ -29,6 +29,7 @@ defmodule Kudzu.Silo do
 
       [] ->
         Logger.info("[Silo] Creating new silo for #{domain}")
+
         Kudzu.Application.spawn_hologram(
           purpose: purpose,
           constitution: :kudzu_evolve,
@@ -204,6 +205,7 @@ defmodule Kudzu.Silo do
         case :ets.lookup(:kudzu_embeddings, trace.id) do
           [{_, vector}] ->
             sim = Kudzu.Embedding.cosine_similarity(query_vector, vector)
+
             if sim >= threshold do
               %{
                 trace_id: trace.id,
@@ -221,7 +223,9 @@ defmodule Kudzu.Silo do
       |> Enum.sort_by(& &1.similarity, :desc)
       |> Enum.take(limit)
     else
-      {:error, :not_found} -> []
+      {:error, :not_found} ->
+        []
+
       {:error, _reason} ->
         # Embedding unavailable, fall back to HRR probe
         probe(domain, query)

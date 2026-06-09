@@ -39,7 +39,7 @@ defmodule Kudzu.Beamlet.Base do
         :exit, _ -> false
       end
 
-      defoverridable [capabilities: 0, current_load: 0, healthy?: 0]
+      defoverridable capabilities: 0, current_load: 0, healthy?: 0
 
       # Client API
 
@@ -86,6 +86,7 @@ defmodule Kudzu.Beamlet.Base do
         Enum.each(@capabilities, fn cap ->
           Registry.register(Kudzu.BeamletRegistry, {:capability, cap}, id)
         end)
+
         Registry.register(Kudzu.BeamletRegistry, {:id, id}, @capabilities)
 
         # Schedule health checks
@@ -102,32 +103,42 @@ defmodule Kudzu.Beamlet.Base do
 
       @impl GenServer
       def handle_call({:request, req, from_id}, _from, state) do
-        state = %{state | request_count: state.request_count + 1, active_requests: state.active_requests + 1}
+        state = %{
+          state
+          | request_count: state.request_count + 1,
+            active_requests: state.active_requests + 1
+        }
 
-        {result, new_state} = try do
-          case handle_request(req, from_id) do
-            {:ok, result} ->
-              {{:ok, result}, %{state | active_requests: state.active_requests - 1}}
+        {result, new_state} =
+          try do
+            case handle_request(req, from_id) do
+              {:ok, result} ->
+                {{:ok, result}, %{state | active_requests: state.active_requests - 1}}
 
-            {:error, reason} = err ->
-              {err, %{state |
-                active_requests: state.active_requests - 1,
-                error_count: state.error_count + 1,
-                last_error: reason
-              }}
+              {:error, reason} = err ->
+                {err,
+                 %{
+                   state
+                   | active_requests: state.active_requests - 1,
+                     error_count: state.error_count + 1,
+                     last_error: reason
+                 }}
 
-            {:async, request_id} ->
-              {{:async, request_id}, state}
+              {:async, request_id} ->
+                {{:async, request_id}, state}
+            end
+          rescue
+            e ->
+              Logger.error("Beamlet #{state.id} request failed: #{inspect(e)}")
+
+              {{:error, {:exception, e}},
+               %{
+                 state
+                 | active_requests: state.active_requests - 1,
+                   error_count: state.error_count + 1,
+                   last_error: e
+               }}
           end
-        rescue
-          e ->
-            Logger.error("Beamlet #{state.id} request failed: #{inspect(e)}")
-            {{:error, {:exception, e}}, %{state |
-              active_requests: state.active_requests - 1,
-              error_count: state.error_count + 1,
-              last_error: e
-            }}
-        end
 
         {:reply, result, new_state}
       end
@@ -141,11 +152,12 @@ defmodule Kudzu.Beamlet.Base do
       @impl GenServer
       def handle_call(:healthy?, _from, state) do
         # Consider unhealthy if error rate > 50% in recent requests
-        recent_error_rate = if state.request_count > 10 do
-          state.error_count / state.request_count
-        else
-          0.0
-        end
+        recent_error_rate =
+          if state.request_count > 10 do
+            state.error_count / state.request_count
+          else
+            0.0
+          end
 
         healthy = recent_error_rate < 0.5
         {:reply, healthy, state}
@@ -167,21 +179,28 @@ defmodule Kudzu.Beamlet.Base do
           uptime_ms: System.system_time(:millisecond) - state.started_at,
           load: state.active_requests / max(state.max_concurrent, 1)
         }
+
         {:reply, info, state}
       end
 
       @impl GenServer
       def handle_cast({:request_async, req, from_id, reply_to}, state) do
-        state = %{state | request_count: state.request_count + 1, active_requests: state.active_requests + 1}
+        state = %{
+          state
+          | request_count: state.request_count + 1,
+            active_requests: state.active_requests + 1
+        }
 
         # Execute in separate process
         parent = self()
+
         Task.start(fn ->
-          result = try do
-            handle_request(req, from_id)
-          rescue
-            e -> {:error, {:exception, e}}
-          end
+          result =
+            try do
+              handle_request(req, from_id)
+            rescue
+              e -> {:error, {:exception, e}}
+            end
 
           send(parent, {:async_complete})
 
@@ -207,7 +226,8 @@ defmodule Kudzu.Beamlet.Base do
           [:kudzu, :beamlet, :health],
           %{
             load: state.active_requests / max(state.max_concurrent, 1),
-            error_rate: if(state.request_count > 0, do: state.error_count / state.request_count, else: 0.0)
+            error_rate:
+              if(state.request_count > 0, do: state.error_count / state.request_count, else: 0.0)
           },
           %{id: state.id, capabilities: state.capabilities}
         )
@@ -223,6 +243,7 @@ defmodule Kudzu.Beamlet.Base do
           %{system_time: System.system_time()},
           %{id: state.id, reason: reason}
         )
+
         :ok
       end
 
@@ -230,7 +251,7 @@ defmodule Kudzu.Beamlet.Base do
 
       def init_beamlet(state, _opts), do: state
 
-      defoverridable [init_beamlet: 2]
+      defoverridable init_beamlet: 2
 
       defp generate_id do
         "beamlet-" <> (:crypto.strong_rand_bytes(6) |> Base.encode16(case: :lower))

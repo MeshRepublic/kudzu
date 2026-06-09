@@ -65,9 +65,10 @@ defmodule Kudzu do
     holograms
     |> Task.async_stream(
       fn {_id, pid} ->
-        peers = holograms
-        |> Enum.reject(fn {_, p} -> p == pid end)
-        |> Enum.take_random(min(connections_per_node, length(holograms) - 1))
+        peers =
+          holograms
+          |> Enum.reject(fn {_, p} -> p == pid end)
+          |> Enum.take_random(min(connections_per_node, length(holograms) - 1))
 
         Enum.each(peers, fn {peer_id, _peer_pid} ->
           Hologram.introduce_peer(pid, peer_id)
@@ -102,14 +103,17 @@ defmodule Kudzu do
     max_hops = Keyword.get(opts, :max_hops, 3)
     max_results = Keyword.get(opts, :max_results, 100)
 
-    start_pid = case start do
-      pid when is_pid(pid) -> pid
-      id when is_binary(id) ->
-        case find_by_id(id) do
-          {:ok, pid} -> pid
-          _ -> nil
-        end
-    end
+    start_pid =
+      case start do
+        pid when is_pid(pid) ->
+          pid
+
+        id when is_binary(id) ->
+          case find_by_id(id) do
+            {:ok, pid} -> pid
+            _ -> nil
+          end
+      end
 
     if start_pid do
       do_network_query(start_pid, purpose, max_hops, max_results, MapSet.new())
@@ -119,6 +123,7 @@ defmodule Kudzu do
   end
 
   defp do_network_query(_pid, _purpose, 0, _max, _visited), do: []
+
   defp do_network_query(pid, purpose, hops, max, visited) do
     id = Hologram.get_id(pid)
 
@@ -134,20 +139,23 @@ defmodule Kudzu do
         Enum.take(local, max)
       else
         # Query peers
-        peers = Hologram.get_peers(pid)
-        |> Enum.sort_by(fn {_, score} -> score end, :desc)
-        |> Enum.take(5)
-        |> Enum.map(fn {peer_id, _} -> peer_id end)
+        peers =
+          Hologram.get_peers(pid)
+          |> Enum.sort_by(fn {_, score} -> score end, :desc)
+          |> Enum.take(5)
+          |> Enum.map(fn {peer_id, _} -> peer_id end)
 
-        peer_results = peers
-        |> Enum.flat_map(fn peer_id ->
-          case find_by_id(peer_id) do
-            {:ok, peer_pid} ->
-              do_network_query(peer_pid, purpose, hops - 1, max - length(local), visited)
-            _ ->
-              []
-          end
-        end)
+        peer_results =
+          peers
+          |> Enum.flat_map(fn peer_id ->
+            case find_by_id(peer_id) do
+              {:ok, peer_pid} ->
+                do_network_query(peer_pid, purpose, hops - 1, max - length(local), visited)
+
+              _ ->
+                []
+            end
+          end)
 
         (local ++ peer_results) |> Enum.take(max)
       end

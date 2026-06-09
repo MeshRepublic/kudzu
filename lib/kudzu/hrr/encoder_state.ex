@@ -12,20 +12,18 @@ defmodule Kudzu.HRR.EncoderState do
   alias Kudzu.HRR
 
   @type t :: %__MODULE__{
-    co_occurrence: %{String.t() => %{String.t() => float()}},
-    token_counts: %{String.t() => non_neg_integer()},
-    blend_strength: float(),
-    dim: pos_integer(),
-    traces_processed: non_neg_integer()
-  }
+          co_occurrence: %{String.t() => %{String.t() => float()}},
+          token_counts: %{String.t() => non_neg_integer()},
+          blend_strength: float(),
+          dim: pos_integer(),
+          traces_processed: non_neg_integer()
+        }
 
-  defstruct [
-    co_occurrence: %{},
-    token_counts: %{},
-    blend_strength: 0.3,
-    dim: 512,
-    traces_processed: 0
-  ]
+  defstruct co_occurrence: %{},
+            token_counts: %{},
+            blend_strength: 0.3,
+            dim: 512,
+            traces_processed: 0
 
   @top_k_neighbors 5
   @decay_factor 0.98
@@ -35,7 +33,9 @@ defmodule Kudzu.HRR.EncoderState do
   # runs land in /tmp and never share a file with the production node.
   @spec dets_file() :: charlist()
   defp dets_file do
-    String.to_charlist(Path.join([Application.fetch_env!(:kudzu, :data_root), "dets", "encoder_state.dets"]))
+    String.to_charlist(
+      Path.join([Application.fetch_env!(:kudzu, :data_root), "dets", "encoder_state.dets"])
+    )
   end
 
   # --- Construction ---
@@ -58,17 +58,19 @@ defmodule Kudzu.HRR.EncoderState do
   @spec update_co_occurrence(t(), [String.t()]) :: t()
   def update_co_occurrence(%__MODULE__{} = state, tokens) when is_list(tokens) do
     # Update token counts
-    new_counts = Enum.reduce(tokens, state.token_counts, fn token, acc ->
-      Map.update(acc, token, 1, &(&1 + 1))
-    end)
+    new_counts =
+      Enum.reduce(tokens, state.token_counts, fn token, acc ->
+        Map.update(acc, token, 1, &(&1 + 1))
+      end)
 
     # Update co-occurrence for all pairs
     new_cooc = update_pairs(state.co_occurrence, tokens)
 
-    %{state |
-      co_occurrence: new_cooc,
-      token_counts: new_counts,
-      traces_processed: state.traces_processed + 1
+    %{
+      state
+      | co_occurrence: new_cooc,
+        token_counts: new_counts,
+        traces_processed: state.traces_processed + 1
     }
   end
 
@@ -91,7 +93,9 @@ defmodule Kudzu.HRR.EncoderState do
     k = Keyword.get(opts, :k, @top_k_neighbors)
 
     case Map.get(state.co_occurrence, token) do
-      nil -> []
+      nil ->
+        []
+
       neighbors ->
         neighbors
         |> Enum.sort_by(fn {_t, w} -> w end, :desc)
@@ -147,9 +151,11 @@ defmodule Kudzu.HRR.EncoderState do
     new_cooc =
       state.co_occurrence
       |> Enum.map(fn {token, neighbors} ->
-        decayed = neighbors
+        decayed =
+          neighbors
           |> Enum.map(fn {n, w} -> {n, w * @decay_factor} end)
           |> Map.new()
+
         {token, decayed}
       end)
       |> Map.new()
@@ -166,9 +172,11 @@ defmodule Kudzu.HRR.EncoderState do
     new_cooc =
       state.co_occurrence
       |> Enum.map(fn {token, neighbors} ->
-        pruned = neighbors
+        pruned =
+          neighbors
           |> Enum.reject(fn {_n, w} -> w < @prune_threshold end)
           |> Map.new()
+
         {token, pruned}
       end)
       |> Enum.reject(fn {_token, neighbors} -> neighbors == %{} end)
@@ -194,7 +202,9 @@ defmodule Kudzu.HRR.EncoderState do
   @spec stats(t()) :: map()
   def stats(%__MODULE__{} = state) do
     vocab_size = map_size(state.token_counts)
-    cooc_entries = state.co_occurrence
+
+    cooc_entries =
+      state.co_occurrence
       |> Enum.map(fn {_t, n} -> map_size(n) end)
       |> Enum.sum()
 
@@ -203,7 +213,8 @@ defmodule Kudzu.HRR.EncoderState do
       co_occurrence_entries: cooc_entries,
       traces_processed: state.traces_processed,
       blend_strength: state.blend_strength,
-      top_tokens: state.token_counts
+      top_tokens:
+        state.token_counts
         |> Enum.sort_by(fn {_t, c} -> c end, :desc)
         |> Enum.take(20)
     }
@@ -224,6 +235,7 @@ defmodule Kudzu.HRR.EncoderState do
         :dets.insert(table, {:encoder_state, state})
         :dets.close(table)
         :ok
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -239,12 +251,15 @@ defmodule Kudzu.HRR.EncoderState do
 
     case :dets.open_file(:encoder_state, file: file, type: :set) do
       {:ok, table} ->
-        result = case :dets.lookup(table, :encoder_state) do
-          [{:encoder_state, %__MODULE__{} = state}] -> state
-          _ -> new(dim)
-        end
+        result =
+          case :dets.lookup(table, :encoder_state) do
+            [{:encoder_state, %__MODULE__{} = state}] -> state
+            _ -> new(dim)
+          end
+
         :dets.close(table)
         result
+
       {:error, _} ->
         new(dim)
     end

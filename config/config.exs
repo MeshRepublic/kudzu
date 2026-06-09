@@ -78,18 +78,21 @@ if config_env() == :prod do
   # Production requires these environment variables (enforced in config/runtime.exs):
   # - SECRET_KEY_BASE: generate with `mix phx.gen.secret`
   # - KUDZU_API_KEY: comma-separated API keys
-  config :kudzu, KudzuWeb.MCP.Endpoint,
-    secret_key_base: System.get_env("SECRET_KEY_BASE")
+  config :kudzu, KudzuWeb.MCP.Endpoint, secret_key_base: System.get_env("SECRET_KEY_BASE")
 
-  config :kudzu, :cors_origins,
-    String.split(System.get_env("KUDZU_CORS_ORIGINS") || "", ",", trim: true)
+  config :kudzu,
+         :cors_origins,
+         String.split(System.get_env("KUDZU_CORS_ORIGINS") || "", ",", trim: true)
 
   # MCP endpoint: use env vars for IP/port
-  mcp_ip = System.get_env("KUDZU_MCP_IP", "100.70.67.110")
-  |> String.split(".") |> Enum.map(&String.to_integer/1) |> List.to_tuple()
+  mcp_ip =
+    System.get_env("KUDZU_MCP_IP", "100.70.67.110")
+    |> String.split(".")
+    |> Enum.map(&String.to_integer/1)
+    |> List.to_tuple()
+
   mcp_port = String.to_integer(System.get_env("KUDZU_MCP_PORT") || "4001")
-  config :kudzu, KudzuWeb.MCP.Endpoint,
-    http: [ip: mcp_ip, port: mcp_port]
+  config :kudzu, KudzuWeb.MCP.Endpoint, http: [ip: mcp_ip, port: mcp_port]
 end
 
 # Example distributed configuration (uncomment and modify for your setup)

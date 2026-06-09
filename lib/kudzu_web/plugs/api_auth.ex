@@ -57,8 +57,9 @@ defmodule KudzuWeb.Plugs.APIAuth do
   end
 
   defp valid_token?(token) do
-    api_keys = Application.get_env(:kudzu, :api_auth, [])
-    |> Keyword.get(:api_keys, [])
+    api_keys =
+      Application.get_env(:kudzu, :api_auth, [])
+      |> Keyword.get(:api_keys, [])
 
     token in api_keys
   end

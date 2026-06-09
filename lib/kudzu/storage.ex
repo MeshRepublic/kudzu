@@ -39,7 +39,8 @@ defmodule Kudzu.Storage do
   @content_hash_table :kudzu_content_hashes
 
   # Aging thresholds
-  @hot_to_warm_seconds 3600        # 1 hour without access → warm
+  # 1 hour without access → warm
+  @hot_to_warm_seconds 3600
 
   # Default warm→cold threshold (7 days). Operators can override at runtime
   # via the :kudzu, :warm_to_cold_seconds application env to e.g. gate the
@@ -49,8 +50,10 @@ defmodule Kudzu.Storage do
 
   # Storage limits
   @max_hot_entries 50_000
-  @max_warm_bytes 500_000_000       # 500MB
-  @max_total_bytes 2_000_000_000    # 2GB
+  # 500MB
+  @max_warm_bytes 500_000_000
+  # 2GB
+  @max_total_bytes 2_000_000_000
 
   # DETS files live under the runtime :data_root config (see config/runtime.exs
   # and config/test.exs). The path-as-charlist doubles as the DETS table name.
@@ -190,11 +193,11 @@ defmodule Kudzu.Storage do
     # Initialize embedding index
     :ets.new(@embedding_table, [:named_table, :set, :public, read_concurrency: true])
     :ets.new(@content_hash_table, [:named_table, :set, :public, read_concurrency: true])
-    {:ok, _} = :dets.open_file(embedding_file(), [type: :set])
+    {:ok, _} = :dets.open_file(embedding_file(), type: :set)
     load_embeddings_from_dets()
 
     # Initialize warm tier (DETS)
-    {:ok, _} = :dets.open_file(warm_file(), [type: :set])
+    {:ok, _} = :dets.open_file(warm_file(), type: :set)
 
     # Check if Mnesia cold tier is available
     mnesia_ready = check_mnesia_ready()
@@ -202,10 +205,11 @@ defmodule Kudzu.Storage do
     # Schedule periodic aging
     schedule_aging()
 
-    {:ok, %{
-      initialized_at: DateTime.utc_now(),
-      mnesia_ready: mnesia_ready
-    }}
+    {:ok,
+     %{
+       initialized_at: DateTime.utc_now(),
+       mnesia_ready: mnesia_ready
+     }}
   end
 
   defp check_mnesia_ready do
@@ -214,6 +218,7 @@ defmodule Kudzu.Storage do
         :yes ->
           tables = :mnesia.system_info(:tables)
           @cold_table in tables
+
         _ ->
           false
       end
@@ -262,17 +267,20 @@ defmodule Kudzu.Storage do
         [{^trace_id, record}] ->
           touch_hot(trace_id, record)
           {:hot, record}
+
         [] ->
           case :dets.lookup(warm_file(), trace_id) do
             [{^trace_id, record}] ->
               # Promote to hot on access
               promote_to_hot(trace_id, record)
               {:warm, record}
+
             [] ->
               case retrieve_cold(trace_id) do
                 {:ok, record} ->
                   promote_to_hot(trace_id, record)
                   {:cold, record}
+
                 :not_found ->
                   :not_found
               end
@@ -289,6 +297,7 @@ defmodule Kudzu.Storage do
     # Query all tiers
     hot_results = query_ets_by_purpose(purpose, limit)
     warm_results = query_dets_by_purpose(purpose, limit - length(hot_results))
+
     cold_results =
       if state.mnesia_ready do
         query_mnesia_by_purpose(purpose, limit - length(hot_results) - length(warm_results))
@@ -305,6 +314,7 @@ defmodule Kudzu.Storage do
 
     hot_results = query_ets_by_hologram(hologram_id, limit)
     warm_results = query_dets_by_hologram(hologram_id, limit - length(hot_results))
+
     cold_results =
       if state.mnesia_ready do
         query_mnesia_by_hologram(hologram_id, limit - length(hot_results) - length(warm_results))
@@ -416,34 +426,49 @@ defmodule Kudzu.Storage do
     limit = Keyword.get(opts, :limit, 100)
     purpose = Keyword.get(opts, :purpose, nil)
 
-    hot_results = :ets.foldl(fn {_id, record}, acc ->
-      in_range = DateTime.compare(record.created_at, from_dt) in [:gt, :eq] and
-                 DateTime.compare(record.created_at, to_dt) in [:lt, :eq]
-      matches_purpose = is_nil(purpose) or record.purpose == purpose
+    hot_results =
+      :ets.foldl(
+        fn {_id, record}, acc ->
+          in_range =
+            DateTime.compare(record.created_at, from_dt) in [:gt, :eq] and
+              DateTime.compare(record.created_at, to_dt) in [:lt, :eq]
 
-      if in_range and matches_purpose and length(acc) < limit do
-        [record | acc]
-      else
-        acc
-      end
-    end, [], @hot_table)
+          matches_purpose = is_nil(purpose) or record.purpose == purpose
 
-    warm_results = :dets.foldl(fn {_id, record}, acc ->
-      in_range = DateTime.compare(record.created_at, from_dt) in [:gt, :eq] and
-                 DateTime.compare(record.created_at, to_dt) in [:lt, :eq]
-      matches_purpose = is_nil(purpose) or record.purpose == purpose
-      remaining = limit - length(hot_results)
+          if in_range and matches_purpose and length(acc) < limit do
+            [record | acc]
+          else
+            acc
+          end
+        end,
+        [],
+        @hot_table
+      )
 
-      if in_range and matches_purpose and length(acc) < remaining do
-        [record | acc]
-      else
-        acc
-      end
-    end, [], warm_file())
+    warm_results =
+      :dets.foldl(
+        fn {_id, record}, acc ->
+          in_range =
+            DateTime.compare(record.created_at, from_dt) in [:gt, :eq] and
+              DateTime.compare(record.created_at, to_dt) in [:lt, :eq]
 
-    all = (hot_results ++ warm_results)
-    |> Enum.sort_by(& &1.created_at, {:desc, DateTime})
-    |> Enum.take(limit)
+          matches_purpose = is_nil(purpose) or record.purpose == purpose
+          remaining = limit - length(hot_results)
+
+          if in_range and matches_purpose and length(acc) < remaining do
+            [record | acc]
+          else
+            acc
+          end
+        end,
+        [],
+        warm_file()
+      )
+
+    all =
+      (hot_results ++ warm_results)
+      |> Enum.sort_by(& &1.created_at, {:desc, DateTime})
+      |> Enum.take(limit)
 
     {:reply, all, state}
   end
@@ -470,18 +495,12 @@ defmodule Kudzu.Storage do
   end
 
   defp touch_hot(trace_id, record) do
-    updated = %{record |
-      last_accessed: DateTime.utc_now(),
-      access_count: record.access_count + 1
-    }
+    updated = %{record | last_accessed: DateTime.utc_now(), access_count: record.access_count + 1}
     :ets.insert(@hot_table, {trace_id, updated})
   end
 
   defp promote_to_hot(trace_id, record) do
-    updated = %{record |
-      last_accessed: DateTime.utc_now(),
-      access_count: record.access_count + 1
-    }
+    updated = %{record | last_accessed: DateTime.utc_now(), access_count: record.access_count + 1}
     :ets.insert(@hot_table, {trace_id, updated})
     # Remove from lower tier
     :dets.delete(warm_file(), trace_id)
@@ -492,24 +511,28 @@ defmodule Kudzu.Storage do
     now = DateTime.utc_now()
 
     demoted_to_warm =
-      :ets.foldl(fn {id, record}, acc ->
-        if record.importance == :critical do
-          acc
-        else
-          factor = salience_age_factor(record)
-          effective_seconds = trunc(@hot_to_warm_seconds * factor)
-          effective_threshold = DateTime.add(now, -effective_seconds)
-          should_demote = DateTime.compare(record.last_accessed, effective_threshold) == :lt
-
-          if should_demote do
-            :dets.insert(warm_file(), {id, record})
-            :ets.delete(@hot_table, id)
-            acc + 1
-          else
+      :ets.foldl(
+        fn {id, record}, acc ->
+          if record.importance == :critical do
             acc
+          else
+            factor = salience_age_factor(record)
+            effective_seconds = trunc(@hot_to_warm_seconds * factor)
+            effective_threshold = DateTime.add(now, -effective_seconds)
+            should_demote = DateTime.compare(record.last_accessed, effective_threshold) == :lt
+
+            if should_demote do
+              :dets.insert(warm_file(), {id, record})
+              :ets.delete(@hot_table, id)
+              acc + 1
+            else
+              acc
+            end
           end
-        end
-      end, 0, @hot_table)
+        end,
+        0,
+        @hot_table
+      )
 
     demoted_to_cold = demote_warm_to_cold(now)
 
@@ -552,20 +575,25 @@ defmodule Kudzu.Storage do
           acc + 1
 
         {:error, reason} ->
-          Logger.warning("[Storage] warm→cold demotion failed for #{record.id}: #{inspect(reason)}")
+          Logger.warning(
+            "[Storage] warm→cold demotion failed for #{record.id}: #{inspect(reason)}"
+          )
+
           acc
       end
     end)
   end
 
   defp salience_age_factor(record) do
-    base = case record.importance do
-      :critical -> 999
-      :high -> 4
-      :normal -> 1
-      :low -> 0.5
-      _ -> 1
-    end
+    base =
+      case record.importance do
+        :critical -> 999
+        :high -> 4
+        :normal -> 1
+        :low -> 0.5
+        _ -> 1
+      end
+
     access_boost = min((record.access_count || 0) / 10.0, 2.0)
     base + access_boost
   end
@@ -573,47 +601,65 @@ defmodule Kudzu.Storage do
   defp query_ets_by_purpose(purpose, limit) do
     purpose_atom = if is_atom(purpose), do: purpose, else: String.to_atom(purpose)
 
-    :ets.foldl(fn {_id, record}, acc ->
-      if length(acc) < limit and record.purpose == purpose_atom do
-        [record | acc]
-      else
-        acc
-      end
-    end, [], @hot_table)
+    :ets.foldl(
+      fn {_id, record}, acc ->
+        if length(acc) < limit and record.purpose == purpose_atom do
+          [record | acc]
+        else
+          acc
+        end
+      end,
+      [],
+      @hot_table
+    )
   end
 
   defp query_ets_by_hologram(hologram_id, limit) do
-    :ets.foldl(fn {_id, record}, acc ->
-      if length(acc) < limit and record.hologram_id == hologram_id do
-        [record | acc]
-      else
-        acc
-      end
-    end, [], @hot_table)
+    :ets.foldl(
+      fn {_id, record}, acc ->
+        if length(acc) < limit and record.hologram_id == hologram_id do
+          [record | acc]
+        else
+          acc
+        end
+      end,
+      [],
+      @hot_table
+    )
   end
 
   defp query_dets_by_purpose(purpose, limit) when limit > 0 do
     purpose_atom = if is_atom(purpose), do: purpose, else: String.to_atom(purpose)
 
-    :dets.foldl(fn {_id, record}, acc ->
-      if length(acc) < limit and record.purpose == purpose_atom do
-        [record | acc]
-      else
-        acc
-      end
-    end, [], warm_file())
+    :dets.foldl(
+      fn {_id, record}, acc ->
+        if length(acc) < limit and record.purpose == purpose_atom do
+          [record | acc]
+        else
+          acc
+        end
+      end,
+      [],
+      warm_file()
+    )
   end
+
   defp query_dets_by_purpose(_purpose, _limit), do: []
 
   defp query_dets_by_hologram(hologram_id, limit) when limit > 0 do
-    :dets.foldl(fn {_id, record}, acc ->
-      if length(acc) < limit and record.hologram_id == hologram_id do
-        [record | acc]
-      else
-        acc
-      end
-    end, [], warm_file())
+    :dets.foldl(
+      fn {_id, record}, acc ->
+        if length(acc) < limit and record.hologram_id == hologram_id do
+          [record | acc]
+        else
+          acc
+        end
+      end,
+      [],
+      warm_file()
+    )
   end
+
   defp query_dets_by_hologram(_hologram_id, _limit), do: []
 
   defp query_mnesia_by_hologram(_hologram_id, _limit) do
@@ -633,33 +679,45 @@ defmodule Kudzu.Storage do
     purpose_atom = if is_atom(purpose), do: purpose, else: String.to_atom(to_string(purpose))
 
     try do
-      {:atomic, results} = :mnesia.transaction(fn ->
-        :mnesia.foldl(fn record, acc ->
-          {_, id, hologram_id, rec_purpose, hint, origin, path, clock, created, accessed, count, importance} = record
-          if rec_purpose == purpose_atom and length(acc) < limit do
-            [%TraceRecord{
-              id: id,
-              hologram_id: hologram_id,
-              purpose: rec_purpose,
-              reconstruction_hint: hint,
-              origin: origin,
-              path: path,
-              clock: clock,
-              created_at: created,
-              last_accessed: accessed,
-              access_count: count,
-              importance: importance
-            } | acc]
-          else
-            acc
-          end
-        end, [], @cold_table)
-      end)
+      {:atomic, results} =
+        :mnesia.transaction(fn ->
+          :mnesia.foldl(
+            fn record, acc ->
+              {_, id, hologram_id, rec_purpose, hint, origin, path, clock, created, accessed,
+               count, importance} = record
+
+              if rec_purpose == purpose_atom and length(acc) < limit do
+                [
+                  %TraceRecord{
+                    id: id,
+                    hologram_id: hologram_id,
+                    purpose: rec_purpose,
+                    reconstruction_hint: hint,
+                    origin: origin,
+                    path: path,
+                    clock: clock,
+                    created_at: created,
+                    last_accessed: accessed,
+                    access_count: count,
+                    importance: importance
+                  }
+                  | acc
+                ]
+              else
+                acc
+              end
+            end,
+            [],
+            @cold_table
+          )
+        end)
+
       results
     rescue
       _ -> []
     end
   end
+
   defp query_mnesia_by_purpose(_purpose, _limit), do: []
 
   defp do_evict_lowest(count) do
@@ -667,20 +725,25 @@ defmodule Kudzu.Storage do
 
     # Collect all warm traces with their eviction scores
     scored =
-      :dets.foldl(fn {id, record}, acc ->
-        hours_since_access =
-          case record.last_accessed do
-            %DateTime{} = last ->
-              DateTime.diff(now, last, :second) / 3600.0
-            _ ->
-              # If last_accessed is not a DateTime, treat as very stale
-              720.0
-          end
+      :dets.foldl(
+        fn {id, record}, acc ->
+          hours_since_access =
+            case record.last_accessed do
+              %DateTime{} = last ->
+                DateTime.diff(now, last, :second) / 3600.0
 
-        access_count = record.access_count || 0
-        score = access_count / (1 + hours_since_access)
-        [{id, score} | acc]
-      end, [], warm_file())
+              _ ->
+                # If last_accessed is not a DateTime, treat as very stale
+                720.0
+            end
+
+          access_count = record.access_count || 0
+          score = access_count / (1 + hours_since_access)
+          [{id, score} | acc]
+        end,
+        [],
+        warm_file()
+      )
 
     # Sort by score ascending (lowest = least valuable = evict first)
     to_evict =
@@ -705,19 +768,11 @@ defmodule Kudzu.Storage do
     try do
       result =
         :mnesia.transaction(fn ->
-          :mnesia.write({@cold_table,
-            record.id,
-            record.hologram_id,
-            record.purpose,
-            record.reconstruction_hint,
-            record.origin,
-            record.path,
-            record.clock,
-            record.created_at,
-            record.last_accessed,
-            record.access_count,
-            record.importance
-          })
+          :mnesia.write(
+            {@cold_table, record.id, record.hologram_id, record.purpose,
+             record.reconstruction_hint, record.origin, record.path, record.clock,
+             record.created_at, record.last_accessed, record.access_count, record.importance}
+          )
         end)
 
       case result do
@@ -732,22 +787,29 @@ defmodule Kudzu.Storage do
   defp retrieve_cold(trace_id) do
     try do
       case :mnesia.transaction(fn -> :mnesia.read({@cold_table, trace_id}) end) do
-        {:atomic, [{_, id, hologram_id, purpose, hint, origin, path, clock, created, accessed, count, importance}]} ->
-          {:ok, %TraceRecord{
-            id: id,
-            hologram_id: hologram_id,
-            purpose: purpose,
-            reconstruction_hint: hint,
-            origin: origin,
-            path: path,
-            clock: clock,
-            created_at: created,
-            last_accessed: accessed,
-            access_count: count,
-            importance: importance
-          }}
+        {:atomic,
+         [
+           {_, id, hologram_id, purpose, hint, origin, path, clock, created, accessed, count,
+            importance}
+         ]} ->
+          {:ok,
+           %TraceRecord{
+             id: id,
+             hologram_id: hologram_id,
+             purpose: purpose,
+             reconstruction_hint: hint,
+             origin: origin,
+             path: path,
+             clock: clock,
+             created_at: created,
+             last_accessed: accessed,
+             access_count: count,
+             importance: importance
+           }}
+
         {:atomic, []} ->
           :not_found
+
         _ ->
           :not_found
       end
@@ -759,10 +821,15 @@ defmodule Kudzu.Storage do
   # --- Embedding helpers ---
 
   defp load_embeddings_from_dets do
-    count = :dets.foldl(fn {trace_id, vector}, acc ->
-      :ets.insert(@embedding_table, {trace_id, vector})
-      acc + 1
-    end, 0, embedding_file())
+    count =
+      :dets.foldl(
+        fn {trace_id, vector}, acc ->
+          :ets.insert(@embedding_table, {trace_id, vector})
+          acc + 1
+        end,
+        0,
+        embedding_file()
+      )
 
     if count > 0 do
       Logger.info("[Storage] Loaded #{count} embeddings from DETS")
@@ -771,37 +838,62 @@ defmodule Kudzu.Storage do
 
   defp extract_text_content(trace) do
     hint = trace.reconstruction_hint || %{}
+
     cond do
-      is_binary(Map.get(hint, "content")) -> Map.get(hint, "content")
-      is_binary(Map.get(hint, :content)) -> Map.get(hint, :content)
-      is_binary(Map.get(hint, "text")) -> Map.get(hint, "text")
-      is_binary(Map.get(hint, :text)) -> Map.get(hint, :text)
-      is_binary(Map.get(hint, "summary")) -> Map.get(hint, "summary")
-      is_binary(Map.get(hint, :summary)) -> Map.get(hint, :summary)
-      is_binary(Map.get(hint, "message")) -> Map.get(hint, "message")
-      is_binary(Map.get(hint, :message)) -> Map.get(hint, :message)
-      is_binary(Map.get(hint, "query")) -> Map.get(hint, "query")
-      is_binary(Map.get(hint, :query)) -> Map.get(hint, :query)
+      is_binary(Map.get(hint, "content")) ->
+        Map.get(hint, "content")
+
+      is_binary(Map.get(hint, :content)) ->
+        Map.get(hint, :content)
+
+      is_binary(Map.get(hint, "text")) ->
+        Map.get(hint, "text")
+
+      is_binary(Map.get(hint, :text)) ->
+        Map.get(hint, :text)
+
+      is_binary(Map.get(hint, "summary")) ->
+        Map.get(hint, "summary")
+
+      is_binary(Map.get(hint, :summary)) ->
+        Map.get(hint, :summary)
+
+      is_binary(Map.get(hint, "message")) ->
+        Map.get(hint, "message")
+
+      is_binary(Map.get(hint, :message)) ->
+        Map.get(hint, :message)
+
+      is_binary(Map.get(hint, "query")) ->
+        Map.get(hint, "query")
+
+      is_binary(Map.get(hint, :query)) ->
+        Map.get(hint, :query)
+
       is_map(hint) ->
         subj = Map.get(hint, "subject") || Map.get(hint, :subject)
         rel = Map.get(hint, "relation") || Map.get(hint, :relation)
         obj = Map.get(hint, "object") || Map.get(hint, :object)
         if subj && rel && obj, do: "#{subj} #{rel} #{obj}", else: nil
-      true -> nil
+
+      true ->
+        nil
     end
   end
 
   defp do_embed_batch(batch_size) do
     all_trace_ids = :ets.foldl(fn {id, _trace}, acc -> [id | acc] end, [], @hot_table)
 
-    unembedded = all_trace_ids
-    |> Enum.filter(fn id -> :ets.lookup(@embedding_table, id) == [] end)
-    |> Enum.take(batch_size)
+    unembedded =
+      all_trace_ids
+      |> Enum.filter(fn id -> :ets.lookup(@embedding_table, id) == [] end)
+      |> Enum.take(batch_size)
 
     Enum.reduce(unembedded, 0, fn trace_id, count ->
       case :ets.lookup(@hot_table, trace_id) do
         [{_, trace}] ->
           text = extract_text_content(trace)
+
           if text && String.length(text) > 10 do
             content_hash = :crypto.hash(:sha256, text) |> Base.encode16(case: :lower)
 
@@ -816,6 +908,7 @@ defmodule Kudzu.Storage do
                     store_embedding(trace_id, vector)
                     :ets.insert(@content_hash_table, {content_hash, vector})
                     count + 1
+
                   {:error, _reason} ->
                     count
                 end
@@ -823,6 +916,7 @@ defmodule Kudzu.Storage do
           else
             count
           end
+
         [] ->
           count
       end
@@ -831,14 +925,19 @@ defmodule Kudzu.Storage do
 
   defp do_embedding_search(query_vector, limit, threshold) do
     scored =
-      :ets.foldl(fn {trace_id, vector}, acc ->
-        sim = Kudzu.Embedding.cosine_similarity(query_vector, vector)
-        if sim >= threshold do
-          [{trace_id, sim} | acc]
-        else
-          acc
-        end
-      end, [], @embedding_table)
+      :ets.foldl(
+        fn {trace_id, vector}, acc ->
+          sim = Kudzu.Embedding.cosine_similarity(query_vector, vector)
+
+          if sim >= threshold do
+            [{trace_id, sim} | acc]
+          else
+            acc
+          end
+        end,
+        [],
+        @embedding_table
+      )
 
     top_ids =
       scored
@@ -846,18 +945,20 @@ defmodule Kudzu.Storage do
       |> Enum.take(limit)
 
     Enum.map(top_ids, fn {trace_id, similarity} ->
-      record = case :ets.lookup(@hot_table, trace_id) do
-        [{^trace_id, rec}] -> rec
-        [] ->
-          case :dets.lookup(warm_file(), trace_id) do
-            [{^trace_id, rec}] -> rec
-            [] -> nil
-          end
-      end
+      record =
+        case :ets.lookup(@hot_table, trace_id) do
+          [{^trace_id, rec}] ->
+            rec
+
+          [] ->
+            case :dets.lookup(warm_file(), trace_id) do
+              [{^trace_id, rec}] -> rec
+              [] -> nil
+            end
+        end
 
       %{trace_id: trace_id, similarity: similarity, record: record}
     end)
     |> Enum.reject(fn %{record: r} -> is_nil(r) end)
   end
-
 end

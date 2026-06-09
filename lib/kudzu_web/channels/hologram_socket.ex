@@ -1,7 +1,7 @@
 defmodule KudzuWeb.HologramSocket do
   use Phoenix.Socket
 
-  channel "hologram:*", KudzuWeb.HologramChannel
+  channel("hologram:*", KudzuWeb.HologramChannel)
 
   @impl true
   def connect(params, socket, _connect_info) do
@@ -20,10 +20,12 @@ defmodule KudzuWeb.HologramSocket do
   def id(_socket), do: nil
 
   defp verify_token(%{"token" => token}) do
-    api_keys = Application.get_env(:kudzu, :api_auth, [])
-    |> Keyword.get(:api_keys, [])
+    api_keys =
+      Application.get_env(:kudzu, :api_auth, [])
+      |> Keyword.get(:api_keys, [])
 
     if token in api_keys, do: {:ok, token}, else: :error
   end
+
   defp verify_token(_), do: :error
 end

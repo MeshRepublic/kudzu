@@ -17,6 +17,7 @@ defmodule Kudzu.VectorClock do
   """
   @spec new(String.t() | nil) :: t()
   def new(nil), do: %__MODULE__{}
+
   def new(agent_id) when is_binary(agent_id) do
     %__MODULE__{clocks: %{agent_id => 0}}
   end
@@ -52,16 +53,17 @@ defmodule Kudzu.VectorClock do
   def compare(%__MODULE__{clocks: c1}, %__MODULE__{clocks: c2}) do
     all_keys = MapSet.union(MapSet.new(Map.keys(c1)), MapSet.new(Map.keys(c2)))
 
-    {less, greater} = Enum.reduce(all_keys, {false, false}, fn key, {less_acc, greater_acc} ->
-      v1 = Map.get(c1, key, 0)
-      v2 = Map.get(c2, key, 0)
+    {less, greater} =
+      Enum.reduce(all_keys, {false, false}, fn key, {less_acc, greater_acc} ->
+        v1 = Map.get(c1, key, 0)
+        v2 = Map.get(c2, key, 0)
 
-      cond do
-        v1 < v2 -> {true, greater_acc}
-        v1 > v2 -> {less_acc, true}
-        true -> {less_acc, greater_acc}
-      end
-    end)
+        cond do
+          v1 < v2 -> {true, greater_acc}
+          v1 > v2 -> {less_acc, true}
+          true -> {less_acc, greater_acc}
+        end
+      end)
 
     case {less, greater} do
       {false, false} -> :equal

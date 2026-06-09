@@ -10,12 +10,13 @@ defmodule KudzuWeb.ConstitutionController do
   GET /api/v1/constitutions
   """
   def index(conn, _params) do
-    frameworks = Enum.map(@frameworks, fn name ->
-      %{
-        name: name,
-        principles: Constitution.principles(name)
-      }
-    end)
+    frameworks =
+      Enum.map(@frameworks, fn name ->
+        %{
+          name: name,
+          principles: Constitution.principles(name)
+        }
+      end)
 
     json(conn, %{constitutions: frameworks})
   end
@@ -88,7 +89,12 @@ defmodule KudzuWeb.ConstitutionController do
   end
 
   defp format_permission_result(:permitted), do: %{permitted: true}
-  defp format_permission_result({:denied, reason}), do: %{permitted: false, reason: inspect(reason)}
-  defp format_permission_result({:requires_consensus, threshold}), do: %{permitted: false, requires_consensus: threshold}
+
+  defp format_permission_result({:denied, reason}),
+    do: %{permitted: false, reason: inspect(reason)}
+
+  defp format_permission_result({:requires_consensus, threshold}),
+    do: %{permitted: false, requires_consensus: threshold}
+
   defp format_permission_result(other), do: %{permitted: false, raw: inspect(other)}
 end

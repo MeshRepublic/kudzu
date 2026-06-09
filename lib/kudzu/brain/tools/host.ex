@@ -21,7 +21,8 @@ defmodule Kudzu.Brain.Tools.Host do
     def name, do: "check_disk"
 
     @impl true
-    def description, do: "Check disk usage on all partitions. Returns percentage used per mount point."
+    def description,
+      do: "Check disk usage on all partitions. Returns percentage used per mount point."
 
     @impl true
     def parameters, do: %{type: "object", properties: %{}, required: []}

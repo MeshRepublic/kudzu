@@ -47,7 +47,8 @@ defmodule Kudzu.StorageTest do
     end
 
     test "returns :not_found if the trace is not in the warm tier" do
-      assert :not_found = Storage.demote_to_cold("trace_that_does_not_exist_#{:rand.uniform(999_999)}")
+      assert :not_found =
+               Storage.demote_to_cold("trace_that_does_not_exist_#{:rand.uniform(999_999)}")
     end
   end
 
@@ -136,17 +137,23 @@ defmodule Kudzu.StorageTest do
   # --- Helpers ---
 
   defp warm_dets_file do
-    String.to_charlist(Path.join([
-      Application.fetch_env!(:kudzu, :data_root),
-      "dets",
-      "traces_warm.dets"
-    ]))
+    String.to_charlist(
+      Path.join([
+        Application.fetch_env!(:kudzu, :data_root),
+        "dets",
+        "traces_warm.dets"
+      ])
+    )
   end
 
   defp backdate_warm_record!(trace_id, delta_seconds) do
     case :dets.lookup(warm_dets_file(), trace_id) do
       [{^trace_id, record}] ->
-        backdated = %{record | last_accessed: DateTime.add(DateTime.utc_now(), delta_seconds, :second)}
+        backdated = %{
+          record
+          | last_accessed: DateTime.add(DateTime.utc_now(), delta_seconds, :second)
+        }
+
         :dets.insert(warm_dets_file(), {trace_id, backdated})
         :ok
 

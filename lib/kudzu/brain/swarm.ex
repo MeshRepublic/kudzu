@@ -235,7 +235,6 @@ defmodule Kudzu.Brain.Swarm do
   end
 
   defp decompose_with_ollama(question, n) do
-
     prompt =
       "Break this research question into exactly #{n} focused sub-questions that can be researched independently. Each sub-question should cover a distinct aspect. Return ONLY a JSON array of strings, no other text.\n\nQuestion: #{question}\n\nJSON:"
 
@@ -410,7 +409,9 @@ defmodule Kudzu.Brain.Swarm do
       assignment =
         Enum.find(traces, fn t ->
           hint = t.reconstruction_hint
-          is_map(hint) and Map.get(hint, :type) == "swarm_assignment" and Map.get(hint, :swarm_id) == swarm_id
+
+          is_map(hint) and Map.get(hint, :type) == "swarm_assignment" and
+            Map.get(hint, :swarm_id) == swarm_id
         end)
 
       if assignment, do: assignment.reconstruction_hint.sub_question, else: "unknown"
@@ -422,7 +423,6 @@ defmodule Kudzu.Brain.Swarm do
   # Synthesis
 
   defp synthesize_findings(swarm_id, findings) do
-
     findings_text =
       findings
       |> Enum.sort_by(& &1.timestamp)

@@ -6,14 +6,17 @@ defmodule KudzuWeb.MCP.Handlers.Constitution do
   @frameworks ~w(mesh_republic cautious open kudzu_evolve)a
 
   def handle("kudzu_list_constitutions", _params) do
-    frameworks = Enum.map(@frameworks, fn name ->
-      %{name: name, principles: Constitution.principles(name)}
-    end)
+    frameworks =
+      Enum.map(@frameworks, fn name ->
+        %{name: name, principles: Constitution.principles(name)}
+      end)
+
     {:ok, %{constitutions: frameworks}}
   end
 
   def handle("kudzu_get_constitution_details", %{"name" => name}) do
     atom = safe_atom(name)
+
     if atom in @frameworks do
       {:ok, %{name: atom, principles: Constitution.principles(atom)}}
     else
@@ -24,6 +27,7 @@ defmodule KudzuWeb.MCP.Handlers.Constitution do
   def handle("kudzu_check_constitution", %{"name" => name, "action" => action} = params) do
     atom = safe_atom(name)
     context = Map.get(params, "context", %{})
+
     if atom in @frameworks do
       action_tuple = {String.to_atom(action), context}
       result = Constitution.permitted?(atom, action_tuple, %{})

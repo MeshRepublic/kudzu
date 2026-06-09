@@ -12,11 +12,12 @@ defmodule KudzuWeb.MCP.ProtocolTest do
   describe "encode_error/3" do
     test "encodes a JSON-RPC error" do
       result = Protocol.encode_error("req-1", -32601, "Method not found")
+
       assert result == %{
-        "jsonrpc" => "2.0",
-        "id" => "req-1",
-        "error" => %{"code" => -32601, "message" => "Method not found"}
-      }
+               "jsonrpc" => "2.0",
+               "id" => "req-1",
+               "error" => %{"code" => -32601, "message" => "Method not found"}
+             }
     end
   end
 
@@ -40,6 +41,7 @@ defmodule KudzuWeb.MCP.ProtocolTest do
         %{"jsonrpc" => "2.0", "id" => "1", "method" => "ping"},
         %{"jsonrpc" => "2.0", "method" => "initialized"}
       ]
+
       assert {:batch, parsed} = Protocol.parse_request(batch)
       assert length(parsed) == 2
     end

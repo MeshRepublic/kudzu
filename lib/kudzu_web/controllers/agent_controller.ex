@@ -25,7 +25,11 @@ defmodule KudzuWeb.AgentController do
     opts = []
     opts = if params["desires"], do: [{:desires, params["desires"]} | opts], else: opts
     opts = if params["cognition"], do: [{:cognition, params["cognition"]} | opts], else: opts
-    opts = if params["constitution"], do: [{:constitution, String.to_atom(params["constitution"])} | opts], else: opts
+
+    opts =
+      if params["constitution"],
+        do: [{:constitution, String.to_atom(params["constitution"])} | opts],
+        else: opts
 
     case Agent.create(name, opts) do
       {:ok, pid} ->
@@ -36,6 +40,7 @@ defmodule KudzuWeb.AgentController do
           id: Agent.id(pid),
           status: "created"
         })
+
       {:error, reason} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -51,6 +56,7 @@ defmodule KudzuWeb.AgentController do
     case Agent.find(name) do
       {:ok, pid} ->
         json(conn, Agent.info(pid))
+
       {:error, :not_found} ->
         conn
         |> put_status(:not_found)
@@ -67,6 +73,7 @@ defmodule KudzuWeb.AgentController do
       {:ok, pid} ->
         Agent.destroy(pid)
         json(conn, %{status: "destroyed", name: name})
+
       {:error, :not_found} ->
         conn
         |> put_status(:not_found)
@@ -88,13 +95,18 @@ defmodule KudzuWeb.AgentController do
       content = params["content"] || ""
       opts = []
       opts = if params["context"], do: [{:context, params["context"]} | opts], else: opts
-      opts = if params["importance"], do: [{:importance, String.to_atom(params["importance"])} | opts], else: opts
+
+      opts =
+        if params["importance"],
+          do: [{:importance, String.to_atom(params["importance"])} | opts],
+          else: opts
 
       case Agent.remember(pid, content, opts) do
         {:ok, trace_id} ->
           conn
           |> put_status(:created)
           |> json(%{trace_id: trace_id, type: "memory"})
+
         {:error, reason} ->
           conn
           |> put_status(:unprocessable_entity)
@@ -120,6 +132,7 @@ defmodule KudzuWeb.AgentController do
           conn
           |> put_status(:created)
           |> json(%{trace_id: trace_id, type: "learning"})
+
         {:error, reason} ->
           conn
           |> put_status(:unprocessable_entity)
@@ -142,6 +155,7 @@ defmodule KudzuWeb.AgentController do
           conn
           |> put_status(:created)
           |> json(%{trace_id: trace_id, type: "thought"})
+
         {:error, reason} ->
           conn
           |> put_status(:unprocessable_entity)
@@ -167,6 +181,7 @@ defmodule KudzuWeb.AgentController do
           conn
           |> put_status(:created)
           |> json(%{trace_id: trace_id, type: "observation"})
+
         {:error, reason} ->
           conn
           |> put_status(:unprocessable_entity)
@@ -185,7 +200,12 @@ defmodule KudzuWeb.AgentController do
       decision = params["decision"] || ""
       rationale = params["rationale"] || ""
       opts = []
-      opts = if params["alternatives"], do: [{:alternatives, params["alternatives"]} | opts], else: opts
+
+      opts =
+        if params["alternatives"],
+          do: [{:alternatives, params["alternatives"]} | opts],
+          else: opts
+
       opts = if params["context"], do: [{:context, params["context"]} | opts], else: opts
 
       case Agent.decide(pid, decision, rationale, opts) do
@@ -193,6 +213,7 @@ defmodule KudzuWeb.AgentController do
           conn
           |> put_status(:created)
           |> json(%{trace_id: trace_id, type: "decision"})
+
         {:error, reason} ->
           conn
           |> put_status(:unprocessable_entity)
@@ -209,8 +230,14 @@ defmodule KudzuWeb.AgentController do
     with_agent(conn, name, fn pid ->
       query = params["query"] || ""
       opts = []
-      opts = if params["limit"], do: [{:limit, String.to_integer(params["limit"])} | opts], else: opts
-      opts = if params["include_mesh"], do: [{:include_mesh, params["include_mesh"] == "true"} | opts], else: opts
+
+      opts =
+        if params["limit"], do: [{:limit, String.to_integer(params["limit"])} | opts], else: opts
+
+      opts =
+        if params["include_mesh"],
+          do: [{:include_mesh, params["include_mesh"] == "true"} | opts],
+          else: opts
 
       memories = Agent.recall(pid, query, opts)
       memories = if is_list(memories), do: memories, else: []
@@ -230,8 +257,14 @@ defmodule KudzuWeb.AgentController do
     with_agent(conn, name, fn pid ->
       purpose_atom = String.to_atom(purpose)
       opts = []
-      opts = if params["limit"], do: [{:limit, String.to_integer(params["limit"])} | opts], else: opts
-      opts = if params["include_mesh"], do: [{:include_mesh, params["include_mesh"] == "true"} | opts], else: opts
+
+      opts =
+        if params["limit"], do: [{:limit, String.to_integer(params["limit"])} | opts], else: opts
+
+      opts =
+        if params["include_mesh"],
+          do: [{:include_mesh, params["include_mesh"] == "true"} | opts],
+          else: opts
 
       memories = Agent.recall(pid, purpose_atom, opts)
 
@@ -262,8 +295,10 @@ defmodule KudzuWeb.AgentController do
             response: response,
             actions: length(actions)
           })
+
         {:ok, response} ->
           json(conn, %{response: response})
+
         {:error, reason} ->
           conn
           |> put_status(:unprocessable_entity)
@@ -317,15 +352,20 @@ defmodule KudzuWeb.AgentController do
   """
   def connect_peer(conn, %{"name" => name} = params) do
     with_agent(conn, name, fn pid ->
-      peer = cond do
-        params["peer_id"] -> params["peer_id"]
-        params["peer_name"] ->
-          case Agent.find(params["peer_name"]) do
-            {:ok, peer_pid} -> Agent.id(peer_pid)
-            _ -> nil
-          end
-        true -> nil
-      end
+      peer =
+        cond do
+          params["peer_id"] ->
+            params["peer_id"]
+
+          params["peer_name"] ->
+            case Agent.find(params["peer_name"]) do
+              {:ok, peer_pid} -> Agent.id(peer_pid)
+              _ -> nil
+            end
+
+          true ->
+            nil
+        end
 
       if peer do
         Agent.connect(pid, peer)
@@ -346,6 +386,7 @@ defmodule KudzuWeb.AgentController do
     case Agent.find(name) do
       {:ok, pid} ->
         fun.(pid)
+
       {:error, :not_found} ->
         conn
         |> put_status(:not_found)
@@ -384,9 +425,11 @@ defmodule KudzuWeb.AgentController do
   end
 
   defp safe_stringify(nil), do: nil
+
   defp safe_stringify(map) when is_struct(map) do
     map |> Map.from_struct() |> safe_stringify()
   end
+
   defp safe_stringify(map) when is_map(map) do
     Map.new(map, fn
       {k, v} when is_atom(k) -> {Atom.to_string(k), safe_stringify(v)}
@@ -394,6 +437,7 @@ defmodule KudzuWeb.AgentController do
       {k, v} -> {inspect(k), safe_stringify(v)}
     end)
   end
+
   defp safe_stringify(list) when is_list(list), do: Enum.map(list, &safe_stringify/1)
   defp safe_stringify(atom) when is_atom(atom), do: Atom.to_string(atom)
   defp safe_stringify(%DateTime{} = dt), do: DateTime.to_iso8601(dt)

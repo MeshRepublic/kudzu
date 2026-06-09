@@ -74,6 +74,7 @@ defmodule Kudzu.Storage.MnesiaSchema do
       :ok ->
         Logger.info("Mnesia started on #{node()} (dir: #{mnesia_dir})")
         :ok
+
       {:error, reason} ->
         Logger.error("Failed to start Mnesia: #{inspect(reason)}")
         {:error, reason}
@@ -94,8 +95,10 @@ defmodule Kudzu.Storage.MnesiaSchema do
     case :mnesia.create_schema(nodes) do
       :ok ->
         Logger.info("Schema created across nodes: #{inspect(nodes)}")
+
       {:error, {_, {:already_exists, _}}} ->
         Logger.info("Schema already exists")
+
       {:error, reason} ->
         Logger.error("Schema creation failed: #{inspect(reason)}")
         {:error, reason}
@@ -119,6 +122,7 @@ defmodule Kudzu.Storage.MnesiaSchema do
     case Node.connect(existing_node) do
       true ->
         Logger.info("Connected to #{existing_node}")
+
       false ->
         Logger.error("Failed to connect to #{existing_node}")
         {:error, :connection_failed}
@@ -128,6 +132,7 @@ defmodule Kudzu.Storage.MnesiaSchema do
     case :mnesia.change_config(:extra_db_nodes, [existing_node]) do
       {:ok, _} ->
         Logger.info("Added to Mnesia cluster")
+
       {:error, reason} ->
         Logger.error("Failed to join cluster: #{inspect(reason)}")
         {:error, reason}
@@ -145,19 +150,12 @@ defmodule Kudzu.Storage.MnesiaSchema do
   """
   def store(trace_record) do
     :mnesia.transaction(fn ->
-      :mnesia.write({@trace_table,
-        trace_record.id,
-        trace_record.hologram_id,
-        trace_record.purpose,
-        trace_record.reconstruction_hint,
-        trace_record.origin,
-        trace_record.path,
-        trace_record.clock,
-        trace_record.created_at,
-        trace_record.last_accessed,
-        trace_record.access_count,
-        trace_record.importance
-      })
+      :mnesia.write(
+        {@trace_table, trace_record.id, trace_record.hologram_id, trace_record.purpose,
+         trace_record.reconstruction_hint, trace_record.origin, trace_record.path,
+         trace_record.clock, trace_record.created_at, trace_record.last_accessed,
+         trace_record.access_count, trace_record.importance}
+      )
     end)
   end
 
@@ -166,8 +164,8 @@ defmodule Kudzu.Storage.MnesiaSchema do
   """
   def retrieve(trace_id) do
     case :mnesia.transaction(fn ->
-      :mnesia.read({@trace_table, trace_id})
-    end) do
+           :mnesia.read({@trace_table, trace_id})
+         end) do
       {:atomic, [record]} -> {:ok, tuple_to_record(record)}
       {:atomic, []} -> :not_found
       {:aborted, reason} -> {:error, reason}
@@ -189,12 +187,14 @@ defmodule Kudzu.Storage.MnesiaSchema do
     ]
 
     case :mnesia.transaction(fn ->
-      :mnesia.select(@trace_table, match_spec, limit, :read)
-    end) do
+           :mnesia.select(@trace_table, match_spec, limit, :read)
+         end) do
       {:atomic, {records, _cont}} ->
         Enum.map(records, &tuple_to_record/1)
+
       {:atomic, :"$end_of_table"} ->
         []
+
       {:aborted, reason} ->
         Logger.error("Query failed: #{inspect(reason)}")
         []
@@ -214,12 +214,14 @@ defmodule Kudzu.Storage.MnesiaSchema do
     ]
 
     case :mnesia.transaction(fn ->
-      :mnesia.select(@trace_table, match_spec, limit, :read)
-    end) do
+           :mnesia.select(@trace_table, match_spec, limit, :read)
+         end) do
       {:atomic, {records, _cont}} ->
         Enum.map(records, &tuple_to_record/1)
+
       {:atomic, :"$end_of_table"} ->
         []
+
       {:aborted, reason} ->
         Logger.error("Query failed: #{inspect(reason)}")
         []
@@ -260,9 +262,11 @@ defmodule Kudzu.Storage.MnesiaSchema do
       {:atomic, :ok} ->
         Logger.info("Created cold storage table with #{n_fragments} fragments")
         :ok
+
       {:aborted, {:already_exists, @trace_table}} ->
         Logger.info("Cold storage table already exists")
         :ok
+
       {:aborted, reason} ->
         Logger.error("Failed to create table: #{inspect(reason)}")
         {:error, reason}
@@ -275,6 +279,7 @@ defmodule Kudzu.Storage.MnesiaSchema do
       {:atomic, :ok} ->
         Logger.info("Added #{node()} as fragment host")
         :ok
+
       {:aborted, reason} ->
         Logger.warning("Could not add as fragment host: #{inspect(reason)}")
         {:error, reason}
@@ -290,7 +295,10 @@ defmodule Kudzu.Storage.MnesiaSchema do
     _ -> 1
   end
 
-  defp tuple_to_record({@trace_table, id, hologram_id, purpose, hint, origin, path, clock, created, accessed, count, importance}) do
+  defp tuple_to_record(
+         {@trace_table, id, hologram_id, purpose, hint, origin, path, clock, created, accessed,
+          count, importance}
+       ) do
     %Kudzu.Storage.TraceRecord{
       id: id,
       hologram_id: hologram_id,

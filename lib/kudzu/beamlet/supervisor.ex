@@ -75,18 +75,19 @@ defmodule Kudzu.Beamlet.Supervisor do
 
       beamlets ->
         # Find healthiest, least loaded beam-let
-        best = beamlets
-        |> Enum.map(fn {pid, id} ->
-          try do
-            load = GenServer.call(pid, :get_load, 1000)
-            healthy = GenServer.call(pid, :healthy?, 1000)
-            {pid, id, load, healthy}
-          catch
-            :exit, _ -> {pid, id, 1.0, false}
-          end
-        end)
-        |> Enum.filter(fn {_, _, _, healthy} -> healthy end)
-        |> Enum.min_by(fn {_, _, load, _} -> load end, fn -> nil end)
+        best =
+          beamlets
+          |> Enum.map(fn {pid, id} ->
+            try do
+              load = GenServer.call(pid, :get_load, 1000)
+              healthy = GenServer.call(pid, :healthy?, 1000)
+              {pid, id, load, healthy}
+            catch
+              :exit, _ -> {pid, id, 1.0, false}
+            end
+          end)
+          |> Enum.filter(fn {_, _, _, healthy} -> healthy end)
+          |> Enum.min_by(fn {_, _, load, _} -> load end, fn -> nil end)
 
         case best do
           nil -> {:error, :no_healthy_beamlet}
@@ -104,15 +105,16 @@ defmodule Kudzu.Beamlet.Supervisor do
 
     capabilities
     |> Enum.map(fn cap ->
-      beamlets = find_by_capability(cap)
-      |> Enum.map(fn {pid, id} ->
-        try do
-          info = GenServer.call(pid, :info, 1000)
-          {id, info}
-        catch
-          :exit, _ -> {id, %{status: :unreachable}}
-        end
-      end)
+      beamlets =
+        find_by_capability(cap)
+        |> Enum.map(fn {pid, id} ->
+          try do
+            info = GenServer.call(pid, :info, 1000)
+            {id, info}
+          catch
+            :exit, _ -> {id, %{status: :unreachable}}
+          end
+        end)
 
       {cap, beamlets}
     end)
@@ -131,17 +133,21 @@ defmodule Kudzu.Beamlet.Supervisor do
       current_count < target_count ->
         # Spawn more
         to_spawn = target_count - current_count
+
         for _i <- 1..to_spawn do
-          spawn_beamlet(module, [id: "#{capability}-#{System.unique_integer([:positive])}"])
+          spawn_beamlet(module, id: "#{capability}-#{System.unique_integer([:positive])}")
         end
+
         {:ok, :scaled_up, to_spawn}
 
       current_count > target_count ->
         # Kill extras (keep the first target_count)
         {_keep, to_kill} = Enum.split(current, target_count)
+
         Enum.each(to_kill, fn {pid, _id} ->
           DynamicSupervisor.terminate_child(Kudzu.Beamlet.DynamicSupervisor, pid)
         end)
+
         {:ok, :scaled_down, length(to_kill)}
 
       true ->

@@ -90,8 +90,10 @@ defmodule Kudzu.Cognition.KnownTraces do
 
   def mark_sent(hologram_id, model_id, session_id, trace_ids) when is_list(trace_ids) do
     if alive?() do
-      GenServer.cast(__MODULE__, {:mark_sent, hologram_id, normalize_model(model_id),
-                                  session_id, trace_ids})
+      GenServer.cast(
+        __MODULE__,
+        {:mark_sent, hologram_id, normalize_model(model_id), session_id, trace_ids}
+      )
     end
 
     :ok
@@ -105,8 +107,10 @@ defmodule Kudzu.Cognition.KnownTraces do
   @spec forget_session(hologram_id(), model_id(), session_id()) :: :ok
   def forget_session(hologram_id, model_id, session_id) do
     if alive?() do
-      GenServer.call(__MODULE__, {:forget_session, hologram_id, normalize_model(model_id),
-                                  session_id})
+      GenServer.call(
+        __MODULE__,
+        {:forget_session, hologram_id, normalize_model(model_id), session_id}
+      )
     else
       :ok
     end

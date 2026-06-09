@@ -7,8 +7,9 @@ defmodule KudzuWeb.HealthController do
   """
   def index(conn, _params) do
     # Count only :id entries to get unique hologram count
-    hologram_count = Registry.select(Kudzu.Registry, [{{{:id, :_}, :_, :_}, [], [true]}])
-    |> length()
+    hologram_count =
+      Registry.select(Kudzu.Registry, [{{{:id, :_}, :_, :_}, [], [true]}])
+      |> length()
 
     json(conn, %{
       status: "ok",

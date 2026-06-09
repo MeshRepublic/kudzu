@@ -71,15 +71,19 @@ defmodule Kudzu.Brain.Reasoning do
   @spec distill_claude_response(Brain.t(), String.t()) :: Brain.t()
   def distill_claude_response(state, response_text) do
     try do
-      silo_domains = case Kudzu.Silo.list() do
-        domains when is_list(domains) ->
-          Enum.map(domains, fn
-            {domain, _, _} -> domain
-            domain when is_binary(domain) -> domain
-            _ -> nil
-          end) |> Enum.reject(&is_nil/1)
-        _ -> []
-      end
+      silo_domains =
+        case Kudzu.Silo.list() do
+          domains when is_list(domains) ->
+            Enum.map(domains, fn
+              {domain, _, _} -> domain
+              domain when is_binary(domain) -> domain
+              _ -> nil
+            end)
+            |> Enum.reject(&is_nil/1)
+
+          _ ->
+            []
+        end
 
       available_actions =
         if function_exported?(Reflexes, :known_actions, 0) do
@@ -96,30 +100,38 @@ defmodule Kudzu.Brain.Reasoning do
       result = Distiller.distill(response_text, silo_domains, context)
 
       # Store extracted chains in silos
-      state = if result.chains != [] do
-        Logger.info("[Brain] Distiller extracted #{length(result.chains)} relationships from Claude response")
-        Enum.each(result.chains, fn {subject, relation, object} ->
-          try do
-            Kudzu.Silo.store_relationship("brain_knowledge", {subject, relation, object})
-          catch
-            _, _ -> :ok
-          end
-        end)
-        state
-      else
-        state
-      end
+      state =
+        if result.chains != [] do
+          Logger.info(
+            "[Brain] Distiller extracted #{length(result.chains)} relationships from Claude response"
+          )
+
+          Enum.each(result.chains, fn {subject, relation, object} ->
+            try do
+              Kudzu.Silo.store_relationship("brain_knowledge", {subject, relation, object})
+            catch
+              _, _ -> :ok
+            end
+          end)
+
+          state
+        else
+          state
+        end
 
       # Log knowledge gaps for curiosity
       if result.knowledge_gaps != [] do
         wm = state.working_memory
-        wm = if wm do
-          Enum.reduce(Enum.take(result.knowledge_gaps, 3), wm, fn gap, acc ->
-            WorkingMemory.add_question(acc, "What is #{gap}?")
-          end)
-        else
-          wm
-        end
+
+        wm =
+          if wm do
+            Enum.reduce(Enum.take(result.knowledge_gaps, 3), wm, fn gap, acc ->
+              WorkingMemory.add_question(acc, "What is #{gap}?")
+            end)
+          else
+            wm
+          end
+
         %{state | working_memory: wm}
       else
         state
@@ -192,7 +204,9 @@ defmodule Kudzu.Brain.Reasoning do
 
   defp maybe_call_claude(state, anomalies) do
     api_key = state.config[:api_key] || state.config["api_key"]
-    budget_limit = state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
+
+    budget_limit =
+      state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
 
     cond do
       is_nil(api_key) or api_key == "" ->
@@ -200,7 +214,10 @@ defmodule Kudzu.Brain.Reasoning do
         state
 
       not Budget.within_budget?(state.budget, budget_limit) ->
-        Logger.warning("[Brain] Monthly budget exceeded ($#{state.budget.estimated_cost_usd}), skipping Tier 3")
+        Logger.warning(
+          "[Brain] Monthly budget exceeded ($#{state.budget.estimated_cost_usd}), skipping Tier 3"
+        )
+
         state
 
       true ->

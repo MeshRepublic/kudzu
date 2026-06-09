@@ -24,7 +24,8 @@ defmodule Kudzu.Brain.Reflexes do
 
   # Consolidation unreachable -> escalate
   defp match_reflex({:anomaly, %{check: :consolidation, reason: "unreachable"}}) do
-    {:escalate, %{severity: :critical, check: :consolidation, summary: "Consolidation daemon unreachable"}}
+    {:escalate,
+     %{severity: :critical, check: :consolidation, summary: "Consolidation daemon unreachable"}}
   end
 
   # Storage unreachable -> escalate

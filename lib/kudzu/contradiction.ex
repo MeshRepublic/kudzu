@@ -10,9 +10,21 @@ defmodule Kudzu.Contradiction do
 
   @similarity_threshold 0.7
   @contradiction_indicators [
-    "not", "never", "instead", "wrong", "incorrect", "actually",
-    "contrary", "opposite", "false", "no longer", "deprecated",
-    "removed", "replaced", "changed from", "used to"
+    "not",
+    "never",
+    "instead",
+    "wrong",
+    "incorrect",
+    "actually",
+    "contrary",
+    "opposite",
+    "false",
+    "no longer",
+    "deprecated",
+    "removed",
+    "replaced",
+    "changed from",
+    "used to"
   ]
 
   @doc """
@@ -35,27 +47,32 @@ defmodule Kudzu.Contradiction do
   end
 
   defp check_results(_new_content, []), do: {:ok, :no_contradiction}
+
   defp check_results(new_content, results) do
     new_lower = String.downcase(new_content)
     has_negation = Enum.any?(@contradiction_indicators, &String.contains?(new_lower, &1))
 
-    contradictions = Enum.filter(results, fn %{record: record, similarity: sim} ->
-      existing_content = extract_text(record)
-      existing_lower = String.downcase(existing_content)
+    contradictions =
+      Enum.filter(results, fn %{record: record, similarity: sim} ->
+        existing_content = extract_text(record)
+        existing_lower = String.downcase(existing_content)
 
-      sim > @similarity_threshold and has_negation and
-        content_opposes?(new_lower, existing_lower)
-    end)
+        sim > @similarity_threshold and has_negation and
+          content_opposes?(new_lower, existing_lower)
+      end)
 
     case contradictions do
-      [] -> {:ok, :no_contradiction}
+      [] ->
+        {:ok, :no_contradiction}
+
       [first | _] ->
-        {:contradiction, %{
-          existing_content: extract_text(first.record),
-          new_content: new_content,
-          similarity: first.similarity,
-          existing_trace_id: first.trace_id
-        }}
+        {:contradiction,
+         %{
+           existing_content: extract_text(first.record),
+           new_content: new_content,
+           similarity: first.similarity,
+           existing_trace_id: first.trace_id
+         }}
     end
   end
 
@@ -70,5 +87,6 @@ defmodule Kudzu.Contradiction do
   defp extract_text(%{reconstruction_hint: hint}) when is_map(hint) do
     Map.get(hint, :content, Map.get(hint, "content", ""))
   end
+
   defp extract_text(_), do: ""
 end

@@ -78,7 +78,8 @@ defmodule Kudzu.HRR.Tokenizer do
     {"es", ""},
     {"al", ""},
     {"en", ""},
-    {"ss", "ss"},  # protect double-s
+    # protect double-s
+    {"ss", "ss"},
     {"le", "l"},
     {"ce", "c"},
     {"se", "s"},
@@ -175,6 +176,7 @@ defmodule Kudzu.HRR.Tokenizer do
 
     if word_len > suffix_len and String.ends_with?(word, suffix) do
       stem_candidate = String.slice(word, 0, word_len - suffix_len) <> replacement
+
       if byte_size(stem_candidate) >= @min_stem_length do
         stem_candidate
       else
@@ -194,9 +196,19 @@ defmodule Kudzu.HRR.Tokenizer do
       |> Enum.reject(&(&1 == ""))
       |> Enum.join(" ")
 
-    system_fields = MapSet.new([:timestamp, :type, :machine, :constitution,
-                                :from, :to, :associations, :recall_history,
-                                :context, :raw])
+    system_fields =
+      MapSet.new([
+        :timestamp,
+        :type,
+        :machine,
+        :constitution,
+        :from,
+        :to,
+        :associations,
+        :recall_history,
+        :context,
+        :raw
+      ])
 
     extra_text =
       hint
@@ -219,9 +231,11 @@ defmodule Kudzu.HRR.Tokenizer do
   defp to_text(val) when is_binary(val), do: val
   defp to_text(val) when is_atom(val) and not is_nil(val), do: Atom.to_string(val)
   defp to_text(val) when is_number(val), do: ""
+
   defp to_text(val) when is_list(val) do
     val |> Enum.map(&to_text/1) |> Enum.reject(&(&1 == "")) |> Enum.join(" ")
   end
+
   defp to_text(_), do: ""
 
   # --- Tokenization ---
@@ -240,6 +254,7 @@ defmodule Kudzu.HRR.Tokenizer do
 
   defp extract_bigrams([]), do: []
   defp extract_bigrams([_]), do: []
+
   defp extract_bigrams(unigrams) do
     unigrams
     |> Enum.chunk_every(2, 1, :discard)

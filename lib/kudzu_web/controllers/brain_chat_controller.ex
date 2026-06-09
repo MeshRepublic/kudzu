@@ -116,7 +116,9 @@ defmodule KudzuWeb.BrainChatController do
             # Send empty chunk to signal end of chunked transfer
             chunk(conn, "")
             conn
-          {:error, _reason} -> conn
+
+          {:error, _reason} ->
+            conn
         end
     after
       120_000 ->

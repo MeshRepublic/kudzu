@@ -58,19 +58,27 @@ defmodule Kudzu.HRR.Encoder do
   @doc """
   Initialize an encoder with role and purpose codebooks.
   """
-  @spec init(dim()) :: %{roles: codebook(), purposes: codebook(), field_roles: codebook(), dim: dim()}
+  @spec init(dim()) :: %{
+          roles: codebook(),
+          purposes: codebook(),
+          field_roles: codebook(),
+          dim: dim()
+        }
   def init(dim \\ HRR.default_dim()) do
-    roles = @role_seeds
-    |> Enum.map(fn {name, seed} -> {name, HRR.seeded_vector(seed, dim)} end)
-    |> Map.new()
+    roles =
+      @role_seeds
+      |> Enum.map(fn {name, seed} -> {name, HRR.seeded_vector(seed, dim)} end)
+      |> Map.new()
 
-    purposes = @purpose_seeds
-    |> Enum.map(fn {name, seed} -> {name, HRR.seeded_vector(seed, dim)} end)
-    |> Map.new()
+    purposes =
+      @purpose_seeds
+      |> Enum.map(fn {name, seed} -> {name, HRR.seeded_vector(seed, dim)} end)
+      |> Map.new()
 
-    field_roles = @field_role_seeds
-    |> Enum.map(fn {name, seed} -> {name, HRR.seeded_vector(seed, dim)} end)
-    |> Map.new()
+    field_roles =
+      @field_role_seeds
+      |> Enum.map(fn {name, seed} -> {name, HRR.seeded_vector(seed, dim)} end)
+      |> Map.new()
 
     %{roles: roles, purposes: purposes, field_roles: field_roles, dim: dim}
   end
@@ -106,8 +114,14 @@ defmodule Kudzu.HRR.Encoder do
   @doc """
   Encode a trace with its salience information.
   """
-  @spec encode_with_salience(Trace.t(), Salience.t(), map(), EncoderState.t() | nil) :: HRR.vector()
-  def encode_with_salience(%Trace{} = trace, %Salience{} = salience, codebook, encoder_state \\ nil) do
+  @spec encode_with_salience(Trace.t(), Salience.t(), map(), EncoderState.t() | nil) ::
+          HRR.vector()
+  def encode_with_salience(
+        %Trace{} = trace,
+        %Salience{} = salience,
+        codebook,
+        encoder_state \\ nil
+      ) do
     dim = codebook.dim
 
     base_vec = encode(trace, codebook, encoder_state)
@@ -159,13 +173,14 @@ defmodule Kudzu.HRR.Encoder do
     if tokens == [] do
       HRR.zero_vector(dim)
     else
-      token_vecs = Enum.map(tokens, fn token ->
-        if encoder_state do
-          EncoderState.contextual_vector(encoder_state, token)
-        else
-          EncoderState.base_vector(token, dim)
-        end
-      end)
+      token_vecs =
+        Enum.map(tokens, fn token ->
+          if encoder_state do
+            EncoderState.contextual_vector(encoder_state, token)
+          else
+            EncoderState.base_vector(token, dim)
+          end
+        end)
 
       content_vec = HRR.bundle(token_vecs)
       # Bind with content role so it matches trace content fields
@@ -179,6 +194,7 @@ defmodule Kudzu.HRR.Encoder do
   @spec consolidate([Trace.t()], map(), EncoderState.t() | nil) :: HRR.vector()
   def consolidate(traces, codebook, encoder_state \\ nil)
   def consolidate([], codebook, _encoder_state), do: HRR.zero_vector(codebook.dim)
+
   def consolidate(traces, codebook, encoder_state) do
     traces
     |> Enum.map(fn trace -> encode(trace, codebook, encoder_state) end)
@@ -188,15 +204,18 @@ defmodule Kudzu.HRR.Encoder do
   @doc """
   Create a weighted composite memory vector.
   """
-  @spec consolidate_weighted([{Trace.t(), Salience.t()}], map(), EncoderState.t() | nil) :: HRR.vector()
+  @spec consolidate_weighted([{Trace.t(), Salience.t()}], map(), EncoderState.t() | nil) ::
+          HRR.vector()
   def consolidate_weighted(trace_salience_pairs, codebook, encoder_state \\ nil)
   def consolidate_weighted([], codebook, _encoder_state), do: HRR.zero_vector(codebook.dim)
+
   def consolidate_weighted(trace_salience_pairs, codebook, encoder_state) do
-    weighted_vecs = Enum.map(trace_salience_pairs, fn {trace, salience} ->
-      vec = encode(trace, codebook, encoder_state)
-      score = Salience.score(salience)
-      HRR.scale(vec, score)
-    end)
+    weighted_vecs =
+      Enum.map(trace_salience_pairs, fn {trace, salience} ->
+        vec = encode(trace, codebook, encoder_state)
+        score = Salience.score(salience)
+        HRR.scale(vec, score)
+      end)
 
     dim = codebook.dim
     summed = Enum.reduce(weighted_vecs, HRR.zero_vector(dim), &HRR.add/2)
@@ -229,24 +248,35 @@ defmodule Kudzu.HRR.Encoder do
       HRR.seeded_vector(content_str, dim)
     else
       # For each field, vectorize its tokens and bind with field role
-      field_vecs = Enum.map(field_tokens, fn {field, tokens} ->
-        # Vectorize each token (with co-occurrence blending if available)
-        token_vecs = Enum.map(tokens, fn token ->
-          if encoder_state do
-            EncoderState.contextual_vector(encoder_state, token)
-          else
-            EncoderState.base_vector(token, dim)
-          end
+      field_vecs =
+        Enum.map(field_tokens, fn {field, tokens} ->
+          # Vectorize each token (with co-occurrence blending if available)
+          token_vecs =
+            Enum.map(tokens, fn token ->
+              if encoder_state do
+                EncoderState.contextual_vector(encoder_state, token)
+              else
+                EncoderState.base_vector(token, dim)
+              end
+            end)
+
+          # Bundle all token vectors for this field
+          field_content = HRR.bundle(token_vecs)
+
+          # Bind with field role (if we have one, otherwise use generic content role)
+          field_role =
+            Map.get(
+              codebook.field_roles,
+              field,
+              Map.get(
+                codebook.field_roles,
+                :content,
+                HRR.seeded_vector("kudzu_field_generic_v2", dim)
+              )
+            )
+
+          HRR.bind(field_role, field_content)
         end)
-
-        # Bundle all token vectors for this field
-        field_content = HRR.bundle(token_vecs)
-
-        # Bind with field role (if we have one, otherwise use generic content role)
-        field_role = Map.get(codebook.field_roles, field,
-                            Map.get(codebook.field_roles, :content, HRR.seeded_vector("kudzu_field_generic_v2", dim)))
-        HRR.bind(field_role, field_content)
-      end)
 
       # Bundle all field vectors
       HRR.bundle(field_vecs)
@@ -267,11 +297,12 @@ defmodule Kudzu.HRR.Encoder do
   end
 
   defp encode_purpose(purpose, codebook) when is_binary(purpose) do
-    atom_purpose = try do
-      String.to_existing_atom(purpose)
-    rescue
-      _ -> nil
-    end
+    atom_purpose =
+      try do
+        String.to_existing_atom(purpose)
+      rescue
+        _ -> nil
+      end
 
     if atom_purpose do
       encode_purpose(atom_purpose, codebook)
@@ -283,6 +314,7 @@ defmodule Kudzu.HRR.Encoder do
   # --- Path Encoding ---
 
   defp encode_path([], dim), do: HRR.zero_vector(dim)
+
   defp encode_path(path, dim) when is_list(path) do
     origin = List.first(path)
     last = List.last(path)

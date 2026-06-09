@@ -39,12 +39,13 @@ defmodule Kudzu.Application do
       {Kudzu.Consolidation, []}
     ]
 
-    full_children = if role == "worker" do
-      Logger.info("[Application] Starting as WORKER node (no Brain, no web endpoint)")
-      []
-    else
-      [Kudzu.Brain.ActivityIndicator, Kudzu.Brain, KudzuWeb.MCP.Session, KudzuWeb.MCP.Endpoint]
-    end
+    full_children =
+      if role == "worker" do
+        Logger.info("[Application] Starting as WORKER node (no Brain, no web endpoint)")
+        []
+      else
+        [Kudzu.Brain.ActivityIndicator, Kudzu.Brain, KudzuWeb.MCP.Session, KudzuWeb.MCP.Endpoint]
+      end
 
     children = core_children ++ full_children
 
@@ -59,9 +60,13 @@ defmodule Kudzu.Application do
         Task.start(fn ->
           # Small delay to ensure all services are ready
           Process.sleep(1000)
+
           try do
             reconstructed = Kudzu.HologramRegistry.reconstruct_all()
-            Logger.info("[Application] Reconstructed #{length(reconstructed)} holograms on startup")
+
+            Logger.info(
+              "[Application] Reconstructed #{length(reconstructed)} holograms on startup"
+            )
           rescue
             e -> Logger.warning("[Application] Hologram reconstruction failed: #{inspect(e)}")
           end
@@ -176,24 +181,26 @@ defmodule Kudzu.Application do
   # Config starts with Nx.BinaryBackend as safe default.
   # This function tries to manually start EXLA and upgrade if it works.
   defp ensure_nx_backend do
-    task = Task.async(fn ->
-      try do
-        # Try to start EXLA manually (it's runtime: false so not auto-started)
-        case Application.ensure_all_started(:exla) do
-          {:ok, _} ->
-            # EXLA started, now test a tensor operation
-            Application.put_env(:nx, :default_backend, EXLA.Backend)
-            Application.put_env(:nx, :default_defn_options, [compiler: EXLA])
-            t = Nx.tensor([1.0, 2.0, 3.0])
-            Nx.to_flat_list(t)
-            :ok
-          {:error, reason} ->
-            {:error, reason}
+    task =
+      Task.async(fn ->
+        try do
+          # Try to start EXLA manually (it's runtime: false so not auto-started)
+          case Application.ensure_all_started(:exla) do
+            {:ok, _} ->
+              # EXLA started, now test a tensor operation
+              Application.put_env(:nx, :default_backend, EXLA.Backend)
+              Application.put_env(:nx, :default_defn_options, compiler: EXLA)
+              t = Nx.tensor([1.0, 2.0, 3.0])
+              Nx.to_flat_list(t)
+              :ok
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+        rescue
+          e -> {:error, e}
         end
-      rescue
-        e -> {:error, e}
-      end
-    end)
+      end)
 
     case Task.yield(task, 15_000) || Task.shutdown(task) do
       {:ok, :ok} ->

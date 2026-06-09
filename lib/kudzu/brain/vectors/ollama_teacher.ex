@@ -52,6 +52,7 @@ defmodule Kudzu.Brain.Vectors.OllamaTeacher do
   @impl true
   def available? do
     url = get_ollama_url()
+
     case Kudzu.HTTP.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5_000}]) do
       {:ok, {{_, 200, _}, _, _}} -> true
       _ -> false
@@ -67,12 +68,13 @@ defmodule Kudzu.Brain.Vectors.OllamaTeacher do
 
     case call_ollama(prompt) do
       {:ok, response} when byte_size(response) > 50 ->
-        {:ok, %{
-          content: response,
-          source: "ollama:#{@model}",
-          confidence: 0.7,
-          metadata: %{mode: mode, model: @model}
-        }}
+        {:ok,
+         %{
+           content: response,
+           source: "ollama:#{@model}",
+           confidence: 0.7,
+           metadata: %{mode: mode, model: @model}
+         }}
 
       {:ok, _short} ->
         {:error, :response_too_short}
@@ -114,13 +116,14 @@ defmodule Kudzu.Brain.Vectors.OllamaTeacher do
   defp call_ollama(prompt) do
     url = get_ollama_url()
 
-    body = Jason.encode!(%{
-      model: @model,
-      prompt: prompt,
-      stream: false,
-      options: %{num_predict: 2000, temperature: 0.4},
-      keep_alive: "10m"
-    })
+    body =
+      Jason.encode!(%{
+        model: @model,
+        prompt: prompt,
+        stream: false,
+        options: %{num_predict: 2000, temperature: 0.4},
+        keep_alive: "10m"
+      })
 
     request = {~c"#{url}/api/generate", [], ~c"application/json", body}
 

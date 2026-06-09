@@ -39,13 +39,11 @@ if System.get_env("KUDZU_ROLE") == "worker" do
   config :kudzu,
     ollama_url: "http://#{ollama_host}:11434"
 
-  config :kudzu, KudzuWeb.MCP.Endpoint,
-    server: false
+  config :kudzu, KudzuWeb.MCP.Endpoint, server: false
 end
 
 # Distiller extractor selection — when true, Distiller.extract_chains/1 calls
 # Kudzu.Silo.Extractor.extract_claude/3 (Claude API, costs tokens, higher quality)
 # instead of the local Ollama llama4:scout path. Defaults to false; enable per-run
 # via KUDZU_DISTILLER_CLAUDE=true. Requires ANTHROPIC_API_KEY to be set.
-config :kudzu, :distiller_use_claude,
-  System.get_env("KUDZU_DISTILLER_CLAUDE") == "true"
+config :kudzu, :distiller_use_claude, System.get_env("KUDZU_DISTILLER_CLAUDE") == "true"

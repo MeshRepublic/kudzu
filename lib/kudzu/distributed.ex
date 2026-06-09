@@ -52,14 +52,17 @@ defmodule Kudzu.Distributed do
   """
   @spec connect(atom() | String.t()) :: boolean() | {:error, term()}
   def connect(node) when is_binary(node), do: connect(String.to_atom(node))
+
   def connect(node) when is_atom(node) do
     case Node.connect(node) do
       true ->
         Logger.info("[Distributed] Connected to #{node}")
         true
+
       false ->
         Logger.warning("[Distributed] Failed to connect to #{node}")
         false
+
       :ignored ->
         {:error, :local_node_not_alive}
     end
@@ -107,8 +110,10 @@ defmodule Kudzu.Distributed do
         # Create a local proxy for convenience
         {:ok, proxy} = start_proxy(node, remote_pid)
         {:ok, proxy}
+
       {:badrpc, reason} ->
         {:error, {:remote_spawn_failed, reason}}
+
       error ->
         error
     end
@@ -144,18 +149,21 @@ defmodule Kudzu.Distributed do
   @spec share_trace(pid(), pid(), String.t()) :: :ok | {:error, term()}
   def share_trace(from_hologram, to_hologram, trace_id) do
     # Get the trace from source
-    traces = if local?(from_hologram) do
-      Kudzu.Hologram.recall_all(from_hologram)
-    else
-      call_remote(from_hologram, :recall_all, [])
-    end
+    traces =
+      if local?(from_hologram) do
+        Kudzu.Hologram.recall_all(from_hologram)
+      else
+        call_remote(from_hologram, :recall_all, [])
+      end
 
-    case Enum.find(traces, & &1.id == trace_id) do
+    case Enum.find(traces, &(&1.id == trace_id)) do
       nil ->
         {:error, :trace_not_found}
+
       trace ->
         # Send to destination
         from_id = get_id(from_hologram)
+
         if local?(to_hologram) do
           Kudzu.Hologram.receive_trace(to_hologram, trace, from_id)
         else
@@ -173,7 +181,10 @@ defmodule Kudzu.Distributed do
       # Local
       Registry.select(Kudzu.HologramRegistry, [{{:_, :"$1", :_}, [], [:"$1"]}])
     else
-      :rpc.call(node, Registry, :select, [Kudzu.HologramRegistry, [{{:_, :"$1", :_}, [], [:"$1"]}]])
+      :rpc.call(node, Registry, :select, [
+        Kudzu.HologramRegistry,
+        [{{:_, :"$1", :_}, [], [:"$1"]}]
+      ])
     end
   end
 
@@ -186,6 +197,7 @@ defmodule Kudzu.Distributed do
 
     Enum.each(all_nodes, fn node ->
       holograms = list_holograms(node)
+
       Enum.each(holograms, fn h ->
         if node == Node.self() do
           Kudzu.Hologram.receive_trace(h, trace, from_id)
@@ -205,13 +217,16 @@ defmodule Kudzu.Distributed do
   def cluster_stats do
     all_nodes = [Node.self() | Node.list()]
 
-    stats = Enum.map(all_nodes, fn node ->
-      holograms = list_holograms(node)
-      {node, %{
-        hologram_count: length(holograms),
-        ollama_available: check_ollama(node)
-      }}
-    end)
+    stats =
+      Enum.map(all_nodes, fn node ->
+        holograms = list_holograms(node)
+
+        {node,
+         %{
+           hologram_count: length(holograms),
+           ollama_available: check_ollama(node)
+         }}
+      end)
 
     %{
       nodes: length(all_nodes),

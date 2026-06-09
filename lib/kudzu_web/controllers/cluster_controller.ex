@@ -23,13 +23,14 @@ defmodule KudzuWeb.ClusterController do
   def nodes(conn, _params) do
     all_nodes = [Node.self() | Distributed.nodes()]
 
-    nodes_info = Enum.map(all_nodes, fn node ->
-      %{
-        name: node,
-        self: node == Node.self(),
-        hologram_count: count_holograms(node)
-      }
-    end)
+    nodes_info =
+      Enum.map(all_nodes, fn node ->
+        %{
+          name: node,
+          self: node == Node.self(),
+          hologram_count: count_holograms(node)
+        }
+      end)
 
     json(conn, %{nodes: nodes_info})
   end
@@ -65,8 +66,9 @@ defmodule KudzuWeb.ClusterController do
       json(conn, %{stats: stats})
     else
       # Local stats only
-      local_holograms = Registry.select(Kudzu.Registry, [{{{:id, :_}, :_, :_}, [], [true]}])
-      |> length()
+      local_holograms =
+        Registry.select(Kudzu.Registry, [{{{:id, :_}, :_, :_}, [], [true]}])
+        |> length()
 
       json(conn, %{
         stats: %{

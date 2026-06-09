@@ -8,14 +8,15 @@ defmodule KudzuWeb.BeamletController do
   GET /api/v1/beamlets
   """
   def index(conn, _params) do
-    beamlets = Registry.select(Kudzu.BeamletRegistry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
-    |> Enum.map(fn {key, pid} ->
-      %{
-        key: inspect(key),
-        pid: inspect(pid),
-        alive: Process.alive?(pid)
-      }
-    end)
+    beamlets =
+      Registry.select(Kudzu.BeamletRegistry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+      |> Enum.map(fn {key, pid} ->
+        %{
+          key: inspect(key),
+          pid: inspect(pid),
+          alive: Process.alive?(pid)
+        }
+      end)
 
     json(conn, %{beamlets: beamlets, count: length(beamlets)})
   end
@@ -44,14 +45,15 @@ defmodule KudzuWeb.BeamletController do
   def by_capability(conn, %{"capability" => capability}) do
     capability_atom = safe_to_capability(capability)
 
-    beamlets = Supervisor.find_by_capability(capability_atom)
-    |> Enum.map(fn {pid, id} ->
-      %{
-        id: id,
-        pid: inspect(pid),
-        alive: Process.alive?(pid)
-      }
-    end)
+    beamlets =
+      Supervisor.find_by_capability(capability_atom)
+      |> Enum.map(fn {pid, id} ->
+        %{
+          id: id,
+          pid: inspect(pid),
+          alive: Process.alive?(pid)
+        }
+      end)
 
     json(conn, %{
       capability: capability_atom,

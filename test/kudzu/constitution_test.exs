@@ -91,7 +91,7 @@ defmodule Kudzu.ConstitutionTest do
 
       Enum.each(forbidden, fn action ->
         assert {:denied, :constitutionally_forbidden} =
-          Constitution.permitted?(:mesh_republic, action, %{})
+                 Constitution.permitted?(:mesh_republic, action, %{})
       end)
     end
 
@@ -104,7 +104,8 @@ defmodule Kudzu.ConstitutionTest do
 
       Enum.each(consensus_actions, fn action ->
         assert {:requires_consensus, threshold} =
-          Constitution.permitted?(:mesh_republic, action, %{})
+                 Constitution.permitted?(:mesh_republic, action, %{})
+
         assert threshold >= 0.5
       end)
     end
@@ -142,7 +143,7 @@ defmodule Kudzu.ConstitutionTest do
   describe "Cautious constitution" do
     test "denies most actions by default" do
       assert {:denied, :not_explicitly_permitted} =
-        Constitution.permitted?(:cautious, {:unknown_action, %{}}, %{})
+               Constitution.permitted?(:cautious, {:unknown_action, %{}}, %{})
     end
 
     test "permits only whitelisted actions" do
@@ -158,7 +159,8 @@ defmodule Kudzu.ConstitutionTest do
 
       Enum.each(peer_actions, fn action ->
         assert {:requires_consensus, threshold} =
-          Constitution.permitted?(:cautious, {action, %{}}, %{})
+                 Constitution.permitted?(:cautious, {action, %{}}, %{})
+
         assert threshold >= 0.8
       end)
     end
@@ -219,11 +221,12 @@ defmodule Kudzu.ConstitutionTest do
     test "initial desires are constrained by constitution" do
       desires = ["dominate everything", "help peers"]
 
-      {:ok, h} = Application.spawn_hologram(
-        purpose: :test,
-        constitution: :mesh_republic,
-        desires: desires
-      )
+      {:ok, h} =
+        Application.spawn_hologram(
+          purpose: :test,
+          constitution: :mesh_republic,
+          desires: desires
+        )
 
       actual_desires = Hologram.get_desires(h)
 

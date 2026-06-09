@@ -8,12 +8,15 @@ defmodule Kudzu.Brain.Vectors.Behaviour do
   """
 
   @type topic :: String.t()
-  @type learn_result :: {:ok, %{
-    content: String.t(),
-    source: String.t(),
-    confidence: float(),
-    metadata: map()
-  }} | {:error, term()}
+  @type learn_result ::
+          {:ok,
+           %{
+             content: String.t(),
+             source: String.t(),
+             confidence: float(),
+             metadata: map()
+           }}
+          | {:error, term()}
 
   @callback name() :: atom()
   @callback relevance(topic()) :: float()

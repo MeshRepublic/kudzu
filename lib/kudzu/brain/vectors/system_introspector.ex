@@ -58,31 +58,35 @@ defmodule Kudzu.Brain.Vectors.SystemIntrospector do
   def learn(topic, _opts \\ []) do
     commands = plan_commands(topic)
 
-    results = Enum.reduce(commands, [], fn {cmd, args, label}, acc ->
-      case SafeShell.execute(cmd, args) do
-        {:ok, output} when byte_size(output) > 10 ->
-          [{label, output} | acc]
-        _ ->
-          acc
-      end
-    end)
+    results =
+      Enum.reduce(commands, [], fn {cmd, args, label}, acc ->
+        case SafeShell.execute(cmd, args) do
+          {:ok, output} when byte_size(output) > 10 ->
+            [{label, output} | acc]
+
+          _ ->
+            acc
+        end
+      end)
 
     if results == [] do
       {:error, :no_useful_output}
     else
-      content = results
+      content =
+        results
         |> Enum.reverse()
         |> Enum.map(fn {label, output} ->
           "## #{label}\n\n#{String.slice(output, 0, 3000)}"
         end)
         |> Enum.join("\n\n---\n\n")
 
-      {:ok, %{
-        content: content,
-        source: "system_introspection",
-        confidence: 0.75,
-        metadata: %{commands_run: length(results), commands_planned: length(commands)}
-      }}
+      {:ok,
+       %{
+         content: content,
+         source: "system_introspection",
+         confidence: 0.75,
+         metadata: %{commands_run: length(results), commands_planned: length(commands)}
+       }}
     end
   end
 
@@ -95,31 +99,35 @@ defmodule Kudzu.Brain.Vectors.SystemIntrospector do
     cmd_names = extract_command_names(t)
 
     # Build command list based on extracted names
-    commands = Enum.flat_map(cmd_names, fn cmd ->
-      [
-        {"man", [cmd], "Manual page: #{cmd}"},
-        {"which", [cmd], "Location: #{cmd}"}
-      ]
-    end)
+    commands =
+      Enum.flat_map(cmd_names, fn cmd ->
+        [
+          {"man", [cmd], "Manual page: #{cmd}"},
+          {"which", [cmd], "Location: #{cmd}"}
+        ]
+      end)
 
     # Add general system info if topic is broad
-    commands = if Regex.match?(~r/\b(system|linux|os|kernel)\b/, t) do
-      commands ++ [
-        {"uname", ["-a"], "System information"},
-        {"uptime", [], "System uptime"},
-        {"free", ["-h"], "Memory information"},
-        {"df", ["-h"], "Disk information"}
-      ]
-    else
-      commands
-    end
+    commands =
+      if Regex.match?(~r/\b(system|linux|os|kernel)\b/, t) do
+        commands ++
+          [
+            {"uname", ["-a"], "System information"},
+            {"uptime", [], "System uptime"},
+            {"free", ["-h"], "Memory information"},
+            {"df", ["-h"], "Disk information"}
+          ]
+      else
+        commands
+      end
 
     # Add Elixir/Erlang version if topic mentions them
     if Regex.match?(~r/\b(elixir|erlang|otp|beam)\b/, t) do
-      commands ++ [
-        {"elixir", ["--version"], "Elixir version"},
-        {"erl", ["-version"], "Erlang version"}
-      ]
+      commands ++
+        [
+          {"elixir", ["--version"], "Elixir version"},
+          {"erl", ["-version"], "Erlang version"}
+        ]
     else
       commands
     end
@@ -130,7 +138,8 @@ defmodule Kudzu.Brain.Vectors.SystemIntrospector do
     found = Enum.filter(@tool_names, &String.contains?(topic, &1))
 
     # Also try to extract command names from patterns like "man <cmd>" or "learn about <cmd>"
-    pattern_matches = Regex.scan(~r/\b(?:man|about|learn|use|using)\s+(\w+)/, topic)
+    pattern_matches =
+      Regex.scan(~r/\b(?:man|about|learn|use|using)\s+(\w+)/, topic)
       |> Enum.map(fn [_, cmd] -> cmd end)
       |> Enum.filter(fn cmd ->
         # Only include if it looks like a command name (short, lowercase)
@@ -139,6 +148,7 @@ defmodule Kudzu.Brain.Vectors.SystemIntrospector do
 
     (found ++ pattern_matches)
     |> Enum.uniq()
-    |> Enum.take(5)  # Don't run too many commands
+    # Don't run too many commands
+    |> Enum.take(5)
   end
 end

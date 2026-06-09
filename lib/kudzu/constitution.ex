@@ -72,7 +72,8 @@ defmodule Kudzu.Constitution do
   """
   @spec get_framework(framework()) :: module() | nil
   def get_framework(name) when is_atom(name) do
-    Map.get(@frameworks, name) || if is_atom(name) and function_exported?(name, :permitted?, 2), do: name
+    Map.get(@frameworks, name) ||
+      if is_atom(name) and function_exported?(name, :permitted?, 2), do: name
   end
 
   @doc """
@@ -114,7 +115,9 @@ defmodule Kudzu.Constitution do
   @spec consensus_required?(framework(), action(), map()) :: {:required, float()} | :not_required
   def consensus_required?(framework, action, state) do
     case get_framework(framework) do
-      nil -> :not_required
+      nil ->
+        :not_required
+
       mod ->
         if function_exported?(mod, :consensus_required?, 2) do
           mod.consensus_required?(action, state)
@@ -130,7 +133,9 @@ defmodule Kudzu.Constitution do
   @spec validate_trace(framework(), map(), map()) :: :valid | {:invalid, atom()}
   def validate_trace(framework, trace, state) do
     case get_framework(framework) do
-      nil -> :valid
+      nil ->
+        :valid
+
       mod ->
         if function_exported?(mod, :validate_trace, 2) do
           mod.validate_trace(trace, state)
@@ -157,7 +162,9 @@ defmodule Kudzu.Constitution do
   @spec principles(framework()) :: [String.t()]
   def principles(framework) do
     case get_framework(framework) do
-      nil -> []
+      nil ->
+        []
+
       mod ->
         if function_exported?(mod, :principles, 0) do
           mod.principles()

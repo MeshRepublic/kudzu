@@ -12,24 +12,26 @@ defmodule KudzuWeb.HologramController do
     limit = Map.get(params, "limit", "100") |> String.to_integer()
 
     # Select only :id entries to get hologram id and pid
-    holograms = Registry.select(Kudzu.Registry, [{{{:id, :"$1"}, :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
-    |> Enum.take(limit)
-    |> Enum.map(fn {id, pid} ->
-      try do
-        state = Hologram.get_state(pid)
-        %{
-          id: id,
-          pid: inspect(pid),
-          purpose: state.purpose,
-          constitution: state.constitution,
-          trace_count: map_size(state.traces),
-          peer_count: map_size(state.peers),
-          alive: Process.alive?(pid)
-        }
-      rescue
-        _ -> %{id: id, pid: inspect(pid), alive: false}
-      end
-    end)
+    holograms =
+      Registry.select(Kudzu.Registry, [{{{:id, :"$1"}, :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+      |> Enum.take(limit)
+      |> Enum.map(fn {id, pid} ->
+        try do
+          state = Hologram.get_state(pid)
+
+          %{
+            id: id,
+            pid: inspect(pid),
+            purpose: state.purpose,
+            constitution: state.constitution,
+            trace_count: map_size(state.traces),
+            peer_count: map_size(state.peers),
+            alive: Process.alive?(pid)
+          }
+        rescue
+          _ -> %{id: id, pid: inspect(pid), alive: false}
+        end
+      end)
 
     json(conn, %{holograms: holograms, count: length(holograms)})
   end
@@ -42,6 +44,7 @@ defmodule KudzuWeb.HologramController do
     case find_hologram(id) do
       {:ok, pid} ->
         state = Hologram.get_state(pid)
+
         json(conn, %{
           hologram: %{
             id: state.id,
@@ -68,14 +71,15 @@ defmodule KudzuWeb.HologramController do
   POST /api/v1/holograms
   """
   def create(conn, params) do
-    opts = [
-      purpose: get_atom_param(params, "purpose", :api_spawned),
-      constitution: get_atom_param(params, "constitution", :mesh_republic),
-      desires: Map.get(params, "desires", []),
-      cognition: Map.get(params, "cognition", false),
-      ollama_url: Map.get(params, "ollama_url")
-    ]
-    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+    opts =
+      [
+        purpose: get_atom_param(params, "purpose", :api_spawned),
+        constitution: get_atom_param(params, "constitution", :mesh_republic),
+        desires: Map.get(params, "desires", []),
+        cognition: Map.get(params, "cognition", false),
+        ollama_url: Map.get(params, "ollama_url")
+      ]
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
 
     case Application.spawn_hologram(opts) do
       {:ok, pid} ->
@@ -134,11 +138,12 @@ defmodule KudzuWeb.HologramController do
   def stimulate(conn, %{"hologram_id" => id} = params) do
     stimulus = Map.get(params, "stimulus", Map.get(params, "content", ""))
 
-    opts = [
-      timeout: Map.get(params, "timeout", 120_000),
-      model: Map.get(params, "model")
-    ]
-    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+    opts =
+      [
+        timeout: Map.get(params, "timeout", 120_000),
+        model: Map.get(params, "model")
+      ]
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
 
     case find_hologram(id) do
       {:ok, pid} ->
@@ -202,10 +207,11 @@ defmodule KudzuWeb.HologramController do
 
     case find_hologram(id) do
       {:ok, pid} ->
-        traces = Hologram.recall_all(pid)
-        |> filter_by_purpose(purpose_filter)
-        |> Enum.take(limit)
-        |> Enum.map(&trace_to_map/1)
+        traces =
+          Hologram.recall_all(pid)
+          |> filter_by_purpose(purpose_filter)
+          |> Enum.take(limit)
+          |> Enum.map(&trace_to_map/1)
 
         json(conn, %{traces: traces, count: length(traces)})
 
@@ -224,9 +230,12 @@ defmodule KudzuWeb.HologramController do
     case find_hologram(id) do
       {:ok, pid} ->
         state = Hologram.get_state(pid)
-        peers = Enum.map(state.peers, fn {peer_id, info} ->
-          %{id: peer_id, trust: info.trust, last_seen: info.last_seen}
-        end)
+
+        peers =
+          Enum.map(state.peers, fn {peer_id, info} ->
+            %{id: peer_id, trust: info.trust, last_seen: info.last_seen}
+          end)
+
         json(conn, %{peers: peers})
 
       :error ->
@@ -356,6 +365,7 @@ defmodule KudzuWeb.HologramController do
       timestamp: Kudzu.VectorClock.to_map(trace.timestamp)
     }
   end
+
   defp trace_to_map(trace) when is_map(trace) do
     %{
       id: trace[:id] || trace["id"],
@@ -409,6 +419,7 @@ defmodule KudzuWeb.HologramController do
   defp sanitize_key(k), do: k
 
   defp filter_by_purpose(traces, nil), do: traces
+
   defp filter_by_purpose(traces, purpose) do
     purpose_atom = String.to_existing_atom(purpose)
     Enum.filter(traces, fn t -> t.purpose == purpose_atom end)
@@ -419,25 +430,32 @@ defmodule KudzuWeb.HologramController do
   defp action_to_map({:record_trace, purpose, hints}) do
     %{type: "record_trace", purpose: purpose, hints: hints}
   end
+
   defp action_to_map({:query_peer, peer_id, purpose}) do
     %{type: "query_peer", peer_id: peer_id, purpose: purpose}
   end
+
   defp action_to_map({:share_trace, peer_id, trace_id}) do
     %{type: "share_trace", peer_id: peer_id, trace_id: trace_id}
   end
+
   defp action_to_map({:update_desire, desire}) do
     %{type: "update_desire", desire: desire}
   end
+
   defp action_to_map({:respond, message}) do
     %{type: "respond", message: message}
   end
+
   defp action_to_map(:noop), do: %{type: "noop"}
   defp action_to_map(other), do: %{type: "unknown", raw: inspect(other)}
 
   @allowed_trace_purposes ~w(observation thought memory discovery research learning session_context)a
   defp get_trace_purpose(params) do
     case Map.get(params, "purpose") do
-      nil -> :observation
+      nil ->
+        :observation
+
       purpose when is_binary(purpose) ->
         find_allowed_atom(purpose, @allowed_trace_purposes, :observation)
     end
@@ -459,6 +477,7 @@ defmodule KudzuWeb.HologramController do
   # Find matching atom from allowlist by comparing strings
   defp find_allowed_atom(str, allowlist, default) do
     normalized = str |> String.trim() |> String.downcase()
+
     Enum.find(allowlist, default, fn atom ->
       Atom.to_string(atom) == normalized
     end)
@@ -471,5 +490,6 @@ defmodule KudzuWeb.HologramController do
   rescue
     ArgumentError -> :mesh_republic
   end
+
   defp safe_to_constitution_atom(atom) when is_atom(atom), do: atom
 end

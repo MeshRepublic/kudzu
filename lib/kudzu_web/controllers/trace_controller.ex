@@ -12,17 +12,18 @@ defmodule KudzuWeb.TraceController do
     limit = Map.get(params, "limit", "100") |> String.to_integer()
 
     # Collect traces from all holograms (select pids from :id entries)
-    traces = Registry.select(Kudzu.Registry, [{{{:id, :_}, :"$1", :_}, [], [:"$1"]}])
-    |> Enum.flat_map(fn pid ->
-      try do
-        Hologram.recall_all(pid)
-      rescue
-        _ -> []
-      end
-    end)
-    |> filter_by_purpose(purpose_filter)
-    |> Enum.take(limit)
-    |> Enum.map(&trace_to_map/1)
+    traces =
+      Registry.select(Kudzu.Registry, [{{{:id, :_}, :"$1", :_}, [], [:"$1"]}])
+      |> Enum.flat_map(fn pid ->
+        try do
+          Hologram.recall_all(pid)
+        rescue
+          _ -> []
+        end
+      end)
+      |> filter_by_purpose(purpose_filter)
+      |> Enum.take(limit)
+      |> Enum.map(&trace_to_map/1)
 
     json(conn, %{traces: traces, count: length(traces)})
   end
@@ -33,15 +34,16 @@ defmodule KudzuWeb.TraceController do
   """
   def show(conn, %{"id" => trace_id}) do
     # Search all holograms for this trace
-    result = Registry.select(Kudzu.Registry, [{{{:id, :_}, :"$1", :_}, [], [:"$1"]}])
-    |> Enum.find_value(fn pid ->
-      try do
-        traces = Hologram.recall_all(pid)
-        Enum.find(traces, fn t -> t.id == trace_id end)
-      rescue
-        _ -> nil
-      end
-    end)
+    result =
+      Registry.select(Kudzu.Registry, [{{{:id, :_}, :"$1", :_}, [], [:"$1"]}])
+      |> Enum.find_value(fn pid ->
+        try do
+          traces = Hologram.recall_all(pid)
+          Enum.find(traces, fn t -> t.id == trace_id end)
+        rescue
+          _ -> nil
+        end
+      end)
 
     case result do
       nil ->
@@ -58,7 +60,11 @@ defmodule KudzuWeb.TraceController do
   Share a trace between holograms.
   POST /api/v1/traces/share
   """
-  def share(conn, %{"from_hologram_id" => from_id, "to_hologram_id" => to_id, "trace_id" => trace_id}) do
+  def share(conn, %{
+        "from_hologram_id" => from_id,
+        "to_hologram_id" => to_id,
+        "trace_id" => trace_id
+      }) do
     with {:ok, from_pid} <- find_hologram(from_id),
          {:ok, to_pid} <- find_hologram(to_id) do
       case Distributed.share_trace(from_pid, to_pid, trace_id) do
@@ -99,6 +105,7 @@ defmodule KudzuWeb.TraceController do
   end
 
   defp filter_by_purpose(traces, nil), do: traces
+
   defp filter_by_purpose(traces, purpose) do
     purpose_atom = String.to_existing_atom(purpose)
     Enum.filter(traces, fn t -> t.purpose == purpose_atom end)

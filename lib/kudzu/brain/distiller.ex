@@ -103,13 +103,14 @@ defmodule Kudzu.Brain.Distiller do
   end
 
   defp extract_chains_via_ollama(text) do
-    ollama_result = try do
-      extract_with_ollama(text)
-    rescue
-      e -> {:error, {:crashed, Exception.message(e)}}
-    catch
-      :exit, e -> {:error, {:exit, inspect(e) |> String.slice(0, 200)}}
-    end
+    ollama_result =
+      try do
+        extract_with_ollama(text)
+      rescue
+        e -> {:error, {:crashed, Exception.message(e)}}
+      catch
+        :exit, e -> {:error, {:exit, inspect(e) |> String.slice(0, 200)}}
+      end
 
     case ollama_result do
       {:ok, chains} when chains != [] ->
@@ -118,6 +119,7 @@ defmodule Kudzu.Brain.Distiller do
 
       other ->
         Logger.debug("[Distiller] Ollama fallback: #{inspect(other) |> String.slice(0, 200)}")
+
         text
         |> split_sentences()
         |> Enum.flat_map(&extract_from_sentence/1)
@@ -271,10 +273,11 @@ defmodule Kudzu.Brain.Distiller do
     term_freqs = compute_term_frequencies(merged_triples)
 
     # Step 4: Score each triple
-    scored = Enum.map(merged_triples, fn triple ->
-      score = score_triple(triple, term_freqs)
-      Map.put(triple, :score, score)
-    end)
+    scored =
+      Enum.map(merged_triples, fn triple ->
+        score = score_triple(triple, term_freqs)
+        Map.put(triple, :score, score)
+      end)
 
     # Step 5: Prune below threshold
     {keep, prune} = Enum.split_with(scored, fn t -> t.score >= threshold end)
@@ -287,7 +290,7 @@ defmodule Kudzu.Brain.Distiller do
 
     Logger.info(
       "[Distiller] Knowledge review: #{total_count} reviewed, " <>
-      "#{merge_count} merged, #{prune_count} pruned, #{length(keep)} kept"
+        "#{merge_count} merged, #{prune_count} pruned, #{length(keep)} kept"
     )
 
     %{reviewed: total_count, merged: merge_count, pruned: prune_count}
@@ -306,15 +309,20 @@ defmodule Kudzu.Brain.Distiller do
           |> Map.values()
           |> Enum.filter(fn trace ->
             hint = trace.reconstruction_hint
+
             is_map(hint) and
               Map.get(hint, :type, Map.get(hint, "type")) == "relationship"
           end)
           |> Enum.map(fn trace ->
             hint = trace.reconstruction_hint
+
             %{
-              subject: normalize_term(to_string(Map.get(hint, :subject, Map.get(hint, "subject", "")))),
-              relation: to_string(Map.get(hint, :relation, Map.get(hint, "relation", "relates_to"))),
-              object: normalize_term(to_string(Map.get(hint, :object, Map.get(hint, "object", "")))),
+              subject:
+                normalize_term(to_string(Map.get(hint, :subject, Map.get(hint, "subject", "")))),
+              relation:
+                to_string(Map.get(hint, :relation, Map.get(hint, "relation", "relates_to"))),
+              object:
+                normalize_term(to_string(Map.get(hint, :object, Map.get(hint, "object", "")))),
               domain: domain,
               trace_id: trace.id,
               silo_pid: pid
@@ -407,15 +415,17 @@ defmodule Kudzu.Brain.Distiller do
   defp extract_with_ollama(text) do
     excerpt = if String.length(text) > 3000, do: String.slice(text, 0, 3000), else: text
 
-    prompt = "Extract key factual relationships from this text. Return ONLY a JSON array of objects with \"subject\", \"relation\", and \"object\" fields.\n\nValid relations: caused_by, causes, requires, uses, is_a, contains, relates_to, produces, provides, because\n\nExample: [{\"subject\": \"Linux\", \"relation\": \"uses\", \"object\": \"systemd for init\"}]\n\nText:\n#{excerpt}\n\nJSON:"
+    prompt =
+      "Extract key factual relationships from this text. Return ONLY a JSON array of objects with \"subject\", \"relation\", and \"object\" fields.\n\nValid relations: caused_by, causes, requires, uses, is_a, contains, relates_to, produces, provides, because\n\nExample: [{\"subject\": \"Linux\", \"relation\": \"uses\", \"object\": \"systemd for init\"}]\n\nText:\n#{excerpt}\n\nJSON:"
 
-    body = Jason.encode!(%{
-      model: @extract_model,
-      prompt: prompt,
-      stream: false,
-      options: %{num_predict: 1000, temperature: 0.1},
-      keep_alive: "10m"
-    })
+    body =
+      Jason.encode!(%{
+        model: @extract_model,
+        prompt: prompt,
+        stream: false,
+        options: %{num_predict: 1000, temperature: 0.1},
+        keep_alive: "10m"
+      })
 
     request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
 
@@ -423,14 +433,21 @@ defmodule Kudzu.Brain.Distiller do
       {:ok, {{_, 200, _}, _, response_body}} ->
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"response" => response}} ->
-            Logger.debug("[Distiller] Ollama response (first 200): #{String.slice(response, 0, 500)}")
+            Logger.debug(
+              "[Distiller] Ollama response (first 200): #{String.slice(response, 0, 500)}"
+            )
+
             {:ok, parse_json_triples(response)}
+
           _ ->
             {:error, :parse_failed}
         end
 
       {:ok, {{_, status, _}, _, err_body}} ->
-        Logger.warning("[Distiller] Ollama HTTP #{status}: #{String.slice(to_string(err_body), 0, 200)}")
+        Logger.warning(
+          "[Distiller] Ollama HTTP #{status}: #{String.slice(to_string(err_body), 0, 200)}"
+        )
+
         {:error, {:http_error, status}}
 
       {:error, reason} ->
@@ -452,21 +469,25 @@ defmodule Kudzu.Brain.Distiller do
         case Jason.decode(str) do
           {:ok, items} when is_list(items) ->
             items
-            |> Enum.map(fn item when is_map(item) ->
-              subject = Map.get(item, "subject", "") |> to_string() |> normalize_term()
-              relation = Map.get(item, "relation", "relates_to") |> to_string()
-              object = Map.get(item, "object", "") |> to_string() |> normalize_term()
+            |> Enum.map(fn
+              item when is_map(item) ->
+                subject = Map.get(item, "subject", "") |> to_string() |> normalize_term()
+                relation = Map.get(item, "relation", "relates_to") |> to_string()
+                object = Map.get(item, "object", "") |> to_string() |> normalize_term()
 
-              relation = if relation in ~w(caused_by causes requires uses is_a contains relates_to produces provides because) do
-                relation
-              else
-                "relates_to"
-              end
+                relation =
+                  if relation in ~w(caused_by causes requires uses is_a contains relates_to produces provides because) do
+                    relation
+                  else
+                    "relates_to"
+                  end
 
-              if String.length(subject) > 1 and String.length(object) > 1 do
-                {subject, relation, object}
-              end
-            _ -> nil
+                if String.length(subject) > 1 and String.length(object) > 1 do
+                  {subject, relation, object}
+                end
+
+              _ ->
+                nil
             end)
             |> Enum.reject(&is_nil/1)
             |> Enum.uniq()
@@ -486,16 +507,20 @@ defmodule Kudzu.Brain.Distiller do
 
     # Strategy 1: Direct JSON decode (response is just a JSON array)
     case Jason.decode(trimmed) do
-      {:ok, items} when is_list(items) -> trimmed
+      {:ok, items} when is_list(items) ->
+        trimmed
+
       _ ->
         # Strategy 2: Extract from markdown code fences
         case Regex.run(~r//, trimmed) do
           [_, inner] ->
             inner = String.trim(inner)
+
             case Jason.decode(inner) do
               {:ok, _} -> inner
               _ -> find_json_array_bare(trimmed)
             end
+
           _ ->
             find_json_array_bare(trimmed)
         end

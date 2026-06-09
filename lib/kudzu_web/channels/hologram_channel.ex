@@ -38,9 +38,11 @@ defmodule KudzuWeb.HologramChannel do
     case Application.spawn_hologram(opts) do
       {:ok, pid} ->
         id = Hologram.get_id(pid)
-        socket = socket
-        |> assign(:hologram_pid, pid)
-        |> assign(:hologram_id, id)
+
+        socket =
+          socket
+          |> assign(:hologram_pid, pid)
+          |> assign(:hologram_id, id)
 
         # Subscribe to hologram events
         Phoenix.PubSub.subscribe(Kudzu.PubSub, "hologram:#{id}")
@@ -55,20 +57,23 @@ defmodule KudzuWeb.HologramChannel do
   def join("hologram:" <> hologram_id, _params, socket) do
     case find_hologram(hologram_id) do
       {:ok, pid} ->
-        socket = socket
-        |> assign(:hologram_pid, pid)
-        |> assign(:hologram_id, hologram_id)
+        socket =
+          socket
+          |> assign(:hologram_pid, pid)
+          |> assign(:hologram_id, hologram_id)
 
         # Subscribe to hologram events
         Phoenix.PubSub.subscribe(Kudzu.PubSub, "hologram:#{hologram_id}")
 
         state = Hologram.get_state(pid)
-        {:ok, %{
-          hologram_id: hologram_id,
-          purpose: state.purpose,
-          constitution: state.constitution,
-          trace_count: map_size(state.traces)
-        }, socket}
+
+        {:ok,
+         %{
+           hologram_id: hologram_id,
+           purpose: state.purpose,
+           constitution: state.constitution,
+           trace_count: map_size(state.traces)
+         }, socket}
 
       :error ->
         {:error, %{reason: "Hologram not found"}}
@@ -78,6 +83,7 @@ defmodule KudzuWeb.HologramChannel do
   @impl true
   def handle_in("stimulate", %{"content" => content} = params, socket) do
     pid = socket.assigns.hologram_pid
+
     opts = [
       timeout: Map.get(params, "timeout", 120_000)
     ]
@@ -103,14 +109,16 @@ defmodule KudzuWeb.HologramChannel do
     pid = socket.assigns.hologram_pid
     state = Hologram.get_state(pid)
 
-    {:reply, {:ok, %{
-      id: state.id,
-      purpose: state.purpose,
-      constitution: state.constitution,
-      desires: state.desires,
-      trace_count: map_size(state.traces),
-      peer_count: map_size(state.peers)
-    }}, socket}
+    {:reply,
+     {:ok,
+      %{
+        id: state.id,
+        purpose: state.purpose,
+        constitution: state.constitution,
+        desires: state.desires,
+        trace_count: map_size(state.traces),
+        peer_count: map_size(state.peers)
+      }}, socket}
   end
 
   def handle_in("add_desire", %{"desire" => desire}, socket) do
@@ -124,10 +132,11 @@ defmodule KudzuWeb.HologramChannel do
     purpose = Map.get(params, "purpose")
     limit = Map.get(params, "limit", 50)
 
-    traces = Hologram.recall_all(pid)
-    |> filter_by_purpose(purpose)
-    |> Enum.take(limit)
-    |> Enum.map(&trace_to_map/1)
+    traces =
+      Hologram.recall_all(pid)
+      |> filter_by_purpose(purpose)
+      |> Enum.take(limit)
+      |> Enum.map(&trace_to_map/1)
 
     {:reply, {:ok, %{traces: traces}}, socket}
   end
@@ -204,9 +213,11 @@ defmodule KudzuWeb.HologramChannel do
       reconstruction_hint: trace.reconstruction_hint
     }
   end
+
   defp trace_to_map(map) when is_map(map), do: map
 
   defp filter_by_purpose(traces, nil), do: traces
+
   defp filter_by_purpose(traces, purpose) when is_binary(purpose) do
     purpose_atom = String.to_existing_atom(purpose)
     Enum.filter(traces, fn t -> t.purpose == purpose_atom end)

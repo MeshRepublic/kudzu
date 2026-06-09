@@ -31,17 +31,15 @@ defmodule Kudzu.Salience do
           consolidation_count: non_neg_integer()
         }
 
-  defstruct [
-    novelty: 0.5,
-    recency: nil,
-    access_count: 0,
-    emotional_valence: 0.0,
-    associative_strength: 0.0,
-    importance: :normal,
-    created_at: nil,
-    last_consolidated: nil,
-    consolidation_count: 0
-  ]
+  defstruct novelty: 0.5,
+            recency: nil,
+            access_count: 0,
+            emotional_valence: 0.0,
+            associative_strength: 0.0,
+            importance: :normal,
+            created_at: nil,
+            last_consolidated: nil,
+            consolidation_count: 0
 
   # Decay parameters (power law)
   @decay_exponent 0.5
@@ -67,7 +65,8 @@ defmodule Kudzu.Salience do
     now = DateTime.utc_now()
 
     %__MODULE__{
-      novelty: Keyword.get(opts, :novelty, 1.0),  # New traces are maximally novel
+      # New traces are maximally novel
+      novelty: Keyword.get(opts, :novelty, 1.0),
       recency: now,
       access_count: 0,
       emotional_valence: Keyword.get(opts, :emotional_valence, 0.0),
@@ -99,13 +98,12 @@ defmodule Kudzu.Salience do
     importance_weight = Map.get(@importance_weights, salience.importance, 1.0)
 
     # Combine factors (weighted geometric mean for more balanced scoring)
-    base_score = (
+    base_score =
       recency_score * 0.25 +
-      frequency_score * 0.20 +
-      novelty_score * 0.20 +
-      emotional_score * 0.15 +
-      associative_score * 0.20
-    )
+        frequency_score * 0.20 +
+        novelty_score * 0.20 +
+        emotional_score * 0.15 +
+        associative_score * 0.20
 
     # Apply importance multiplier and clamp
     final_score = base_score * importance_weight
@@ -117,11 +115,12 @@ defmodule Kudzu.Salience do
   """
   @spec on_access(t()) :: t()
   def on_access(%__MODULE__{} = salience) do
-    %{salience |
-      recency: DateTime.utc_now(),
-      access_count: salience.access_count + 1,
-      # Reconsolidation slightly boosts novelty (memory reconsolidation effect)
-      novelty: min(salience.novelty * 1.1, @max_salience)
+    %{
+      salience
+      | recency: DateTime.utc_now(),
+        access_count: salience.access_count + 1,
+        # Reconsolidation slightly boosts novelty (memory reconsolidation effect)
+        novelty: min(salience.novelty * 1.1, @max_salience)
     }
   end
 
@@ -130,11 +129,12 @@ defmodule Kudzu.Salience do
   """
   @spec on_consolidation(t()) :: t()
   def on_consolidation(%__MODULE__{} = salience) do
-    %{salience |
-      last_consolidated: DateTime.utc_now(),
-      consolidation_count: salience.consolidation_count + 1,
-      # Consolidation reduces novelty (memory becomes "settled")
-      novelty: salience.novelty * @novelty_decay_rate
+    %{
+      salience
+      | last_consolidated: DateTime.utc_now(),
+        consolidation_count: salience.consolidation_count + 1,
+        # Consolidation reduces novelty (memory becomes "settled")
+        novelty: salience.novelty * @novelty_decay_rate
     }
   end
 
@@ -143,8 +143,9 @@ defmodule Kudzu.Salience do
   """
   @spec strengthen_associations(t(), float()) :: t()
   def strengthen_associations(%__MODULE__{} = salience, delta \\ 0.1) do
-    %{salience |
-      associative_strength: clamp(salience.associative_strength + delta, 0.0, @max_salience)
+    %{
+      salience
+      | associative_strength: clamp(salience.associative_strength + delta, 0.0, @max_salience)
     }
   end
 
@@ -178,10 +179,11 @@ defmodule Kudzu.Salience do
     score_ok = current_score >= min_score
 
     # Check if not recently consolidated
-    consolidation_ok = case salience.last_consolidated do
-      nil -> true
-      last -> DateTime.diff(now, last, :hour) >= min_since_consolidation_hours
-    end
+    consolidation_ok =
+      case salience.last_consolidated do
+        nil -> true
+        last -> DateTime.diff(now, last, :hour) >= min_since_consolidation_hours
+      end
 
     age_ok and score_ok and consolidation_ok
   end
@@ -227,7 +229,8 @@ defmodule Kudzu.Salience do
       associative_strength: salience.associative_strength,
       importance: salience.importance,
       created_at: salience.created_at && DateTime.to_iso8601(salience.created_at),
-      last_consolidated: salience.last_consolidated && DateTime.to_iso8601(salience.last_consolidated),
+      last_consolidated:
+        salience.last_consolidated && DateTime.to_iso8601(salience.last_consolidated),
       consolidation_count: salience.consolidation_count
     }
   end
@@ -241,18 +244,24 @@ defmodule Kudzu.Salience do
       novelty: Map.get(map, :novelty) || Map.get(map, "novelty", 0.5),
       recency: parse_datetime(Map.get(map, :recency) || Map.get(map, "recency")),
       access_count: Map.get(map, :access_count) || Map.get(map, "access_count", 0),
-      emotional_valence: Map.get(map, :emotional_valence) || Map.get(map, "emotional_valence", 0.0),
-      associative_strength: Map.get(map, :associative_strength) || Map.get(map, "associative_strength", 0.0),
-      importance: parse_importance(Map.get(map, :importance) || Map.get(map, "importance", :normal)),
+      emotional_valence:
+        Map.get(map, :emotional_valence) || Map.get(map, "emotional_valence", 0.0),
+      associative_strength:
+        Map.get(map, :associative_strength) || Map.get(map, "associative_strength", 0.0),
+      importance:
+        parse_importance(Map.get(map, :importance) || Map.get(map, "importance", :normal)),
       created_at: parse_datetime(Map.get(map, :created_at) || Map.get(map, "created_at")),
-      last_consolidated: parse_datetime(Map.get(map, :last_consolidated) || Map.get(map, "last_consolidated")),
-      consolidation_count: Map.get(map, :consolidation_count) || Map.get(map, "consolidation_count", 0)
+      last_consolidated:
+        parse_datetime(Map.get(map, :last_consolidated) || Map.get(map, "last_consolidated")),
+      consolidation_count:
+        Map.get(map, :consolidation_count) || Map.get(map, "consolidation_count", 0)
     }
   end
 
   # Private helpers
 
   defp recency_factor(nil, _now), do: 0.5
+
   defp recency_factor(recency, now) do
     hours_since = DateTime.diff(now, recency, :second) / 3600.0
     # Power law decay
@@ -261,16 +270,18 @@ defmodule Kudzu.Salience do
 
   defp frequency_factor(count) do
     # Logarithmic scaling with diminishing returns
-    :math.log(count + 1) / :math.log(100)
+    (:math.log(count + 1) / :math.log(100))
     |> min(1.0)
   end
 
   defp novelty_factor(novelty, nil, _now), do: novelty
+
   defp novelty_factor(novelty, created_at, now) do
     # Novelty decays over time (power law)
     hours_since = DateTime.diff(now, created_at, :second) / 3600.0
     decay = :math.pow(hours_since + 1, -@decay_exponent)
-    novelty * decay
+
+    (novelty * decay)
     |> max(@min_salience)
   end
 
@@ -287,6 +298,7 @@ defmodule Kudzu.Salience do
 
   defp parse_datetime(nil), do: nil
   defp parse_datetime(%DateTime{} = dt), do: dt
+
   defp parse_datetime(str) when is_binary(str) do
     case DateTime.from_iso8601(str) do
       {:ok, dt, _offset} -> dt
@@ -295,6 +307,7 @@ defmodule Kudzu.Salience do
   end
 
   defp parse_importance(atom) when is_atom(atom), do: atom
+
   defp parse_importance(str) when is_binary(str) do
     try do
       String.to_existing_atom(str)

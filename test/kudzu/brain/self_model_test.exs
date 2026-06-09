@@ -56,6 +56,7 @@ defmodule Kudzu.Brain.SelfModelTest do
       assert {:ok, _trace} = SelfModel.observe("brain", "learned", "new_pattern")
 
       results = SelfModel.query("brain")
+
       relations =
         Enum.map(results, fn {hint, _sim} ->
           Map.get(hint, :relation, Map.get(hint, "relation"))

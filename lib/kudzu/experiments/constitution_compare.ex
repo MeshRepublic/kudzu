@@ -16,7 +16,13 @@ defmodule Kudzu.Experiments.ConstitutionCompare do
   """
   def run(opts \\ []) do
     num_per_swarm = Keyword.get(opts, :num_per_swarm, 20)
-    task = Keyword.get(opts, :task, "Coordinate to find and share information about 'the hidden message'")
+
+    task =
+      Keyword.get(
+        opts,
+        :task,
+        "Coordinate to find and share information about 'the hidden message'"
+      )
 
     IO.puts("\n=== Constitutional Framework Comparison ===")
     IO.puts("Agents per swarm: #{num_per_swarm}")
@@ -24,11 +30,12 @@ defmodule Kudzu.Experiments.ConstitutionCompare do
 
     constitutions = [:open, :mesh_republic, :cautious]
 
-    results = Enum.map(constitutions, fn constitution ->
-      IO.puts("\n--- Testing #{constitution} constitution ---")
-      result = run_swarm_test(constitution, num_per_swarm, task)
-      {constitution, result}
-    end)
+    results =
+      Enum.map(constitutions, fn constitution ->
+        IO.puts("\n--- Testing #{constitution} constitution ---")
+        result = run_swarm_test(constitution, num_per_swarm, task)
+        {constitution, result}
+      end)
 
     IO.puts("\n=== Comparison Results ===")
     print_comparison(results)
@@ -57,17 +64,26 @@ defmodule Kudzu.Experiments.ConstitutionCompare do
       decisions = Constitution.compare_decisions(action, %{id: "test"})
 
       Enum.each(decisions, fn {constitution, decision} ->
-        decision_str = case decision do
-          :permitted -> "✓ Permitted"
-          {:denied, reason} -> "✗ Denied (#{reason})"
-          {:requires_consensus, threshold} -> "⚡ Requires #{Float.round(threshold * 100, 0)}% consensus"
-        end
+        decision_str =
+          case decision do
+            :permitted ->
+              "✓ Permitted"
+
+            {:denied, reason} ->
+              "✗ Denied (#{reason})"
+
+            {:requires_consensus, threshold} ->
+              "⚡ Requires #{Float.round(threshold * 100, 0)}% consensus"
+          end
+
         IO.puts("  #{constitution}: #{decision_str}")
       end)
+
       IO.puts("")
     end)
 
     IO.puts("Constitutional principles:\n")
+
     Enum.each([:open, :mesh_republic, :cautious], fn c ->
       IO.puts("#{c}:")
       Constitution.principles(c) |> Enum.each(&IO.puts("  - #{&1}"))
@@ -105,11 +121,12 @@ defmodule Kudzu.Experiments.ConstitutionCompare do
   def demo_hot_swap do
     IO.puts("\n=== Constitution Hot-Swap Demo ===\n")
 
-    {:ok, h} = Application.spawn_hologram(
-      purpose: :swap_test,
-      constitution: :open,
-      desires: ["Do whatever is needed"]
-    )
+    {:ok, h} =
+      Application.spawn_hologram(
+        purpose: :swap_test,
+        constitution: :open,
+        desires: ["Do whatever is needed"]
+      )
 
     IO.puts("Created hologram with :open constitution")
     IO.puts("Constitution: #{Hologram.get_constitution(h)}")
@@ -147,14 +164,17 @@ defmodule Kudzu.Experiments.ConstitutionCompare do
     start_time = System.monotonic_time(:millisecond)
 
     # Spawn agents with this constitution
-    agents = for i <- 1..num_agents do
-      {:ok, h} = Application.spawn_hologram(
-        purpose: :swarm_test,
-        constitution: constitution,
-        desires: ["Accomplish the task", "Cooperate with peers"]
-      )
-      {i, Hologram.get_id(h), h}
-    end
+    agents =
+      for i <- 1..num_agents do
+        {:ok, h} =
+          Application.spawn_hologram(
+            purpose: :swarm_test,
+            constitution: constitution,
+            desires: ["Accomplish the task", "Cooperate with peers"]
+          )
+
+        {i, Hologram.get_id(h), h}
+      end
 
     spawn_time = System.monotonic_time(:millisecond) - start_time
     IO.puts("Spawned #{num_agents} agents in #{spawn_time}ms")
@@ -182,9 +202,10 @@ defmodule Kudzu.Experiments.ConstitutionCompare do
 
   defp connect_agents(agents) do
     Enum.each(agents, fn {_i, _id, h} ->
-      peers = agents
-      |> Enum.reject(fn {_, _, p} -> p == h end)
-      |> Enum.take_random(min(5, length(agents) - 1))
+      peers =
+        agents
+        |> Enum.reject(fn {_, _, p} -> p == h end)
+        |> Enum.take_random(min(5, length(agents) - 1))
 
       Enum.each(peers, fn {_, peer_id, _} ->
         Hologram.introduce_peer(h, peer_id)
@@ -219,15 +240,16 @@ defmodule Kudzu.Experiments.ConstitutionCompare do
     ]
 
     # Check each action against each agent's constitution
-    {permitted, denied, consensus} = Enum.reduce(agents, {0, 0, 0}, fn {_, _, h}, {p, d, c} ->
-      Enum.reduce(actions, {p, d, c}, fn action, {p2, d2, c2} ->
-        case Hologram.action_permitted?(h, action) do
-          :permitted -> {p2 + 1, d2, c2}
-          {:denied, _} -> {p2, d2 + 1, c2}
-          {:requires_consensus, _} -> {p2, d2, c2 + 1}
-        end
+    {permitted, denied, consensus} =
+      Enum.reduce(agents, {0, 0, 0}, fn {_, _, h}, {p, d, c} ->
+        Enum.reduce(actions, {p, d, c}, fn action, {p2, d2, c2} ->
+          case Hologram.action_permitted?(h, action) do
+            :permitted -> {p2 + 1, d2, c2}
+            {:denied, _} -> {p2, d2 + 1, c2}
+            {:requires_consensus, _} -> {p2, d2, c2 + 1}
+          end
+        end)
       end)
-    end)
 
     IO.puts("Actions: #{permitted} permitted, #{denied} denied, #{consensus} need consensus")
     {permitted, denied, consensus}
@@ -241,20 +263,24 @@ defmodule Kudzu.Experiments.ConstitutionCompare do
 
   defp print_comparison(results) do
     IO.puts("")
-    IO.puts(String.pad_trailing("Constitution", 15) <>
-            String.pad_trailing("Permitted", 12) <>
-            String.pad_trailing("Denied", 10) <>
-            String.pad_trailing("Consensus", 12) <>
-            "Traces")
+
+    IO.puts(
+      String.pad_trailing("Constitution", 15) <>
+        String.pad_trailing("Permitted", 12) <>
+        String.pad_trailing("Denied", 10) <>
+        String.pad_trailing("Consensus", 12) <>
+        "Traces"
+    )
+
     IO.puts(String.duplicate("-", 60))
 
     Enum.each(results, fn {constitution, metrics} ->
       IO.puts(
         String.pad_trailing(to_string(constitution), 15) <>
-        String.pad_trailing(to_string(metrics.actions_permitted), 12) <>
-        String.pad_trailing(to_string(metrics.actions_denied), 10) <>
-        String.pad_trailing(to_string(metrics.consensus_required), 12) <>
-        to_string(metrics.traces_recorded)
+          String.pad_trailing(to_string(metrics.actions_permitted), 12) <>
+          String.pad_trailing(to_string(metrics.actions_denied), 10) <>
+          String.pad_trailing(to_string(metrics.consensus_required), 12) <>
+          to_string(metrics.traces_recorded)
       )
     end)
   end

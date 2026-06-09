@@ -26,10 +26,13 @@ defmodule Kudzu.Brain.CuriosityTest do
 
   test "generate_from_gaps/1 produces questions from working memory dead ends" do
     wm = WorkingMemory.new()
-    wm = WorkingMemory.add_chain(wm, [
-      %{concept: "disk_pressure", similarity: 0.8, source: "health"},
-      %{concept: "unknown_cause", similarity: 0.0, source: "dead_end"}
-    ])
+
+    wm =
+      WorkingMemory.add_chain(wm, [
+        %{concept: "disk_pressure", similarity: 0.8, source: "health"},
+        %{concept: "unknown_cause", similarity: 0.0, source: "dead_end"}
+      ])
+
     questions = Curiosity.generate_from_gaps(wm)
     assert is_list(questions)
   end

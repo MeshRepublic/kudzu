@@ -34,21 +34,27 @@ defmodule Kudzu.Brain.LearningGoal do
 
   def complete_current(%__MODULE__{} = goal) do
     topics = List.update_at(goal.topics, goal.current_index, fn {t, _} -> {t, :complete} end)
-    goal = %{goal |
-      topics: topics,
-      current_index: goal.current_index + 1,
-      completed_count: goal.completed_count + 1
+
+    goal = %{
+      goal
+      | topics: topics,
+        current_index: goal.current_index + 1,
+        completed_count: goal.completed_count + 1
     }
+
     maybe_finish(goal)
   end
 
   def fail_current(%__MODULE__{} = goal) do
     topics = List.update_at(goal.topics, goal.current_index, fn {t, _} -> {t, :failed} end)
-    goal = %{goal |
-      topics: topics,
-      current_index: goal.current_index + 1,
-      failed_count: goal.failed_count + 1
+
+    goal = %{
+      goal
+      | topics: topics,
+        current_index: goal.current_index + 1,
+        failed_count: goal.failed_count + 1
     }
+
     maybe_finish(goal)
   end
 

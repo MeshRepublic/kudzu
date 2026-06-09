@@ -28,7 +28,9 @@ defmodule Kudzu.HologramRegistry do
   # runs land in /tmp and never share a file with the production node.
   @spec dets_file() :: charlist()
   defp dets_file do
-    String.to_charlist(Path.join([Application.fetch_env!(:kudzu, :data_root), "dets", "hologram_registry.dets"]))
+    String.to_charlist(
+      Path.join([Application.fetch_env!(:kudzu, :data_root), "dets", "hologram_registry.dets"])
+    )
   end
 
   # Client API
@@ -102,10 +104,11 @@ defmodule Kudzu.HologramRegistry do
 
   @impl true
   def handle_call({:register, id, metadata}, _from, state) do
-    record = metadata
-    |> Map.put(:id, id)
-    |> Map.put(:created_at, Map.get(metadata, :created_at, DateTime.utc_now()))
-    |> Map.put(:last_persisted_at, DateTime.utc_now())
+    record =
+      metadata
+      |> Map.put(:id, id)
+      |> Map.put(:created_at, Map.get(metadata, :created_at, DateTime.utc_now()))
+      |> Map.put(:last_persisted_at, DateTime.utc_now())
 
     :dets.insert(state.dets, {id, record})
     :dets.sync(state.dets)
@@ -118,16 +121,20 @@ defmodule Kudzu.HologramRegistry do
   def handle_call({:update, id, metadata}, _from, state) do
     case :dets.lookup(state.dets, id) do
       [{^id, existing}] ->
-        updated = Map.merge(existing, metadata)
-        |> Map.put(:last_persisted_at, DateTime.utc_now())
+        updated =
+          Map.merge(existing, metadata)
+          |> Map.put(:last_persisted_at, DateTime.utc_now())
+
         :dets.insert(state.dets, {id, updated})
         :dets.sync(state.dets)
         {:reply, :ok, state}
 
       [] ->
-        record = metadata
-        |> Map.put(:id, id)
-        |> Map.put(:last_persisted_at, DateTime.utc_now())
+        record =
+          metadata
+          |> Map.put(:id, id)
+          |> Map.put(:last_persisted_at, DateTime.utc_now())
+
         :dets.insert(state.dets, {id, record})
         :dets.sync(state.dets)
         {:reply, :ok, state}
@@ -144,53 +151,73 @@ defmodule Kudzu.HologramRegistry do
 
   @impl true
   def handle_call({:get, id}, _from, state) do
-    result = case :dets.lookup(state.dets, id) do
-      [{^id, record}] -> {:ok, record}
-      [] -> :not_found
-    end
+    result =
+      case :dets.lookup(state.dets, id) do
+        [{^id, record}] -> {:ok, record}
+        [] -> :not_found
+      end
+
     {:reply, result, state}
   end
 
   @impl true
   def handle_call(:list_all, _from, state) do
-    records = :dets.foldl(fn {_id, record}, acc ->
-      [record | acc]
-    end, [], state.dets)
+    records =
+      :dets.foldl(
+        fn {_id, record}, acc ->
+          [record | acc]
+        end,
+        [],
+        state.dets
+      )
+
     {:reply, records, state}
   end
 
   @impl true
   def handle_call(:reconstruct_all, _from, state) do
-    records = :dets.foldl(fn {_id, record}, acc ->
-      [record | acc]
-    end, [], state.dets)
+    records =
+      :dets.foldl(
+        fn {_id, record}, acc ->
+          [record | acc]
+        end,
+        [],
+        state.dets
+      )
 
     Logger.info("[HologramRegistry] Reconstructing #{length(records)} holograms...")
 
     # Phase 1: Spawn all holograms with their persisted config
-    spawned = records
-    |> Enum.map(fn record ->
-      opts = [
-        id: record.id,
-        purpose: record[:purpose] || :general,
-        desires: record[:desires] || [],
-        cognition: record[:cognition_enabled] || false,
-        model: record[:cognition_model] || "mistral:latest",
-        constitution: record[:constitution] || :mesh_republic,
-        reconstruct: true
-      ]
+    spawned =
+      records
+      |> Enum.map(fn record ->
+        opts = [
+          id: record.id,
+          purpose: record[:purpose] || :general,
+          desires: record[:desires] || [],
+          cognition: record[:cognition_enabled] || false,
+          model: record[:cognition_model] || "mistral:latest",
+          constitution: record[:constitution] || :mesh_republic,
+          reconstruct: true
+        ]
 
-      case DynamicSupervisor.start_child(Kudzu.HologramSupervisor, {Kudzu.Hologram, opts}) do
-        {:ok, pid} ->
-          Logger.info("[HologramRegistry] Reconstructed #{record.id} (purpose: #{record[:purpose]})")
-          {record.id, pid, record[:peers] || %{}}
+        case DynamicSupervisor.start_child(Kudzu.HologramSupervisor, {Kudzu.Hologram, opts}) do
+          {:ok, pid} ->
+            Logger.info(
+              "[HologramRegistry] Reconstructed #{record.id} (purpose: #{record[:purpose]})"
+            )
 
-        {:error, reason} ->
-          Logger.warning("[HologramRegistry] Failed to reconstruct #{record.id}: #{inspect(reason)}")
-          nil
-      end
-    end)
-    |> Enum.reject(&is_nil/1)
+            {record.id, pid, record[:peers] || %{}}
+
+          {:error, reason} ->
+            Logger.warning(
+              "[HologramRegistry] Failed to reconstruct #{record.id}: #{inspect(reason)}"
+            )
+
+            nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
 
     # Phase 2: Re-establish peer connections between reconstructed holograms
     pid_map = Map.new(spawned, fn {id, pid, _peers} -> {id, pid} end)
@@ -200,7 +227,9 @@ defmodule Kudzu.HologramRegistry do
       |> Map.keys()
       |> Enum.each(fn peer_id ->
         case Map.get(pid_map, peer_id) do
-          nil -> :ok
+          nil ->
+            :ok
+
           peer_pid ->
             try do
               Kudzu.Hologram.introduce_peer(pid, peer_pid)
@@ -246,6 +275,7 @@ defmodule Kudzu.HologramRegistry do
     |> Enum.each(fn pid ->
       try do
         s = Kudzu.Hologram.get_state(pid)
+
         metadata = %{
           id: s.id,
           purpose: s.purpose,
@@ -256,6 +286,7 @@ defmodule Kudzu.HologramRegistry do
           peers: s.peers,
           last_persisted_at: DateTime.utc_now()
         }
+
         :dets.insert(state.dets, {s.id, metadata})
       catch
         :exit, _ -> :ok

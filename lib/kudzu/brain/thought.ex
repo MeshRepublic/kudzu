@@ -49,12 +49,15 @@ defmodule Kudzu.Brain.Thought do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
     priming = Keyword.get(opts, :priming, [])
 
-    task = Task.async(fn ->
-      think(id, input, depth, max_depth, max_breadth, priming)
-    end)
+    task =
+      Task.async(fn ->
+        think(id, input, depth, max_depth, max_breadth, priming)
+      end)
 
     case Task.yield(task, timeout) || Task.shutdown(task) do
-      {:ok, result} -> result
+      {:ok, result} ->
+        result
+
       nil ->
         Logger.debug("[Thought #{id}] Timed out at depth #{depth}")
         %Result{id: id, input: input, depth: depth, resolution: :timeout}
@@ -83,11 +86,12 @@ defmodule Kudzu.Brain.Thought do
     chain = build_chain(input, activations, depth, max_depth, max_breadth)
     confidence = evaluate_chain(chain)
 
-    resolution = cond do
-      confidence > 0.6 -> :found
-      confidence > 0.3 -> :partial
-      true -> :no_match
-    end
+    resolution =
+      cond do
+        confidence > 0.6 -> :found
+        confidence > 0.3 -> :partial
+        true -> :no_match
+      end
 
     %Result{
       id: id,
@@ -120,25 +124,30 @@ defmodule Kudzu.Brain.Thought do
   defp build_chain(input, activations, depth, max_depth, max_breadth) do
     initial = [%{concept: input, similarity: 1.0, source: "query"}]
 
-    chain = Enum.reduce(activations, initial, fn {concept, score, domain}, chain ->
-      chain ++ [%{concept: concept, similarity: score, source: domain}]
-    end)
+    chain =
+      Enum.reduce(activations, initial, fn {concept, score, domain}, chain ->
+        chain ++ [%{concept: concept, similarity: score, source: domain}]
+      end)
 
     if depth < max_depth and length(activations) > 0 do
       {top_concept, _score, _domain} = hd(activations)
-      sub_result = run(top_concept,
-        depth: depth + 1,
-        max_depth: max_depth,
-        max_breadth: max(max_breadth - 1, 2),
-        timeout: 2_000
-      )
+
+      sub_result =
+        run(top_concept,
+          depth: depth + 1,
+          max_depth: max_depth,
+          max_breadth: max(max_breadth - 1, 2),
+          timeout: 2_000
+        )
 
       if sub_result.resolution in [:found, :partial] do
-        sub_chain = sub_result.chain
-        |> Enum.map(fn
-          %{concept: _, similarity: _, source: _} = link -> link
-          other -> %{concept: to_string(other), similarity: 0.0, source: "sub_thought"}
-        end)
+        sub_chain =
+          sub_result.chain
+          |> Enum.map(fn
+            %{concept: _, similarity: _, source: _} = link -> link
+            other -> %{concept: to_string(other), similarity: 0.0, source: "sub_thought"}
+          end)
+
         chain ++ sub_chain
       else
         chain
@@ -152,12 +161,13 @@ defmodule Kudzu.Brain.Thought do
     if length(chain) <= 1 do
       0.0
     else
-      scores = chain
-      |> Enum.map(fn
-        %{similarity: score} -> score
-        _ -> 0.0
-      end)
-      |> Enum.filter(& &1 > 0)
+      scores =
+        chain
+        |> Enum.map(fn
+          %{similarity: score} -> score
+          _ -> 0.0
+        end)
+        |> Enum.filter(&(&1 > 0))
 
       if length(scores) == 0 do
         0.0
@@ -174,7 +184,9 @@ defmodule Kudzu.Brain.Thought do
     |> String.downcase()
     |> String.replace(~r/[^\w\s]/, "")
     |> String.split(~r/\s+/, trim: true)
-    |> Enum.reject(fn term -> term in ~w(the a an is are was were be been being have has had do does did will would shall should may might can could what why how when where who which that this these those) end)
+    |> Enum.reject(fn term ->
+      term in ~w(the a an is are was were be been being have has had do does did will would shall should may might can could what why how when where who which that this these those)
+    end)
     |> Enum.uniq()
   end
 
@@ -183,6 +195,7 @@ defmodule Kudzu.Brain.Thought do
   defp extract_concept(hint) when is_map(hint) do
     hint[:subject] || hint["subject"] || hint[:concept] || hint["concept"] || inspect(hint)
   end
+
   defp extract_concept(other), do: to_string(other)
 
   defp generate_id do

@@ -206,6 +206,7 @@ defmodule Kudzu.Brain do
       last_web_learning: state.last_web_learning,
       last_distillation: state.last_distillation
     }
+
     {:reply, status, state}
   end
 
@@ -289,6 +290,7 @@ defmodule Kudzu.Brain do
     case Activities.init_hologram(state.desires) do
       {:ok, pid, id} ->
         Logger.info("[Brain] Hologram ready — id=#{id}")
+
         try do
           Kudzu.Brain.SelfModel.init()
           Logger.info("[Brain] Self-model silo initialized")
@@ -307,9 +309,7 @@ defmodule Kudzu.Brain do
               Logger.info("[Brain] brain_knowledge silo ready")
 
             {:error, reason} ->
-              Logger.warning(
-                "[Brain] brain_knowledge silo init failed: #{inspect(reason)}"
-              )
+              Logger.warning("[Brain] brain_knowledge silo init failed: #{inspect(reason)}")
           end
         catch
           kind, reason ->
@@ -317,6 +317,7 @@ defmodule Kudzu.Brain do
               "[Brain] brain_knowledge silo init crashed: #{inspect({kind, reason})}"
             )
         end
+
         new_state = %{state | hologram_pid: pid, hologram_id: id}
         new_state = %{new_state | working_memory: WorkingMemory.new()}
         # Restore persisted learning goals
@@ -324,12 +325,17 @@ defmodule Kudzu.Brain do
         new_state = %{new_state | learning_goals: goals}
         topics = Learning.restore_researched_topics(pid)
         new_state = %{new_state | researched_topics: topics}
+
         if goals != [] do
           active = Enum.find(goals, &(&1.status == :active))
+
           if active do
-            Logger.info("[Brain] Restored learning goal: #{active.topic} (#{active.completed_count}/#{length(active.topics)})")
+            Logger.info(
+              "[Brain] Restored learning goal: #{active.topic} (#{active.completed_count}/#{length(active.topics)})"
+            )
           end
         end
+
         Activities.schedule_next()
         Phoenix.PubSub.subscribe(Kudzu.PubSub, "traces:new")
         {:noreply, new_state}
@@ -369,22 +375,24 @@ defmodule Kudzu.Brain do
   def handle_info({:learning_progress, goal_id, _topic_index, result}, state) do
     alias Kudzu.Brain.LearningGoal
 
-    goals = Enum.map(state.learning_goals, fn goal ->
-      if goal.id == goal_id do
-        case result do
-          :complete -> LearningGoal.complete_current(goal)
-          :failed -> LearningGoal.fail_current(goal)
+    goals =
+      Enum.map(state.learning_goals, fn goal ->
+        if goal.id == goal_id do
+          case result do
+            :complete -> LearningGoal.complete_current(goal)
+            :failed -> LearningGoal.fail_current(goal)
+          end
+        else
+          goal
         end
-      else
-        goal
-      end
-    end)
+      end)
 
     # If the active goal just completed, activate the next queued goal
     goals = Activities.maybe_activate_next_goal(goals)
 
     # Log progress
     active = Enum.find(goals, &(&1.id == goal_id))
+
     if active do
       total = length(active.topics)
       done = active.completed_count
@@ -392,6 +400,7 @@ defmodule Kudzu.Brain do
 
       if active.status == :complete do
         Logger.info("[Brain] Learning goal complete: #{active.topic}")
+
         record_trace(state, :discovery, %{
           source: "learning_goal_complete",
           topic: active.topic,
@@ -422,12 +431,15 @@ defmodule Kudzu.Brain do
   def handle_info({:trace_stored, record}, state) do
     if record.importance in [:critical, :high] do
       Logger.info("[Brain] High-importance trace detected, triggering distillation")
+
       Task.start(fn ->
-        text = case record.reconstruction_hint do
-          %{content: c} when is_binary(c) -> c
-          %{"content" => c} when is_binary(c) -> c
-          _ -> nil
-        end
+        text =
+          case record.reconstruction_hint do
+            %{content: c} when is_binary(c) -> c
+            %{"content" => c} when is_binary(c) -> c
+            _ -> nil
+          end
+
         if text && String.length(text) > 20 do
           try do
             # Pass live silo domains so find_knowledge_gaps/2 actually
@@ -464,6 +476,7 @@ defmodule Kudzu.Brain do
         end
       end)
     end
+
     {:noreply, state}
   end
 

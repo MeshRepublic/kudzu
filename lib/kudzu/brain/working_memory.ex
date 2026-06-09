@@ -8,16 +8,14 @@ defmodule Kudzu.Brain.WorkingMemory do
   or when capacity is exceeded. Evicted concepts become traces.
   """
 
-  defstruct [
-    active_concepts: %{},
-    recent_chains: [],
-    pending_questions: [],
-    context: nil,
-    max_concepts: 20,
-    max_chains: 10,
-    max_questions: 5,
-    eviction_threshold: 0.1
-  ]
+  defstruct active_concepts: %{},
+            recent_chains: [],
+            pending_questions: [],
+            context: nil,
+            max_concepts: 20,
+            max_chains: 10,
+            max_questions: 5,
+            eviction_threshold: 0.1
 
   def new(opts \\ []) do
     %__MODULE__{
@@ -35,19 +33,27 @@ defmodule Kudzu.Brain.WorkingMemory do
       timestamp: System.monotonic_time(:millisecond)
     }
 
-    updated = case Map.get(wm.active_concepts, concept) do
-      nil -> Map.put(wm.active_concepts, concept, entry)
-      existing -> Map.put(wm.active_concepts, concept, %{entry | score: max(existing.score, score)})
-    end
+    updated =
+      case Map.get(wm.active_concepts, concept) do
+        nil ->
+          Map.put(wm.active_concepts, concept, entry)
+
+        existing ->
+          Map.put(wm.active_concepts, concept, %{entry | score: max(existing.score, score)})
+      end
 
     %{wm | active_concepts: updated} |> enforce_concept_limit()
   end
 
   def decay(%__MODULE__{} = wm, amount) do
-    updated = wm.active_concepts
-    |> Enum.map(fn {concept, entry} -> {concept, %{entry | score: Float.round(entry.score - amount, 10)}} end)
-    |> Enum.filter(fn {_concept, entry} -> entry.score >= wm.eviction_threshold end)
-    |> Map.new()
+    updated =
+      wm.active_concepts
+      |> Enum.map(fn {concept, entry} ->
+        {concept, %{entry | score: Float.round(entry.score - amount, 10)}}
+      end)
+      |> Enum.filter(fn {_concept, entry} -> entry.score >= wm.eviction_threshold end)
+      |> Map.new()
+
     %{wm | active_concepts: updated}
   end
 
@@ -62,7 +68,9 @@ defmodule Kudzu.Brain.WorkingMemory do
   end
 
   def pop_question(%__MODULE__{pending_questions: []} = wm), do: {nil, wm}
-  def pop_question(%__MODULE__{pending_questions: [q | rest]} = wm), do: {q, %{wm | pending_questions: rest}}
+
+  def pop_question(%__MODULE__{pending_questions: [q | rest]} = wm),
+    do: {q, %{wm | pending_questions: rest}}
 
   def get_priming_concepts(%__MODULE__{} = wm, n \\ 5) do
     wm.active_concepts

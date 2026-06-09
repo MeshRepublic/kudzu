@@ -152,11 +152,18 @@ defmodule Kudzu.Node do
     check_mesh = Keyword.get(opts, :check_mesh, true)
 
     case Storage.retrieve(trace_id) do
-      {:hot, record} -> {:ok, record, :hot}
-      {:warm, record} -> {:ok, record, :warm}
-      {:cold, record} -> {:ok, record, :cold}
+      {:hot, record} ->
+        {:ok, record, :hot}
+
+      {:warm, record} ->
+        {:ok, record, :warm}
+
+      {:cold, record} ->
+        {:ok, record, :cold}
+
       :not_found when check_mesh ->
         query_mesh_for_trace(trace_id)
+
       :not_found ->
         :not_found
     end
@@ -230,9 +237,11 @@ defmodule Kudzu.Node do
   @impl true
   def handle_info(:auto_connect, state) do
     peers = known_mesh_peers()
-    connected = Enum.filter(peers, fn peer ->
-      peer != node() and Node.connect(peer) == true
-    end)
+
+    connected =
+      Enum.filter(peers, fn peer ->
+        peer != node() and Node.connect(peer) == true
+      end)
 
     if connected != [] do
       Logger.info("[Node] Auto-connected to mesh peers: #{inspect(connected)}")
@@ -255,10 +264,7 @@ defmodule Kudzu.Node do
     # Initialize Mnesia for local cold storage
     result = MnesiaSchema.init_node()
 
-    new_state = %{state |
-      data_dir: data_dir,
-      mesh_status: :initialized
-    }
+    new_state = %{state | data_dir: data_dir, mesh_status: :initialized}
 
     Logger.info("Kudzu node initialized at #{data_dir}")
     {:reply, result, new_state}
@@ -268,25 +274,29 @@ defmodule Kudzu.Node do
   def handle_call({:join_mesh, peer_node}, _from, state) do
     Logger.info("Attempting to join mesh via #{peer_node}")
 
-    result = case Node.connect(peer_node) do
-      true ->
-        # Connected, now join Mnesia cluster
-        case MnesiaSchema.join_mesh(peer_node) do
-          :ok ->
-            Logger.info("Successfully joined mesh")
-            {:ok, :joined}
-          {:error, reason} ->
-            Logger.warning("Joined nodes but Mnesia sync failed: #{inspect(reason)}")
-            {:ok, :partial}
-        end
-      false ->
-        Logger.error("Could not connect to #{peer_node}")
-        {:error, :connection_failed}
-    end
+    result =
+      case Node.connect(peer_node) do
+        true ->
+          # Connected, now join Mnesia cluster
+          case MnesiaSchema.join_mesh(peer_node) do
+            :ok ->
+              Logger.info("Successfully joined mesh")
+              {:ok, :joined}
 
-    new_state = %{state |
-      mesh_status: if(match?({:ok, _}, result), do: :connected, else: state.mesh_status),
-      connected_peers: Node.list()
+            {:error, reason} ->
+              Logger.warning("Joined nodes but Mnesia sync failed: #{inspect(reason)}")
+              {:ok, :partial}
+          end
+
+        false ->
+          Logger.error("Could not connect to #{peer_node}")
+          {:error, :connection_failed}
+      end
+
+    new_state = %{
+      state
+      | mesh_status: if(match?({:ok, _}, result), do: :connected, else: state.mesh_status),
+        connected_peers: Node.list()
     }
 
     {:reply, result, new_state}
@@ -297,10 +307,7 @@ defmodule Kudzu.Node do
     # Disconnect from all peers
     Enum.each(Node.list(), &Node.disconnect/1)
 
-    new_state = %{state |
-      mesh_status: :standalone,
-      connected_peers: []
-    }
+    new_state = %{state | mesh_status: :standalone, connected_peers: []}
 
     {:reply, :ok, new_state}
   end
@@ -381,7 +388,9 @@ defmodule Kudzu.Node do
 
   defp check_gpu do
     case System.cmd("nvidia-smi", [], stderr_to_stdout: true) do
-      {_, 0} -> :nvidia
+      {_, 0} ->
+        :nvidia
+
       _ ->
         case System.cmd("rocm-smi", [], stderr_to_stdout: true) do
           {_, 0} -> :amd
@@ -438,7 +447,13 @@ defmodule Kudzu.Node do
 
     Node.list()
     |> Enum.flat_map(fn peer ->
-      case :rpc.call(peer, Kudzu.Storage.MnesiaSchema, :query_by_purpose, [purpose, limit], 10_000) do
+      case :rpc.call(
+             peer,
+             Kudzu.Storage.MnesiaSchema,
+             :query_by_purpose,
+             [purpose, limit],
+             10_000
+           ) do
         results when is_list(results) -> results
         _ -> []
       end

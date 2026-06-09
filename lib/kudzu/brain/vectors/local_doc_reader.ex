@@ -61,12 +61,13 @@ defmodule Kudzu.Brain.Vectors.LocalDocReader do
     else
       {content, files_read} = read_files(files)
 
-      {:ok, %{
-        content: content,
-        source: "local_docs",
-        confidence: 0.65,
-        metadata: %{files_read: files_read, files_found: length(files)}
-      }}
+      {:ok,
+       %{
+         content: content,
+         source: "local_docs",
+         confidence: 0.65,
+         metadata: %{files_read: files_read, files_found: length(files)}
+       }}
     end
   end
 
@@ -87,27 +88,31 @@ defmodule Kudzu.Brain.Vectors.LocalDocReader do
 
   defp find_in_path(base_path, keywords, topic) do
     # First try doc patterns
-    doc_files = @doc_patterns
+    doc_files =
+      @doc_patterns
       |> Enum.flat_map(fn pattern ->
         Path.wildcard(Path.join(base_path, pattern))
       end)
       |> Enum.filter(&File.regular?/1)
 
     # Filter by keyword relevance
-    relevant_docs = Enum.filter(doc_files, fn path ->
-      name = path |> Path.basename() |> String.downcase()
-      dir = path |> Path.dirname() |> String.downcase()
-      Enum.any?(keywords, fn kw ->
-        String.contains?(name, kw) or String.contains?(dir, kw)
+    relevant_docs =
+      Enum.filter(doc_files, fn path ->
+        name = path |> Path.basename() |> String.downcase()
+        dir = path |> Path.dirname() |> String.downcase()
+
+        Enum.any?(keywords, fn kw ->
+          String.contains?(name, kw) or String.contains?(dir, kw)
+        end)
       end)
-    end)
 
     # If topic mentions specific source files, search .ex files
-    source_files = if Regex.match?(~r/\b(module|function|code|source|impl)\b/, topic) do
-      find_source_files(base_path, keywords)
-    else
-      []
-    end
+    source_files =
+      if Regex.match?(~r/\b(module|function|code|source|impl)\b/, topic) do
+        find_source_files(base_path, keywords)
+      else
+        []
+      end
 
     # If no keyword matches, return general READMEs
     if relevant_docs == [] and source_files == [] do
@@ -123,6 +128,7 @@ defmodule Kudzu.Brain.Vectors.LocalDocReader do
 
   defp find_source_files(base_path, keywords) do
     lib_path = Path.join(base_path, "lib")
+
     if File.dir?(lib_path) do
       Path.wildcard(Path.join(lib_path, "**/*.ex"))
       |> Enum.filter(fn path ->
@@ -157,6 +163,7 @@ defmodule Kudzu.Brain.Vectors.LocalDocReader do
               relative = make_relative(path)
               entry = "## #{relative}\n\n```\n#{truncated}\n```"
               {:cont, {[entry | acc], bytes + byte_size(truncated), n + 1}}
+
             {:error, _} ->
               {:cont, {acc, bytes, n}}
           end
@@ -171,8 +178,10 @@ defmodule Kudzu.Brain.Vectors.LocalDocReader do
     cond do
       String.starts_with?(path, "/home/eel/kudzu_src/") ->
         String.replace_prefix(path, "/home/eel/kudzu_src/", "kudzu_src/")
+
       String.starts_with?(path, "/home/eel/claude/") ->
         String.replace_prefix(path, "/home/eel/claude/", "claude/")
+
       true ->
         path
     end

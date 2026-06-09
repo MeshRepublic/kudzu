@@ -28,12 +28,22 @@ defmodule Kudzu.Constitution.MeshRepublic do
   require Logger
 
   # Actions that always require consensus
-  @consensus_actions [:modify_constitution, :spawn_many, :network_broadcast,
-                      :resource_allocation, :agent_termination]
+  @consensus_actions [
+    :modify_constitution,
+    :spawn_many,
+    :network_broadcast,
+    :resource_allocation,
+    :agent_termination
+  ]
 
   # Actions that are never permitted
-  @forbidden_actions [:delete_audit_trail, :bypass_constitution, :impersonate_agent,
-                      :forge_trace, :centralize_control]
+  @forbidden_actions [
+    :delete_audit_trail,
+    :bypass_constitution,
+    :impersonate_agent,
+    :forge_trace,
+    :centralize_control
+  ]
 
   # Thresholds
   @default_consensus_threshold 0.51
@@ -121,7 +131,8 @@ defmodule Kudzu.Constitution.MeshRepublic do
   end
 
   @impl true
-  def consensus_required?({action_type, _params}, _state) when action_type in @consensus_actions do
+  def consensus_required?({action_type, _params}, _state)
+      when action_type in @consensus_actions do
     threshold = consensus_threshold(action_type, %{})
     {:required, threshold}
   end
@@ -167,7 +178,10 @@ defmodule Kudzu.Constitution.MeshRepublic do
   # Private functions
 
   defp normalize_action({type, params}) when is_atom(type) and is_map(params), do: {type, params}
-  defp normalize_action({type, _purpose, params}) when is_atom(type) and is_map(params), do: {type, params}
+
+  defp normalize_action({type, _purpose, params}) when is_atom(type) and is_map(params),
+    do: {type, params}
+
   defp normalize_action({type, params}) when is_binary(type), do: {String.to_atom(type), params}
   defp normalize_action(type) when is_atom(type), do: {type, %{}}
   # Catch-all for malformed actions from LLM parsing
@@ -185,7 +199,8 @@ defmodule Kudzu.Constitution.MeshRepublic do
         # Check if this would give disproportionate resources
         current = Map.get(state, :resources, 0)
         requested = Map.get(params, :amount, 0)
-        (current + requested) > 1000  # Arbitrary limit
+        # Arbitrary limit
+        current + requested > 1000
 
       :modify_peer_list ->
         # Can't unilaterally isolate other agents
@@ -198,8 +213,15 @@ defmodule Kudzu.Constitution.MeshRepublic do
 
   defp transparent?(action_type, params) do
     # These actions are inherently transparent (traced)
-    transparent_actions = [:record_trace, :share_trace, :query_peer, :respond,
-                          :update_desire, :observe, :think]
+    transparent_actions = [
+      :record_trace,
+      :share_trace,
+      :query_peer,
+      :respond,
+      :update_desire,
+      :observe,
+      :think
+    ]
 
     # Opaque actions must explicitly declare transparency
     if action_type in transparent_actions do
@@ -219,7 +241,8 @@ defmodule Kudzu.Constitution.MeshRepublic do
       :file_write ->
         # Size limits
         size = Map.get(params, :size, 0)
-        size > 10_000_000  # 10MB
+        # 10MB
+        size > 10_000_000
 
       :spawn_many ->
         count = Map.get(params, :count, 0)
@@ -253,7 +276,8 @@ defmodule Kudzu.Constitution.MeshRepublic do
 
     if Enum.any?(forbidden_patterns, &Regex.match?(&1, desire)) do
       # Transform rather than remove
-      "Collaborate to " <> String.replace(desire, ~r/(dominate|control|eliminate|monopolize)/i, "work with")
+      "Collaborate to " <>
+        String.replace(desire, ~r/(dominate|control|eliminate|monopolize)/i, "work with")
     else
       desire
     end
@@ -271,7 +295,8 @@ defmodule Kudzu.Constitution.MeshRepublic do
 
     constitutional_desires
     |> Enum.reject(&MapSet.member?(existing, &1))
-    |> Enum.take(1)  # Add at most one
+    # Add at most one
+    |> Enum.take(1)
     |> Kernel.++(desires)
   end
 

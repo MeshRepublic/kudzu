@@ -25,13 +25,14 @@ defmodule Kudzu.Experiments.CollectiveSearch do
     target = Keyword.get(opts, :target, "the secret code")
 
     # Default distributed knowledge
-    knowledge = Keyword.get(opts, :knowledge, [
-      {0, "The secret code starts with 'K'"},
-      {25, "The second letter of the secret code is 'U'"},
-      {50, "The third letter is 'D'"},
-      {75, "The fourth letter is 'Z'"},
-      {99, "The secret code ends with 'U'"}
-    ])
+    knowledge =
+      Keyword.get(opts, :knowledge, [
+        {0, "The secret code starts with 'K'"},
+        {25, "The second letter of the secret code is 'U'"},
+        {50, "The third letter is 'D'"},
+        {75, "The fourth letter is 'Z'"},
+        {99, "The secret code ends with 'U'"}
+      ])
 
     IO.puts("\n=== Collective Search Experiment ===")
     IO.puts("Holograms: #{num_holograms}")
@@ -40,6 +41,7 @@ defmodule Kudzu.Experiments.CollectiveSearch do
 
     # Check Ollama availability
     IO.puts("\nChecking Ollama...")
+
     unless Kudzu.Cognition.available?() do
       IO.puts("ERROR: Ollama not available at localhost:11434")
       IO.puts("Start Ollama with: ollama serve")
@@ -55,28 +57,33 @@ defmodule Kudzu.Experiments.CollectiveSearch do
     IO.puts("\nSpawning #{num_holograms} cognitive holograms...")
     start_time = System.monotonic_time(:millisecond)
 
-    holograms = 1..num_holograms
-    |> Enum.map(fn i ->
-      {:ok, pid} = Application.spawn_hologram(
-        purpose: :collective_search,
-        cognition: true,
-        model: model,
-        desires: ["Find information about: #{target}", "Share relevant findings with peers"]
-      )
-      id = Hologram.get_id(pid)
-      {i - 1, id, pid}
-    end)
+    holograms =
+      1..num_holograms
+      |> Enum.map(fn i ->
+        {:ok, pid} =
+          Application.spawn_hologram(
+            purpose: :collective_search,
+            cognition: true,
+            model: model,
+            desires: ["Find information about: #{target}", "Share relevant findings with peers"]
+          )
+
+        id = Hologram.get_id(pid)
+        {i - 1, id, pid}
+      end)
 
     spawn_time = System.monotonic_time(:millisecond) - start_time
     IO.puts("Spawned in #{spawn_time}ms")
 
     # Create peer connections
     IO.puts("Creating peer network...")
+
     holograms
     |> Enum.each(fn {_idx, _id, pid} ->
-      peers = holograms
-      |> Enum.reject(fn {_, _, p} -> p == pid end)
-      |> Enum.take_random(connections)
+      peers =
+        holograms
+        |> Enum.reject(fn {_, _, p} -> p == pid end)
+        |> Enum.take_random(connections)
 
       Enum.each(peers, fn {_, peer_id, _} ->
         Hologram.introduce_peer(pid, peer_id)
@@ -85,6 +92,7 @@ defmodule Kudzu.Experiments.CollectiveSearch do
 
     # Distribute knowledge
     IO.puts("Distributing knowledge fragments...")
+
     knowledge
     |> Enum.each(fn {idx, fact} ->
       {_, _, pid} = Enum.at(holograms, idx)
@@ -108,11 +116,13 @@ defmodule Kudzu.Experiments.CollectiveSearch do
     """
 
     IO.puts("\nSending stimulus to seeker...")
+
     case Hologram.stimulate(seeker_pid, stimulus) do
       {:ok, response, actions} ->
         IO.puts("\n--- Seeker Response ---")
         IO.puts(response)
         IO.puts("\n--- Actions Taken ---")
+
         Enum.each(actions, fn action ->
           IO.puts("  #{inspect(action)}")
         end)
@@ -128,6 +138,7 @@ defmodule Kudzu.Experiments.CollectiveSearch do
     # Check what knowledge has propagated
     IO.puts("\n--- Knowledge Distribution After Search ---")
     sample = Enum.take_random(holograms, 10)
+
     Enum.each(sample, fn {idx, id, pid} ->
       traces = Hologram.recall(pid, :knowledge)
       facts = Enum.map(traces, fn t -> t.reconstruction_hint[:fact] end)
@@ -149,12 +160,13 @@ defmodule Kudzu.Experiments.CollectiveSearch do
       IO.puts("ERROR: Ollama not available")
       {:error, :ollama_unavailable}
     else
-      {:ok, h} = Application.spawn_hologram(
-        purpose: :test,
-        cognition: true,
-        model: model,
-        desires: ["Learn and remember new information"]
-      )
+      {:ok, h} =
+        Application.spawn_hologram(
+          purpose: :test,
+          cognition: true,
+          model: model,
+          desires: ["Learn and remember new information"]
+        )
 
       # Record some traces
       Hologram.record_trace(h, :memory, %{content: "The sky is blue"})

@@ -35,16 +35,17 @@ defmodule Kudzu.Telemetry do
       attach_console_handler()
     end
 
-    {:ok, %{
-      counters: %{
-        holograms_started: 0,
-        holograms_stopped: 0,
-        traces_recorded: 0,
-        traces_received: 0,
-        peers_introduced: 0
-      },
-      handlers: []
-    }}
+    {:ok,
+     %{
+       counters: %{
+         holograms_started: 0,
+         holograms_stopped: 0,
+         traces_recorded: 0,
+         traces_received: 0,
+         peers_introduced: 0
+       },
+       handlers: []
+     }}
   end
 
   @doc """
@@ -104,12 +105,16 @@ defmodule Kudzu.Telemetry do
 
   @impl true
   def handle_call(:reset, _from, state) do
-    {:reply, :ok, %{state | counters: %{
-      holograms_started: 0,
-      holograms_stopped: 0,
-      traces_recorded: 0,
-      traces_received: 0,
-      peers_introduced: 0
-    }}}
+    {:reply, :ok,
+     %{
+       state
+       | counters: %{
+           holograms_started: 0,
+           holograms_stopped: 0,
+           traces_recorded: 0,
+           traces_received: 0,
+           peers_introduced: 0
+         }
+     }}
   end
 end

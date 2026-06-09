@@ -82,7 +82,9 @@ defmodule Kudzu.Hologram.Runner do
 
   def handle_info(:activity_cycle, state) do
     if state.cycle_count >= state.max_cycles do
-      Logger.info("[Runner:#{short_id(state.hologram_id)}] Max cycles (#{state.max_cycles}) reached — completing")
+      Logger.info(
+        "[Runner:#{short_id(state.hologram_id)}] Max cycles (#{state.max_cycles}) reached — completing"
+      )
 
       # Record completion trace
       try do
@@ -150,7 +152,10 @@ defmodule Kudzu.Hologram.Runner do
 
   @impl true
   def terminate(_reason, state) do
-    Logger.info("[Runner:#{short_id(state.hologram_id)}] Stopping after #{state.cycle_count} cycles")
+    Logger.info(
+      "[Runner:#{short_id(state.hologram_id)}] Stopping after #{state.cycle_count} cycles"
+    )
+
     :ok
   end
 

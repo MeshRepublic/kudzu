@@ -6,23 +6,26 @@ defmodule KudzuWeb.MetricsController do
     hologram_count = Kudzu.Application.hologram_count()
     embedding_count = Kudzu.Storage.embedding_count()
 
-    consolidation_status = try do
-      Kudzu.Consolidation.status()
-    rescue
-      _ -> %{status: :unknown}
-    end
+    consolidation_status =
+      try do
+        Kudzu.Consolidation.status()
+      rescue
+        _ -> %{status: :unknown}
+      end
 
-    brain_status = try do
-      Kudzu.Brain.status()
-    rescue
-      _ -> %{status: :not_running}
-    end
+    brain_status =
+      try do
+        Kudzu.Brain.status()
+      rescue
+        _ -> %{status: :not_running}
+      end
 
-    known_traces_stats = try do
-      Kudzu.Cognition.KnownTraces.stats()
-    rescue
-      _ -> %{sessions: 0, traces_known: 0}
-    end
+    known_traces_stats =
+      try do
+        Kudzu.Cognition.KnownTraces.stats()
+      rescue
+        _ -> %{sessions: 0, traces_known: 0}
+      end
 
     metrics = %{
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),

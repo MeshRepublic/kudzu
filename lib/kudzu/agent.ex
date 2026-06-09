@@ -85,6 +85,7 @@ defmodule Kudzu.Agent do
   @spec find(String.t()) :: {:ok, agent()} | {:error, :not_found}
   def find(name) do
     purpose = String.to_atom("agent_#{name}")
+
     case Application.find_by_purpose(purpose) do
       [{pid, _id} | _] -> {:ok, pid}
       [] -> {:error, :not_found}
@@ -264,6 +265,7 @@ defmodule Kudzu.Agent do
       case Application.find_by_id(peer_id) do
         {:ok, peer_pid} ->
           Hologram.receive_trace(peer_pid, trace, Hologram.get_id(agent))
+
         _ ->
           :ok
       end
@@ -310,6 +312,7 @@ defmodule Kudzu.Agent do
         importance = Map.get(data, :importance, :normal)
         Node.store(trace, hologram_id, importance: importance)
         {:ok, trace.id}
+
       error ->
         error
     end

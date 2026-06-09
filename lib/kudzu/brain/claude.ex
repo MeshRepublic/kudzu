@@ -327,7 +327,15 @@ defmodule Kudzu.Brain.Claude do
 
     initial_usage = %{input_tokens: 0, output_tokens: 0, turns: 0}
 
-    reason_loop(api_key, initial_messages, tools, tool_executor, call_opts, initial_usage, max_turns)
+    reason_loop(
+      api_key,
+      initial_messages,
+      tools,
+      tool_executor,
+      call_opts,
+      initial_usage,
+      max_turns
+    )
   end
 
   @doc """
@@ -358,15 +366,21 @@ defmodule Kudzu.Brain.Claude do
     call_opts = Keyword.put(call_opts, :system, system_prompt)
 
     stream_to = Keyword.fetch!(call_opts, :stream_to)
-    _ = stream_to  # validate it exists
+    # validate it exists
+    _ = stream_to
 
     initial_messages = [%{role: "user", content: initial_message}]
 
     initial_usage = %{input_tokens: 0, output_tokens: 0, turns: 0}
 
     reason_stream_loop(
-      api_key, initial_messages, tools, tool_executor,
-      call_opts, initial_usage, max_turns
+      api_key,
+      initial_messages,
+      tools,
+      tool_executor,
+      call_opts,
+      initial_usage,
+      max_turns
     )
   end
 
@@ -597,10 +611,7 @@ defmodule Kudzu.Brain.Claude do
          _stream_to,
          state
        ) do
-    %{state |
-      current_tool: %{id: block["id"], name: block["name"]},
-      tool_input_json: ""
-    }
+    %{state | current_tool: %{id: block["id"], name: block["name"]}, tool_input_json: ""}
   end
 
   defp handle_sse_data(%{"type" => "content_block_start"}, _stream_to, state) do
@@ -617,7 +628,10 @@ defmodule Kudzu.Brain.Claude do
   end
 
   defp handle_sse_data(
-         %{"type" => "content_block_delta", "delta" => %{"type" => "input_json_delta", "partial_json" => json_part}},
+         %{
+           "type" => "content_block_delta",
+           "delta" => %{"type" => "input_json_delta", "partial_json" => json_part}
+         },
          _stream_to,
          state
        ) do
@@ -639,10 +653,11 @@ defmodule Kudzu.Brain.Claude do
 
         tool_call = %ToolCall{id: id, name: name, input: input}
 
-        %{state |
-          tool_calls: state.tool_calls ++ [tool_call],
-          current_tool: nil,
-          tool_input_json: ""
+        %{
+          state
+          | tool_calls: state.tool_calls ++ [tool_call],
+            current_tool: nil,
+            tool_input_json: ""
         }
     end
   end

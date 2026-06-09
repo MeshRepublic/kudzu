@@ -94,6 +94,7 @@ defmodule Kudzu.HRR.NxBackend do
   @spec bundle([vector()]) :: vector()
   def bundle([]), do: raise(ArgumentError, "Cannot bundle empty list")
   def bundle([v]) when is_list(v), do: v
+
   def bundle(vectors) when is_list(vectors) do
     tensors = Enum.map(vectors, &Nx.tensor(&1, type: :f64))
 
@@ -159,13 +160,16 @@ defmodule Kudzu.HRR.NxBackend do
   """
   @spec batch_similarity(vector(), [vector()]) :: [float()]
   def batch_similarity(_query, []), do: []
+
   def batch_similarity(query, candidates) when is_list(query) and is_list(candidates) do
     tq = Nx.tensor(query, type: :f64)
 
     # Build matrix of normalized candidates: each row is a candidate vector
-    candidate_tensors = Enum.map(candidates, fn c ->
-      Nx.tensor(c, type: :f64) |> normalize_tensor()
-    end)
+    candidate_tensors =
+      Enum.map(candidates, fn c ->
+        Nx.tensor(c, type: :f64) |> normalize_tensor()
+      end)
+
     matrix = Nx.stack(candidate_tensors)
 
     # Batched dot product via defn — runs on GPU

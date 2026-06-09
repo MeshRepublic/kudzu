@@ -19,35 +19,41 @@ defmodule Kudzu.Beamlet.Scheduler do
 
     # In a real implementation, this would manage a priority queue
     # For now, just acknowledge and suggest when to execute
-    delay = case priority do
-      :immediate -> 0
-      :high -> 10
-      :normal -> 100
-      :low -> 1000
-      :background -> 5000
-      _ -> 100
-    end
+    delay =
+      case priority do
+        :immediate -> 0
+        :high -> 10
+        :normal -> 100
+        :low -> 1000
+        :background -> 5000
+        _ -> 100
+      end
 
     work_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
 
-    {:ok, %{
-      work_id: work_id,
-      scheduled: true,
-      suggested_delay_ms: delay,
-      queue_position: :rand.uniform(10)  # Simulated
-    }}
+    {:ok,
+     %{
+       work_id: work_id,
+       scheduled: true,
+       suggested_delay_ms: delay,
+       # Simulated
+       queue_position: :rand.uniform(10)
+     }}
   end
 
   def handle_request(%{op: :get_priority_hint, task_type: task_type}, _from_id) do
     # Provide priority hints based on task type and system load
-    hint = case task_type do
-      :cognition -> :normal  # LLM calls are slow anyway
-      :io -> :high  # IO should be responsive
-      :trace_share -> :normal
-      :peer_query -> :high
-      :background_maintenance -> :low
-      _ -> :normal
-    end
+    hint =
+      case task_type do
+        # LLM calls are slow anyway
+        :cognition -> :normal
+        # IO should be responsive
+        :io -> :high
+        :trace_share -> :normal
+        :peer_query -> :high
+        :background_maintenance -> :low
+        _ -> :normal
+      end
 
     {:ok, %{priority: hint, reason: "default_policy"}}
   end
@@ -66,18 +72,19 @@ defmodule Kudzu.Beamlet.Scheduler do
 
       beamlets ->
         # Filter and find best
-        available = beamlets
-        |> Enum.reject(fn {_pid, id} -> id in (exclude || []) end)
-        |> Enum.map(fn {pid, id} ->
-          try do
-            load = GenServer.call(pid, :get_load, 500)
-            {pid, id, load}
-          catch
-            :exit, _ -> nil
-          end
-        end)
-        |> Enum.reject(&is_nil/1)
-        |> Enum.sort_by(fn {_, _, load} -> load end)
+        available =
+          beamlets
+          |> Enum.reject(fn {_pid, id} -> id in (exclude || []) end)
+          |> Enum.map(fn {pid, id} ->
+            try do
+              load = GenServer.call(pid, :get_load, 500)
+              {pid, id, load}
+            catch
+              :exit, _ -> nil
+            end
+          end)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.sort_by(fn {_, _, load} -> load end)
 
         case available do
           [] -> {:ok, %{suggestion: nil, reason: :all_overloaded}}
@@ -86,7 +93,10 @@ defmodule Kudzu.Beamlet.Scheduler do
     end
   end
 
-  def handle_request(%{op: :rate_limit_check, key: _key, limit: limit, window_ms: window}, _from_id) do
+  def handle_request(
+        %{op: :rate_limit_check, key: _key, limit: limit, window_ms: window},
+        _from_id
+      ) do
     # Simple rate limiting check
     # In production, would use ETS or Redis for shared state
     now = System.system_time(:millisecond)

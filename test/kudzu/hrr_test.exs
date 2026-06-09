@@ -3,7 +3,8 @@ defmodule Kudzu.HRRTest do
 
   alias Kudzu.HRR
 
-  @dim 64  # Use smaller dimension for faster tests
+  # Use smaller dimension for faster tests
+  @dim 64
 
   describe "random_vector/1" do
     test "generates vector of specified dimension" do
@@ -44,7 +45,8 @@ defmodule Kudzu.HRRTest do
 
   describe "normalize/1" do
     test "normalizes to unit length" do
-      vec = [3.0, 4.0]  # magnitude = 5
+      # magnitude = 5
+      vec = [3.0, 4.0]
       normalized = HRR.normalize(vec)
 
       magnitude = normalized |> Enum.map(&(&1 * &1)) |> Enum.sum() |> :math.sqrt()
@@ -148,7 +150,8 @@ defmodule Kudzu.HRRTest do
   describe "probe/2" do
     test "probing with cue gives correlation" do
       memory = HRR.random_vector(@dim)
-      cue = memory  # Same as memory
+      # Same as memory
+      cue = memory
 
       probe_result = HRR.probe(memory, cue)
       assert_in_delta probe_result, 1.0, 0.01
@@ -165,9 +168,10 @@ defmodule Kudzu.HRRTest do
       }
 
       # Query with one of the vectors (slightly noisy)
-      query = HRR.seeded_vector("b", @dim)
-      |> HRR.add(HRR.scale(HRR.random_vector(@dim), 0.1))
-      |> HRR.normalize()
+      query =
+        HRR.seeded_vector("b", @dim)
+        |> HRR.add(HRR.scale(HRR.random_vector(@dim), 0.1))
+        |> HRR.normalize()
 
       {match, similarity} = HRR.decode(query, codebook)
 

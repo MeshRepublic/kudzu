@@ -60,6 +60,7 @@ defmodule Kudzu.Brain.InferenceEngine do
         |> Map.values()
         |> Enum.filter(fn trace ->
           hint = trace.reconstruction_hint
+
           is_map(hint) and
             Map.get(hint, :type, Map.get(hint, "type")) == "relationship"
         end)

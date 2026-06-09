@@ -27,6 +27,7 @@ defmodule KudzuWeb.NodeController do
     case Node.init_node(opts) do
       :ok ->
         json(conn, %{status: "initialized", node: node()})
+
       {:error, reason} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -42,6 +43,7 @@ defmodule KudzuWeb.NodeController do
     case Node.create_mesh() do
       :ok ->
         json(conn, %{status: "mesh_created", seed_node: node()})
+
       {:error, reason} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -60,6 +62,7 @@ defmodule KudzuWeb.NodeController do
     case Node.join_mesh(peer_node) do
       {:ok, status} ->
         json(conn, %{status: "joined", mesh_status: status, peers: Node.mesh_peers()})
+
       {:error, reason} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -88,6 +91,7 @@ defmodule KudzuWeb.NodeController do
   """
   def mesh_peers(conn, _params) do
     peers = Node.mesh_peers()
+
     json(conn, %{
       connected: Node.mesh_connected?(),
       peer_count: length(peers),

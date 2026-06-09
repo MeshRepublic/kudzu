@@ -129,8 +129,7 @@ defmodule Kudzu.Silo.Extractor do
               triples
               |> Enum.filter(fn t -> is_list(t) and length(t) == 3 end)
               |> Enum.map(fn [s, r, o] ->
-                {String.downcase(to_string(s)),
-                 String.downcase(to_string(r)),
+                {String.downcase(to_string(s)), String.downcase(to_string(r)),
                  String.downcase(to_string(o))}
               end)
 

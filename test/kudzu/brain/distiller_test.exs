@@ -12,7 +12,10 @@ defmodule Kudzu.Brain.DistillerTest do
     chains = Distiller.extract_chains(text)
     assert is_list(chains)
     assert length(chains) >= 1
-    assert Enum.any?(chains, fn {_s, r, _o} -> r in ["causes", "caused_by", "because", "produces"] end)
+
+    assert Enum.any?(chains, fn {_s, r, _o} ->
+             r in ["causes", "caused_by", "because", "produces"]
+           end)
   end
 
   test "extract_chains/1 handles multiple sentences" do
@@ -21,6 +24,7 @@ defmodule Kudzu.Brain.DistillerTest do
     The log rotation requires a cron job.
     Consolidation uses temporary disk space.
     """
+
     chains = Distiller.extract_chains(text)
     assert length(chains) >= 2
   end
@@ -36,6 +40,7 @@ defmodule Kudzu.Brain.DistillerTest do
       {"disk_pressure", "caused_by", "temp_files"},
       {"temp_files", "produced_by", "consolidation"}
     ]
+
     context = %{available_actions: [:restart_consolidation, :cleanup_temps]}
     candidates = Distiller.extract_reflex_candidates(chains, context)
     assert is_list(candidates)

@@ -17,16 +17,18 @@ defmodule Kudzu.VectorClockTest do
 
   describe "VectorClock.increment/2" do
     test "increments agent's counter" do
-      vc = VectorClock.new("agent-1")
-      |> VectorClock.increment("agent-1")
-      |> VectorClock.increment("agent-1")
+      vc =
+        VectorClock.new("agent-1")
+        |> VectorClock.increment("agent-1")
+        |> VectorClock.increment("agent-1")
 
       assert VectorClock.get(vc, "agent-1") == 2
     end
 
     test "adds new agent with increment" do
-      vc = VectorClock.new("agent-1")
-      |> VectorClock.increment("agent-2")
+      vc =
+        VectorClock.new("agent-1")
+        |> VectorClock.increment("agent-2")
 
       assert VectorClock.get(vc, "agent-2") == 1
     end

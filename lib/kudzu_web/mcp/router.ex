@@ -10,8 +10,8 @@ defmodule KudzuWeb.MCP.Router do
 
   alias KudzuWeb.MCP.{Protocol, Controller, Session}
 
-  plug :match
-  plug :dispatch
+  plug(:match)
+  plug(:dispatch)
 
   # POST /mcp — Client-to-server JSON-RPC messages
   post "/mcp" do
@@ -33,6 +33,7 @@ defmodule KudzuWeb.MCP.Router do
           {:response, %{"result" => %{"protocolVersion" => _}} = response} ->
             # Initialize response — create session and return ID
             {:ok, new_session_id} = Session.create()
+
             conn
             |> put_resp_header("mcp-session-id", new_session_id)
             |> put_resp_content_type("application/json")
@@ -64,7 +65,9 @@ defmodule KudzuWeb.MCP.Router do
   # DELETE /mcp — Session termination
   delete "/mcp" do
     case get_req_header(conn, "mcp-session-id") |> List.first() do
-      nil -> send_resp(conn, 400, "")
+      nil ->
+        send_resp(conn, 400, "")
+
       session_id ->
         Session.destroy(session_id)
         send_resp(conn, 200, "")

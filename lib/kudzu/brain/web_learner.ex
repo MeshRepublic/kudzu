@@ -27,6 +27,7 @@ defmodule Kudzu.Brain.WebLearner do
     if :ets.whereis(@visited_urls_table) == :undefined do
       :ets.new(@visited_urls_table, [:named_table, :set, :public])
     end
+
     if :ets.whereis(@domain_rate_table) == :undefined do
       :ets.new(@domain_rate_table, [:named_table, :set, :public])
     end
@@ -45,9 +46,13 @@ defmodule Kudzu.Brain.WebLearner do
   defp domain_rate_limited?(url) do
     ensure_tables()
     domain = URI.parse(url).host || ""
+
     case :ets.lookup(@domain_rate_table, domain) do
-      [{^domain, last_hit}] -> DateTime.diff(DateTime.utc_now(), last_hit) < @domain_cooldown_seconds
-      [] -> false
+      [{^domain, last_hit}] ->
+        DateTime.diff(DateTime.utc_now(), last_hit) < @domain_cooldown_seconds
+
+      [] ->
+        false
     end
   end
 
@@ -76,7 +81,13 @@ defmodule Kudzu.Brain.WebLearner do
         "[WebLearner] Done: #{length(pages)} pages, #{stored} chains, #{summaries_stored} summaries"
       )
 
-      {:ok, %{question: question, pages_read: length(pages), chains_stored: stored, summaries_stored: summaries_stored}}
+      {:ok,
+       %{
+         question: question,
+         pages_read: length(pages),
+         chains_stored: stored,
+         summaries_stored: summaries_stored
+       }}
     else
       {:error, reason} ->
         Logger.warning("[WebLearner] Research failed: #{inspect(reason)}")
@@ -120,7 +131,9 @@ defmodule Kudzu.Brain.WebLearner do
           mark_domain_hit(url)
 
           case WebRead.execute(%{"url" => url}) do
-            {:ok, page} -> page
+            {:ok, page} ->
+              page
+
             {:error, reason} ->
               Logger.debug("[WebLearner] Failed to read #{url}: #{inspect(reason)}")
               nil
@@ -197,13 +210,15 @@ defmodule Kudzu.Brain.WebLearner do
           title = Map.get(page, :title, "")
           url = Map.get(page, :url, "")
 
-          summary_result = try do
+          summary_result =
+            try do
               summarize_with_ollama(text)
             rescue
               _ -> {:error, :crashed}
             catch
               :exit, _ -> {:error, :crashed}
             end
+
           case summary_result do
             {:ok, summary} ->
               Kudzu.Hologram.record_trace(pid, :discovery, %{
@@ -214,10 +229,12 @@ defmodule Kudzu.Brain.WebLearner do
                 content: summary,
                 question: question
               })
+
               count + 1
 
             {:error, _reason} ->
               snippet = text |> String.slice(0, 500) |> String.trim()
+
               if String.length(snippet) > 50 do
                 Kudzu.Hologram.record_trace(pid, :discovery, %{
                   type: "page_summary",
@@ -227,6 +244,7 @@ defmodule Kudzu.Brain.WebLearner do
                   content: snippet,
                   question: question
                 })
+
                 count + 1
               else
                 count
@@ -241,15 +259,18 @@ defmodule Kudzu.Brain.WebLearner do
 
   defp summarize_with_ollama(text) do
     excerpt = String.slice(text, 0, 4000)
-    prompt = "Summarize the following text in 2-3 concise paragraphs. Focus on key facts, concepts, and relationships. Be factual and specific.\n\nText:\n#{excerpt}\n\nSummary:"
 
-    body = Jason.encode!(%{
-      model: @summary_model,
-      prompt: prompt,
-      stream: false,
-      options: %{num_predict: 500, temperature: 0.3},
-      keep_alive: "10m"
-    })
+    prompt =
+      "Summarize the following text in 2-3 concise paragraphs. Focus on key facts, concepts, and relationships. Be factual and specific.\n\nText:\n#{excerpt}\n\nSummary:"
+
+    body =
+      Jason.encode!(%{
+        model: @summary_model,
+        prompt: prompt,
+        stream: false,
+        options: %{num_predict: 500, temperature: 0.3},
+        keep_alive: "10m"
+      })
 
     request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
 
@@ -259,6 +280,7 @@ defmodule Kudzu.Brain.WebLearner do
           {:ok, %{"response" => summary}} ->
             trimmed = String.trim(summary)
             if String.length(trimmed) > 20, do: {:ok, trimmed}, else: {:error, :empty_summary}
+
           _ ->
             {:error, :parse_failed}
         end

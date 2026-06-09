@@ -169,6 +169,7 @@ defmodule Kudzu.SiloTest do
       # Confirm the triple is retrievable via probe — verifies the trace was
       # stored with the relationship hint schema, not raw content.
       results = Silo.probe("brain_knowledge", "elixir")
+
       assert Enum.any?(results, fn {hint, _sim} ->
                subj = Map.get(hint, :subject, Map.get(hint, "subject"))
                obj = Map.get(hint, :object, Map.get(hint, "object"))

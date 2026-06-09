@@ -48,13 +48,16 @@ defmodule Kudzu.Beamlet.Client do
   HTTP POST through IO beam-let.
   """
   def http_post(url, body, from_id, opts \\ []) do
-    io(%{
-      op: :http_post,
-      url: url,
-      body: body,
-      content_type: Keyword.get(opts, :content_type, "application/json"),
-      headers: Keyword.get(opts, :headers, [])
-    }, from_id)
+    io(
+      %{
+        op: :http_post,
+        url: url,
+        body: body,
+        content_type: Keyword.get(opts, :content_type, "application/json"),
+        headers: Keyword.get(opts, :headers, [])
+      },
+      from_id
+    )
   end
 
   @doc """
@@ -151,7 +154,8 @@ defmodule Kudzu.Beamlet.Client do
       :http_post -> :http_post
       :shell_exec -> :shell_exec
       :dns_resolve -> :http_get
-      _ -> :file_read  # default
+      # default
+      _ -> :file_read
     end
   end
 end

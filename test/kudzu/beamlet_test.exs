@@ -51,19 +51,36 @@ defmodule Kudzu.BeamletTest do
       # Spawn extra IO beam-lets for redundancy
       # Use unique name option to avoid conflicts with default module-named process
       unique = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
-      {:ok, io1} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-1", name: :"io_failover_#{unique}_1")
-      {:ok, io2} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-2", name: :"io_failover_#{unique}_2")
-      {:ok, _io3} = Supervisor.spawn_beamlet(IO, id: "io-failover-#{unique}-3", name: :"io_failover_#{unique}_3")
+
+      {:ok, io1} =
+        Supervisor.spawn_beamlet(IO,
+          id: "io-failover-#{unique}-1",
+          name: :"io_failover_#{unique}_1"
+        )
+
+      {:ok, io2} =
+        Supervisor.spawn_beamlet(IO,
+          id: "io-failover-#{unique}-2",
+          name: :"io_failover_#{unique}_2"
+        )
+
+      {:ok, _io3} =
+        Supervisor.spawn_beamlet(IO,
+          id: "io-failover-#{unique}-3",
+          name: :"io_failover_#{unique}_3"
+        )
 
       # Spawn holograms that will use beam-lets
-      holograms = for _ <- 1..10 do
-        {:ok, h} = Application.spawn_hologram(purpose: :failover_test)
-        # Trigger beam-let discovery
-        Hologram.discover_beamlets(h)
-        h
-      end
+      holograms =
+        for _ <- 1..10 do
+          {:ok, h} = Application.spawn_hologram(purpose: :failover_test)
+          # Trigger beam-let discovery
+          Hologram.discover_beamlets(h)
+          h
+        end
 
-      Process.sleep(300)  # Let discovery complete
+      # Let discovery complete
+      Process.sleep(300)
 
       # Verify holograms have beam-let awareness
       Enum.each(holograms, fn h ->
@@ -83,15 +100,17 @@ defmodule Kudzu.BeamletTest do
       Process.sleep(100)
 
       # Holograms should still be able to do IO through surviving beam-let
-      results = Enum.map(holograms, fn h ->
-        Hologram.read_file(h, test_path)
-      end)
+      results =
+        Enum.map(holograms, fn h ->
+          Hologram.read_file(h, test_path)
+        end)
 
       # At least some should succeed (io3 and primary are still alive)
-      success_count = Enum.count(results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+      success_count =
+        Enum.count(results, fn
+          {:ok, _} -> true
+          _ -> false
+        end)
 
       assert success_count >= 5, "Expected at least 5 successful reads, got #{success_count}"
 
@@ -106,10 +125,12 @@ defmodule Kudzu.BeamletTest do
 
       # Get initial beam-let count
       initial_beamlets = Hologram.get_beamlets(h)
-      initial_count = initial_beamlets
-      |> Map.values()
-      |> Enum.map(&map_size/1)
-      |> Enum.sum()
+
+      initial_count =
+        initial_beamlets
+        |> Map.values()
+        |> Enum.map(&map_size/1)
+        |> Enum.sum()
 
       assert initial_count > 0
 
@@ -138,11 +159,12 @@ defmodule Kudzu.BeamletTest do
       path = "/tmp/kudzu_lb_test.txt"
       File.write!(path, "load balance test")
 
-      tasks = for _ <- 1..100 do
-        Task.async(fn ->
-          Client.read_file(path, "lb-test-#{:rand.uniform(1000)}")
-        end)
-      end
+      tasks =
+        for _ <- 1..100 do
+          Task.async(fn ->
+            Client.read_file(path, "lb-test-#{:rand.uniform(1000)}")
+          end)
+        end
 
       results = Task.await_many(tasks, 10_000)
       success = Enum.count(results, &match?({:ok, _}, &1))

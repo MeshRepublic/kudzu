@@ -125,6 +125,7 @@ defmodule Kudzu.Brain.Tools.SafeShell do
 
       spec.args_regex != nil and args != [] ->
         invalid = Enum.reject(args, &Regex.match?(spec.args_regex, &1))
+
         if invalid == [] do
           :ok
         else
@@ -143,6 +144,7 @@ defmodule Kudzu.Brain.Tools.SafeShell do
       :ok
     else
       invalid = Enum.reject(paths, &path_allowed?/1)
+
       if invalid == [] do
         :ok
       else
@@ -150,6 +152,7 @@ defmodule Kudzu.Brain.Tools.SafeShell do
       end
     end
   end
+
   defp validate_paths(_command, _args), do: :ok
 
   defp path_allowed?(path) do
@@ -166,9 +169,10 @@ defmodule Kudzu.Brain.Tools.SafeShell do
   defp run_command(command, args) do
     Logger.debug("[SafeShell] Executing: #{command} #{Enum.join(args, " ")}")
 
-    task = Task.async(fn ->
-      System.cmd(command, args, stderr_to_stdout: true)
-    end)
+    task =
+      Task.async(fn ->
+        System.cmd(command, args, stderr_to_stdout: true)
+      end)
 
     case Task.yield(task, @timeout_ms) || Task.shutdown(task) do
       {:ok, {output, exit_code}} ->

@@ -38,12 +38,14 @@ defmodule Kudzu.Hologram do
           purpose: atom() | String.t(),
           traces: %{String.t() => Trace.t()},
           peers: %{String.t() => float()},
-          beamlets: %{atom() => %{String.t() => float()}},  # capability => beamlet_id => proximity
+          # capability => beamlet_id => proximity
+          beamlets: %{atom() => %{String.t() => float()}},
           clock: VectorClock.t(),
           desires: [String.t()],
           cognition_enabled: boolean(),
           cognition_model: String.t(),
-          constitution: atom(),  # Constitutional framework
+          # Constitutional framework
+          constitution: atom(),
           metadata: map()
         }
 
@@ -268,12 +270,23 @@ defmodule Kudzu.Hologram do
   @doc """
   HTTP request through beam-let delegation.
   """
-  @spec http_request(GenServer.server(), :get | :post, String.t(), map()) :: {:ok, map()} | {:error, term()}
+  @spec http_request(GenServer.server(), :get | :post, String.t(), map()) ::
+          {:ok, map()} | {:error, term()}
   def http_request(hologram, method, url, opts \\ %{}) do
-    op = case method do
-      :get -> %{op: :http_get, url: url, headers: Map.get(opts, :headers, [])}
-      :post -> %{op: :http_post, url: url, body: Map.get(opts, :body, ""), headers: Map.get(opts, :headers, [])}
-    end
+    op =
+      case method do
+        :get ->
+          %{op: :http_get, url: url, headers: Map.get(opts, :headers, [])}
+
+        :post ->
+          %{
+            op: :http_post,
+            url: url,
+            body: Map.get(opts, :body, ""),
+            headers: Map.get(opts, :headers, [])
+          }
+      end
+
     delegate_io(hologram, op)
   end
 
@@ -337,7 +350,8 @@ defmodule Kudzu.Hologram do
     desires = Keyword.get(opts, :desires, [])
     cognition_enabled = Keyword.get(opts, :cognition, false)
     model = Keyword.get(opts, :model, "mistral:latest")
-    ollama_url = Keyword.get(opts, :ollama_url)  # nil means use default
+    # nil means use default
+    ollama_url = Keyword.get(opts, :ollama_url)
     constitution = Keyword.get(opts, :constitution, @default_constitution)
     reconstruct = Keyword.get(opts, :reconstruct, false)
 
@@ -349,22 +363,25 @@ defmodule Kudzu.Hologram do
       purpose: purpose,
       traces: %{},
       peers: %{},
-      beamlets: %{},  # capability => %{beamlet_id => proximity_score}
+      # capability => %{beamlet_id => proximity_score}
+      beamlets: %{},
       clock: VectorClock.new(id),
       desires: constrained_desires,
       cognition_enabled: cognition_enabled,
       cognition_model: model,
-      ollama_url: ollama_url,  # Custom Ollama endpoint for this hologram
+      # Custom Ollama endpoint for this hologram
+      ollama_url: ollama_url,
       constitution: constitution,
       metadata: %{}
     }
 
     # If reconstructing, reload traces from persistent storage
-    state = if reconstruct do
-      reload_traces_from_storage(state)
-    else
-      state
-    end
+    state =
+      if reconstruct do
+        reload_traces_from_storage(state)
+      else
+        state
+      end
 
     # Emit telemetry for hologram start
     :telemetry.execute(
@@ -384,35 +401,41 @@ defmodule Kudzu.Hologram do
     Registry.register(Kudzu.Registry, {:purpose, purpose}, id)
 
     # On reconstruction, reload traces from persistent storage
-    state = if Keyword.get(opts, :reconstruct, false) do
-      case Kudzu.Storage.query_hologram(id, limit: 10_000) do
-        records when is_list(records) ->
-          traces = Enum.reduce(records, %{}, fn record, acc ->
-            trace = %Trace{
-              id: record.id,
-              origin: record.origin,
-              purpose: record.purpose,
-              reconstruction_hint: record.reconstruction_hint,
-              path: record.path || [id],
-              timestamp: record.clock || Kudzu.VectorClock.new(id)
-            }
-            Map.put(acc, record.id, trace)
-          end)
-          %{state | traces: traces}
-        _ ->
-          state
+    state =
+      if Keyword.get(opts, :reconstruct, false) do
+        case Kudzu.Storage.query_hologram(id, limit: 10_000) do
+          records when is_list(records) ->
+            traces =
+              Enum.reduce(records, %{}, fn record, acc ->
+                trace = %Trace{
+                  id: record.id,
+                  origin: record.origin,
+                  purpose: record.purpose,
+                  reconstruction_hint: record.reconstruction_hint,
+                  path: record.path || [id],
+                  timestamp: record.clock || Kudzu.VectorClock.new(id)
+                }
+
+                Map.put(acc, record.id, trace)
+              end)
+
+            %{state | traces: traces}
+
+          _ ->
+            state
+        end
+      else
+        # Persist hologram metadata for reconstruction after restart
+        Kudzu.HologramRegistry.register(id, %{
+          purpose: purpose,
+          constitution: constitution,
+          desires: constrained_desires,
+          cognition_enabled: cognition_enabled,
+          cognition_model: model
+        })
+
+        state
       end
-    else
-      # Persist hologram metadata for reconstruction after restart
-      Kudzu.HologramRegistry.register(id, %{
-        purpose: purpose,
-        constitution: constitution,
-        desires: constrained_desires,
-        cognition_enabled: cognition_enabled,
-        cognition_model: model
-      })
-      state
-    end
 
     {:ok, state}
   end
@@ -422,10 +445,7 @@ defmodule Kudzu.Hologram do
     clock = VectorClock.increment(state.clock, state.id)
     trace = Trace.new_with_clock(state.id, purpose, clock, [state.id], reconstruction_hint)
 
-    new_state = %{state |
-      traces: Map.put(state.traces, trace.id, trace),
-      clock: clock
-    }
+    new_state = %{state | traces: Map.put(state.traces, trace.id, trace), clock: clock}
 
     # Persist trace to durable storage immediately
     Kudzu.Storage.store(trace, state.id, :normal)
@@ -441,9 +461,10 @@ defmodule Kudzu.Hologram do
 
   @impl true
   def handle_call({:recall, purpose}, _from, state) do
-    matching = state.traces
-    |> Map.values()
-    |> Enum.filter(fn trace -> trace.purpose == purpose end)
+    matching =
+      state.traces
+      |> Map.values()
+      |> Enum.filter(fn trace -> trace.purpose == purpose end)
 
     {:reply, matching, state}
   end
@@ -462,9 +483,11 @@ defmodule Kudzu.Hologram do
   @impl true
   def handle_call({:introduce_peer, peer}, _from, state) when is_pid(peer) do
     peer_id = get_id(peer)
-    new_peers = Map.update(state.peers, peer_id, @proximity_boost, fn score ->
-      min(score + @proximity_boost, @max_proximity)
-    end)
+
+    new_peers =
+      Map.update(state.peers, peer_id, @proximity_boost, fn score ->
+        min(score + @proximity_boost, @max_proximity)
+      end)
 
     :telemetry.execute(
       [:kudzu, :hologram, :peer_introduced],
@@ -477,9 +500,10 @@ defmodule Kudzu.Hologram do
 
   @impl true
   def handle_call({:introduce_peer, peer_id}, _from, state) when is_binary(peer_id) do
-    new_peers = Map.update(state.peers, peer_id, @proximity_boost, fn score ->
-      min(score + @proximity_boost, @max_proximity)
-    end)
+    new_peers =
+      Map.update(state.peers, peer_id, @proximity_boost, fn score ->
+        min(score + @proximity_boost, @max_proximity)
+      end)
 
     :telemetry.execute(
       [:kudzu, :hologram, :peer_introduced],
@@ -495,13 +519,14 @@ defmodule Kudzu.Hologram do
     result = do_query_peer(state, peer_id, purpose, max_hops, MapSet.new([state.id]))
 
     # Boost proximity for successful interactions
-    new_peers = if match?({:ok, [_ | _]}, result) do
-      Map.update(state.peers, peer_id, @proximity_boost, fn score ->
-        min(score + @proximity_boost, @max_proximity)
-      end)
-    else
-      state.peers
-    end
+    new_peers =
+      if match?({:ok, [_ | _]}, result) do
+        Map.update(state.peers, peer_id, @proximity_boost, fn score ->
+          min(score + @proximity_boost, @max_proximity)
+        end)
+      else
+        state.peers
+      end
 
     {:reply, result, %{state | peers: new_peers}}
   end
@@ -517,6 +542,7 @@ defmodule Kudzu.Hologram do
       cognition_enabled: state.cognition_enabled,
       clock: VectorClock.to_map(state.clock)
     }
+
     {:reply, info, state}
   end
 
@@ -589,7 +615,10 @@ defmodule Kudzu.Hologram do
   def handle_call({:set_constitution, constitution}, _from, state) do
     # SECURITY: Block :open constitution in production environments
     if constitution == :open and production_env?() do
-      Logger.warning("[Hologram #{state.id}] Blocked attempt to set :open constitution in production")
+      Logger.warning(
+        "[Hologram #{state.id}] Blocked attempt to set :open constitution in production"
+      )
+
       {:reply, {:error, :open_constitution_blocked_in_production}, state}
     else
       set_constitution_impl(constitution, state)
@@ -621,13 +650,15 @@ defmodule Kudzu.Hologram do
     result = Beamlet.io(operation, state.id)
 
     # Update beam-let proximity on successful interaction
-    new_state = case result do
-      {:ok, _} ->
-        capability = get_io_capability(operation)
-        boost_beamlet_proximity(state, capability)
-      _ ->
-        state
-    end
+    new_state =
+      case result do
+        {:ok, _} ->
+          capability = get_io_capability(operation)
+          boost_beamlet_proximity(state, capability)
+
+        _ ->
+          state
+      end
 
     {:reply, result, new_state}
   end
@@ -639,8 +670,9 @@ defmodule Kudzu.Hologram do
       ollama_url = Keyword.get(opts, :ollama_url, state.ollama_url)
 
       # Constrain desires through constitution before cognition
-      constrained_state = %{state |
-        desires: Constitution.constrain(state.constitution, state.desires, state)
+      constrained_state = %{
+        state
+        | desires: Constitution.constrain(state.constitution, state.desires, state)
       }
 
       case Cognition.think(constrained_state, stimulus, model: model, ollama_url: ollama_url) do
@@ -651,20 +683,24 @@ defmodule Kudzu.Hologram do
 
           # Record the stimulus itself as a trace
           clock = VectorClock.increment(new_state.clock, new_state.id)
-          stimulus_trace = Trace.new_with_clock(
-            new_state.id,
-            :stimulus,
-            clock,
-            [new_state.id],
-            %{
-              stimulus: stimulus,
-              response: String.slice(response, 0, 200),
-              constitution: state.constitution
-            }
-          )
-          final_state = %{new_state |
-            traces: Map.put(new_state.traces, stimulus_trace.id, stimulus_trace),
-            clock: clock
+
+          stimulus_trace =
+            Trace.new_with_clock(
+              new_state.id,
+              :stimulus,
+              clock,
+              [new_state.id],
+              %{
+                stimulus: stimulus,
+                response: String.slice(response, 0, 200),
+                constitution: state.constitution
+              }
+            )
+
+          final_state = %{
+            new_state
+            | traces: Map.put(new_state.traces, stimulus_trace.id, stimulus_trace),
+              clock: clock
           }
 
           :telemetry.execute(
@@ -689,17 +725,19 @@ defmodule Kudzu.Hologram do
     followed_trace = Trace.follow(trace, state.id)
 
     # Merge clocks
-    new_clock = VectorClock.merge(state.clock, trace.timestamp)
-    |> VectorClock.increment(state.id)
+    new_clock =
+      VectorClock.merge(state.clock, trace.timestamp)
+      |> VectorClock.increment(state.id)
 
     # Store the trace in-process and in durable storage
     new_traces = Map.put(state.traces, followed_trace.id, followed_trace)
     Kudzu.Storage.store(followed_trace, state.id, :normal)
 
     # Boost proximity with sender
-    new_peers = Map.update(state.peers, from_id, @proximity_boost, fn score ->
-      min(score + @proximity_boost, @max_proximity)
-    end)
+    new_peers =
+      Map.update(state.peers, from_id, @proximity_boost, fn score ->
+        min(score + @proximity_boost, @max_proximity)
+      end)
 
     :telemetry.execute(
       [:kudzu, :hologram, :trace_received],
@@ -715,16 +753,19 @@ defmodule Kudzu.Hologram do
     if state.cognition_enabled do
       # Run cognition in a task to not block
       parent = self()
+
       Task.start(fn ->
         case Cognition.think(state, stimulus, model: state.cognition_model) do
           {:ok, {_response, actions, traces}} ->
             # Send actions back to be executed
             send(parent, {:cognition_result, actions, traces, stimulus})
+
           {:error, _reason} ->
             :ok
         end
       end)
     end
+
     {:noreply, state}
   end
 
@@ -740,16 +781,20 @@ defmodule Kudzu.Hologram do
 
     # Record stimulus trace
     clock = VectorClock.increment(new_state.clock, new_state.id)
-    stimulus_trace = Trace.new_with_clock(
-      new_state.id,
-      :stimulus,
-      clock,
-      [new_state.id],
-      %{stimulus: stimulus, async: true}
-    )
-    final_state = %{new_state |
-      traces: Map.put(new_state.traces, stimulus_trace.id, stimulus_trace),
-      clock: clock
+
+    stimulus_trace =
+      Trace.new_with_clock(
+        new_state.id,
+        :stimulus,
+        clock,
+        [new_state.id],
+        %{stimulus: stimulus, async: true}
+      )
+
+    final_state = %{
+      new_state
+      | traces: Map.put(new_state.traces, stimulus_trace.id, stimulus_trace),
+        clock: clock
     }
 
     {:noreply, final_state}
@@ -758,22 +803,26 @@ defmodule Kudzu.Hologram do
   @impl true
   def handle_info(:decay_proximity, state) do
     # Decay peer proximity
-    new_peers = state.peers
-    |> Enum.map(fn {id, score} -> {id, score * @proximity_decay_rate} end)
-    |> Enum.filter(fn {_id, score} -> score >= @min_proximity end)
-    |> Map.new()
-
-    # Decay beam-let proximity
-    new_beamlets = state.beamlets
-    |> Enum.map(fn {cap, beamlets} ->
-      decayed = beamlets
+    new_peers =
+      state.peers
       |> Enum.map(fn {id, score} -> {id, score * @proximity_decay_rate} end)
       |> Enum.filter(fn {_id, score} -> score >= @min_proximity end)
       |> Map.new()
-      {cap, decayed}
-    end)
-    |> Enum.reject(fn {_cap, beamlets} -> map_size(beamlets) == 0 end)
-    |> Map.new()
+
+    # Decay beam-let proximity
+    new_beamlets =
+      state.beamlets
+      |> Enum.map(fn {cap, beamlets} ->
+        decayed =
+          beamlets
+          |> Enum.map(fn {id, score} -> {id, score * @proximity_decay_rate} end)
+          |> Enum.filter(fn {_id, score} -> score >= @min_proximity end)
+          |> Map.new()
+
+        {cap, decayed}
+      end)
+      |> Enum.reject(fn {_cap, beamlets} -> map_size(beamlets) == 0 end)
+      |> Map.new()
 
     Process.send_after(self(), :decay_proximity, @decay_interval_ms)
     {:noreply, %{state | peers: new_peers, beamlets: new_beamlets}}
@@ -813,6 +862,7 @@ defmodule Kudzu.Hologram do
       %{system_time: System.system_time()},
       %{id: state.id, reason: reason}
     )
+
     :ok
   end
 
@@ -824,13 +874,15 @@ defmodule Kudzu.Hologram do
 
     # Record constitutional change as trace
     clock = VectorClock.increment(state.clock, state.id)
-    trace = Trace.new_with_clock(
-      state.id,
-      :constitution_change,
-      clock,
-      [state.id],
-      %{from: state.constitution, to: constitution}
-    )
+
+    trace =
+      Trace.new_with_clock(
+        state.id,
+        :constitution_change,
+        clock,
+        [state.id],
+        %{from: state.constitution, to: constitution}
+      )
 
     :telemetry.execute(
       [:kudzu, :hologram, :constitution_changed],
@@ -838,11 +890,12 @@ defmodule Kudzu.Hologram do
       %{id: state.id, from: state.constitution, to: constitution}
     )
 
-    new_state = %{state |
-      constitution: constitution,
-      desires: new_desires,
-      traces: Map.put(state.traces, trace.id, trace),
-      clock: clock
+    new_state = %{
+      state
+      | constitution: constitution,
+        desires: new_desires,
+        traces: Map.put(state.traces, trace.id, trace),
+        clock: clock
     }
 
     {:reply, :ok, new_state}
@@ -878,7 +931,10 @@ defmodule Kudzu.Hologram do
       {:requires_consensus, threshold} = decision ->
         # For now, log that consensus would be required
         # Full implementation would initiate consensus protocol
-        Logger.debug("[Constitution] Action requires consensus (#{threshold}): #{inspect(action)}")
+        Logger.debug(
+          "[Constitution] Action requires consensus (#{threshold}): #{inspect(action)}"
+        )
+
         audit_action(action, decision, state)
         # Don't execute without consensus
         state
@@ -892,22 +948,23 @@ defmodule Kudzu.Hologram do
       origin: state.id,
       timestamp: state.clock
     }
+
     Constitution.audit(state.constitution, action_trace, decision, state)
   end
 
   defp record_denial_trace({action_type, _params}, reason, state) do
     clock = VectorClock.increment(state.clock, state.id)
-    trace = Trace.new_with_clock(
-      state.id,
-      :action_denied,
-      clock,
-      [state.id],
-      %{action: action_type, reason: reason, constitution: state.constitution}
-    )
-    %{state |
-      traces: Map.put(state.traces, trace.id, trace),
-      clock: clock
-    }
+
+    trace =
+      Trace.new_with_clock(
+        state.id,
+        :action_denied,
+        clock,
+        [state.id],
+        %{action: action_type, reason: reason, constitution: state.constitution}
+      )
+
+    %{state | traces: Map.put(state.traces, trace.id, trace), clock: clock}
   end
 
   defp record_denial_trace(action_type, reason, state) when is_atom(action_type) do
@@ -917,17 +974,16 @@ defmodule Kudzu.Hologram do
   defp execute_action({:record_trace, purpose, hints}, state) do
     clock = VectorClock.increment(state.clock, state.id)
     trace = Trace.new_with_clock(state.id, purpose, clock, [state.id], hints)
-    %{state |
-      traces: Map.put(state.traces, trace.id, trace),
-      clock: clock
-    }
+    %{state | traces: Map.put(state.traces, trace.id, trace), clock: clock}
   end
 
   defp execute_action({:query_peer, peer_id, purpose}, state) do
     case lookup_peer(peer_id) do
       {:ok, peer_pid} ->
         case recall(peer_pid, purpose) do
-          [] -> state
+          [] ->
+            state
+
           traces ->
             # Store received traces
             Enum.reduce(traces, state, fn trace, acc ->
@@ -935,7 +991,9 @@ defmodule Kudzu.Hologram do
               %{acc | traces: Map.put(acc.traces, followed.id, followed)}
             end)
         end
-      {:error, _} -> state
+
+      {:error, _} ->
+        state
     end
   end
 
@@ -944,8 +1002,16 @@ defmodule Kudzu.Hologram do
       {{:ok, peer_pid}, %Trace{} = trace} ->
         receive_trace(peer_pid, trace, state.id)
         # Boost proximity
-        new_peers = Map.update(state.peers, peer_id, @proximity_boost, &min(&1 + @proximity_boost, @max_proximity))
+        new_peers =
+          Map.update(
+            state.peers,
+            peer_id,
+            @proximity_boost,
+            &min(&1 + @proximity_boost, @max_proximity)
+          )
+
         %{state | peers: new_peers}
+
       _ ->
         state
     end
@@ -965,17 +1031,17 @@ defmodule Kudzu.Hologram do
   defp record_cognition_traces(traces, state) do
     Enum.reduce(traces, state, fn trace_spec, acc ->
       clock = VectorClock.increment(acc.clock, acc.id)
-      trace = Trace.new_with_clock(
-        acc.id,
-        trace_spec.purpose,
-        clock,
-        [acc.id],
-        trace_spec.hints
-      )
-      %{acc |
-        traces: Map.put(acc.traces, trace.id, trace),
-        clock: clock
-      }
+
+      trace =
+        Trace.new_with_clock(
+          acc.id,
+          trace_spec.purpose,
+          clock,
+          [acc.id],
+          trace_spec.hints
+        )
+
+      %{acc | traces: Map.put(acc.traces, trace.id, trace), clock: clock}
     end)
   end
 
@@ -1009,6 +1075,7 @@ defmodule Kudzu.Hologram do
 
   defp try_suggested_peers([], _purpose, _max_hops, _visited), do: {:ok, []}
   defp try_suggested_peers(_peers, _purpose, max_hops, _visited) when max_hops <= 0, do: {:ok, []}
+
   defp try_suggested_peers([peer_id | rest], purpose, max_hops, visited) do
     if MapSet.member?(visited, peer_id) do
       try_suggested_peers(rest, purpose, max_hops, visited)
@@ -1019,6 +1086,7 @@ defmodule Kudzu.Hologram do
             [] -> try_suggested_peers(rest, purpose, max_hops, MapSet.put(visited, peer_id))
             traces -> {:ok, traces}
           end
+
         {:error, _} ->
           try_suggested_peers(rest, purpose, max_hops, visited)
       end
@@ -1034,27 +1102,41 @@ defmodule Kudzu.Hologram do
 
   defp process_message(%{type: :ping, origin: origin, timestamp: ts}, state) do
     new_clock = VectorClock.merge(state.clock, ts) |> VectorClock.increment(state.id)
-    new_peers = Map.update(state.peers, origin, @proximity_boost, &min(&1 + @proximity_boost, @max_proximity))
+
+    new_peers =
+      Map.update(
+        state.peers,
+        origin,
+        @proximity_boost,
+        &min(&1 + @proximity_boost, @max_proximity)
+      )
+
     response = Protocol.pong(state.id, new_clock)
     {response, %{state | clock: new_clock, peers: new_peers}}
   end
 
-  defp process_message(%{type: :query, origin: origin, purpose: purpose, timestamp: ts, max_hops: _hops}, state) do
+  defp process_message(
+         %{type: :query, origin: origin, purpose: purpose, timestamp: ts, max_hops: _hops},
+         state
+       ) do
     new_clock = VectorClock.merge(state.clock, ts) |> VectorClock.increment(state.id)
-    matching_traces = state.traces
-    |> Map.values()
-    |> Enum.filter(&(&1.purpose == purpose))
+
+    matching_traces =
+      state.traces
+      |> Map.values()
+      |> Enum.filter(&(&1.purpose == purpose))
 
     # Suggest peers if we don't have matches
-    suggested = if matching_traces == [] do
-      state.peers
-      |> Enum.sort_by(fn {_id, score} -> score end, :desc)
-      |> Enum.take(3)
-      |> Enum.map(fn {id, _} -> id end)
-      |> Enum.reject(&(&1 == origin))
-    else
-      []
-    end
+    suggested =
+      if matching_traces == [] do
+        state.peers
+        |> Enum.sort_by(fn {_id, score} -> score end, :desc)
+        |> Enum.take(3)
+        |> Enum.map(fn {id, _} -> id end)
+        |> Enum.reject(&(&1 == origin))
+      else
+        []
+      end
 
     response = Protocol.query_response(state.id, new_clock, matching_traces, suggested)
     {response, %{state | clock: new_clock}}
@@ -1064,7 +1146,15 @@ defmodule Kudzu.Hologram do
     new_clock = VectorClock.merge(state.clock, ts) |> VectorClock.increment(state.id)
     followed = Trace.follow(trace, state.id)
     new_traces = Map.put(state.traces, followed.id, followed)
-    new_peers = Map.update(state.peers, origin, @proximity_boost, &min(&1 + @proximity_boost, @max_proximity))
+
+    new_peers =
+      Map.update(
+        state.peers,
+        origin,
+        @proximity_boost,
+        &min(&1 + @proximity_boost, @max_proximity)
+      )
+
     response = Protocol.ack(state.id, new_clock)
     {response, %{state | traces: new_traces, clock: new_clock, peers: new_peers}}
   end
@@ -1089,20 +1179,24 @@ defmodule Kudzu.Hologram do
   defp do_discover_beamlets(state) do
     capabilities = [:file_read, :file_write, :http_get, :http_post, :shell_exec, :scheduling]
 
-    new_beamlets = capabilities
-    |> Enum.map(fn cap ->
-      beamlets = Beamlet.list_beamlets(cap)
-      |> Enum.map(fn {_pid, id} -> {id, @proximity_boost} end)
+    new_beamlets =
+      capabilities
+      |> Enum.map(fn cap ->
+        beamlets =
+          Beamlet.list_beamlets(cap)
+          |> Enum.map(fn {_pid, id} -> {id, @proximity_boost} end)
+          |> Map.new()
+
+        {cap, beamlets}
+      end)
+      |> Enum.reject(fn {_cap, beamlets} -> map_size(beamlets) == 0 end)
       |> Map.new()
-      {cap, beamlets}
-    end)
-    |> Enum.reject(fn {_cap, beamlets} -> map_size(beamlets) == 0 end)
-    |> Map.new()
 
     # Merge with existing, keeping higher proximity scores
-    merged = Map.merge(state.beamlets, new_beamlets, fn _cap, old, new ->
-      Map.merge(old, new, fn _id, old_score, new_score -> max(old_score, new_score) end)
-    end)
+    merged =
+      Map.merge(state.beamlets, new_beamlets, fn _cap, old, new ->
+        Map.merge(old, new, fn _id, old_score, new_score -> max(old_score, new_score) end)
+      end)
 
     %{state | beamlets: merged}
   end
@@ -1120,6 +1214,7 @@ defmodule Kudzu.Hologram do
         catch
           :exit, _ -> state
         end
+
       _ ->
         state
     end
@@ -1143,28 +1238,33 @@ defmodule Kudzu.Hologram do
   defp reload_traces_from_storage(state) do
     traces = Kudzu.Storage.query_hologram(state.id, limit: 1000)
 
-    loaded_traces = traces
-    |> Enum.map(fn record ->
-      trace = %Trace{
-        id: record.id,
-        origin: record.origin,
-        purpose: record.purpose,
-        reconstruction_hint: record.reconstruction_hint,
-        path: record.path || [state.id],
-        timestamp: record.clock || VectorClock.new(state.id)
-      }
-      {trace.id, trace}
-    end)
-    |> Map.new()
+    loaded_traces =
+      traces
+      |> Enum.map(fn record ->
+        trace = %Trace{
+          id: record.id,
+          origin: record.origin,
+          purpose: record.purpose,
+          reconstruction_hint: record.reconstruction_hint,
+          path: record.path || [state.id],
+          timestamp: record.clock || VectorClock.new(state.id)
+        }
+
+        {trace.id, trace}
+      end)
+      |> Map.new()
 
     # Rebuild clock from loaded traces
-    clock = loaded_traces
-    |> Map.values()
-    |> Enum.reduce(VectorClock.new(state.id), fn trace, acc ->
-      VectorClock.merge(acc, trace.timestamp)
-    end)
+    clock =
+      loaded_traces
+      |> Map.values()
+      |> Enum.reduce(VectorClock.new(state.id), fn trace, acc ->
+        VectorClock.merge(acc, trace.timestamp)
+      end)
 
-    Logger.info("[Hologram #{state.id}] Reconstructed with #{map_size(loaded_traces)} traces from storage")
+    Logger.info(
+      "[Hologram #{state.id}] Reconstructed with #{map_size(loaded_traces)} traces from storage"
+    )
 
     %{state | traces: loaded_traces, clock: clock}
   end

@@ -44,14 +44,16 @@ defmodule Kudzu.Brain.Vectors.WebLearnerVector do
   def learn(topic, opts \\ []) do
     case WebLearner.research(topic, opts) do
       {:ok, result} ->
-        {:ok, %{
-          content: "Web research on '#{topic}': #{result.pages_read} pages read, " <>
-                   "#{result.chains_stored} knowledge chains stored, " <>
-                   "#{Map.get(result, :summaries_stored, 0)} summaries saved",
-          source: "web_search",
-          confidence: 0.6,
-          metadata: result
-        }}
+        {:ok,
+         %{
+           content:
+             "Web research on '#{topic}': #{result.pages_read} pages read, " <>
+               "#{result.chains_stored} knowledge chains stored, " <>
+               "#{Map.get(result, :summaries_stored, 0)} summaries saved",
+           source: "web_search",
+           confidence: 0.6,
+           metadata: result
+         }}
 
       {:error, reason} ->
         {:error, reason}

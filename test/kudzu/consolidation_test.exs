@@ -24,6 +24,7 @@ defmodule Kudzu.ConsolidationTest do
       _state = Consolidation.get_encoder_state()
 
       after_status = Consolidation.status()
+
       assert after_status.encoder_persists == before_persists + 1,
              "expected encoder_persists to increment after a light cycle"
 

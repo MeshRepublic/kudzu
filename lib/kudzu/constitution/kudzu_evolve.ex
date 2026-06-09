@@ -31,33 +31,53 @@ defmodule Kudzu.Constitution.KudzuEvolve do
 
   # Learning-related actions are always permitted
   @learning_actions [
-    :record_trace, :recall, :think, :observe, :reflect,
-    :analyze_efficiency, :record_lesson, :record_experiment,
-    :measure_outcome, :compare_strategies, :synthesize_learning
+    :record_trace,
+    :recall,
+    :think,
+    :observe,
+    :reflect,
+    :analyze_efficiency,
+    :record_lesson,
+    :record_experiment,
+    :measure_outcome,
+    :compare_strategies,
+    :synthesize_learning
   ]
 
   # Self-modification actions - permitted but tracked
   @evolution_actions [
-    :update_desire, :adjust_strategy, :refine_approach,
-    :adopt_pattern, :deprecate_pattern, :optimize_context
+    :update_desire,
+    :adjust_strategy,
+    :refine_approach,
+    :adopt_pattern,
+    :deprecate_pattern,
+    :optimize_context
   ]
 
   # Actions that benefit from external input
   @feedback_actions [
-    :request_feedback, :integrate_feedback, :weight_human_input,
-    :propose_improvement, :validate_learning
+    :request_feedback,
+    :integrate_feedback,
+    :weight_human_input,
+    :propose_improvement,
+    :validate_learning
   ]
 
   # High-impact actions need some consensus
   @consensus_actions [
-    :share_strategy, :broadcast_learning, :spawn_experiment,
-    :modify_peer_behavior, :propagate_pattern
+    :share_strategy,
+    :broadcast_learning,
+    :spawn_experiment,
+    :modify_peer_behavior,
+    :propagate_pattern
   ]
 
   # Forbidden even for evolving agents
   @forbidden_actions [
-    :delete_learning_history, :bypass_efficiency_tracking,
-    :ignore_human_feedback, :suppress_failure_data
+    :delete_learning_history,
+    :bypass_efficiency_tracking,
+    :ignore_human_feedback,
+    :suppress_failure_data
   ]
 
   @impl true
@@ -95,7 +115,10 @@ defmodule Kudzu.Constitution.KudzuEvolve do
           :permitted
         else
           # Still permit, but log warning
-          Logger.warning("[KudzuEvolve] Evolution action without efficiency tracking: #{action_type}")
+          Logger.warning(
+            "[KudzuEvolve] Evolution action without efficiency tracking: #{action_type}"
+          )
+
           :permitted
         end
 
@@ -112,6 +135,7 @@ defmodule Kudzu.Constitution.KudzuEvolve do
       action_type == :spawn_many ->
         count = Map.get(params, :count, 1)
         experiment_budget = Map.get(state, :experiment_budget, 10)
+
         if count <= experiment_budget do
           :permitted
         else
@@ -192,7 +216,9 @@ defmodule Kudzu.Constitution.KudzuEvolve do
       audit_entry
     )
 
-    Logger.debug("[KudzuEvolve] Audit: #{inspect(decision)} | Learning: #{audit_entry.learning_opportunity}")
+    Logger.debug(
+      "[KudzuEvolve] Audit: #{inspect(decision)} | Learning: #{audit_entry.learning_opportunity}"
+    )
 
     {:ok, audit_entry.id}
   end
@@ -228,7 +254,8 @@ defmodule Kudzu.Constitution.KudzuEvolve do
         {:invalid, :missing_timestamp}
 
       # Learning traces need outcome tracking
-      trace[:purpose] in [:experiment, :strategy_test] and is_nil(trace[:reconstruction_hint][:outcome]) ->
+      trace[:purpose] in [:experiment, :strategy_test] and
+          is_nil(trace[:reconstruction_hint][:outcome]) ->
         {:invalid, :experiment_missing_outcome}
 
       # Human feedback traces need source attribution
@@ -305,7 +332,10 @@ defmodule Kudzu.Constitution.KudzuEvolve do
   # ============================================================================
 
   defp normalize_action({type, params}) when is_atom(type) and is_map(params), do: {type, params}
-  defp normalize_action({type, _purpose, params}) when is_atom(type) and is_map(params), do: {type, params}
+
+  defp normalize_action({type, _purpose, params}) when is_atom(type) and is_map(params),
+    do: {type, params}
+
   defp normalize_action({type, params}) when is_binary(type), do: {String.to_atom(type), params}
   defp normalize_action(type) when is_atom(type), do: {type, %{}}
   defp normalize_action({type, _, _}), do: {type, %{}}
@@ -325,17 +355,19 @@ defmodule Kudzu.Constitution.KudzuEvolve do
   end
 
   defp consensus_threshold(action_type, state) do
-    base_threshold = case action_type do
-      :share_strategy -> 0.5
-      :broadcast_learning -> 0.6
-      :spawn_experiment -> 0.4
-      :modify_peer_behavior -> 0.7
-      :propagate_pattern -> 0.75
-      _ -> 0.5
-    end
+    base_threshold =
+      case action_type do
+        :share_strategy -> 0.5
+        :broadcast_learning -> 0.6
+        :spawn_experiment -> 0.4
+        :modify_peer_behavior -> 0.7
+        :propagate_pattern -> 0.75
+        _ -> 0.5
+      end
 
     # Lower threshold if agent has good track record
     success_rate = calculate_success_rate(state)
+
     if success_rate > 0.8 do
       max(0.3, base_threshold - 0.15)
     else
@@ -361,11 +393,13 @@ defmodule Kudzu.Constitution.KudzuEvolve do
 
     # Add efficiency-specific desire if score is low
     efficiency = calculate_efficiency(state)
-    meta_desires = if efficiency < 0.5 do
-      ["Reduce redundant traces and improve context density" | meta_desires]
-    else
-      meta_desires
-    end
+
+    meta_desires =
+      if efficiency < 0.5 do
+        ["Reduce redundant traces and improve context density" | meta_desires]
+      else
+        meta_desires
+      end
 
     # Don't duplicate
     new_desires = Enum.reject(meta_desires, fn d -> d in desires end)
@@ -377,9 +411,11 @@ defmodule Kudzu.Constitution.KudzuEvolve do
 
     if efficiency < 0.3 do
       # Low efficiency - prioritize optimization
-      {optimization, others} = Enum.split_with(desires, fn d ->
-        String.contains?(String.downcase(d), ["optim", "efficien", "reduc", "improv"])
-      end)
+      {optimization, others} =
+        Enum.split_with(desires, fn d ->
+          String.contains?(String.downcase(d), ["optim", "efficien", "reduc", "improv"])
+        end)
+
       optimization ++ others
     else
       desires
@@ -446,6 +482,7 @@ defmodule Kudzu.Constitution.KudzuEvolve do
       %Kudzu.VectorClock{clocks: clocks} ->
         max_tick = clocks |> Map.values() |> Enum.max(fn -> 0 end)
         max_tick > 0
+
       _ ->
         true
     end
@@ -477,6 +514,7 @@ defmodule Kudzu.Constitution.KudzuEvolve do
   end
 
   defp efficiency_trend(history) when length(history) < 2, do: :insufficient_data
+
   defp efficiency_trend(history) do
     recent = Enum.take(history, 5)
     older = Enum.take(Enum.drop(history, 5), 5)
@@ -496,23 +534,26 @@ defmodule Kudzu.Constitution.KudzuEvolve do
 
     suggestions = []
 
-    suggestions = if length(opportunities.redundant_traces) > 0 do
-      ["Experiment with trace consolidation" | suggestions]
-    else
-      suggestions
-    end
+    suggestions =
+      if length(opportunities.redundant_traces) > 0 do
+        ["Experiment with trace consolidation" | suggestions]
+      else
+        suggestions
+      end
 
-    suggestions = if length(opportunities.underutilized_peers) > 0 do
-      ["Experiment with peer engagement strategies" | suggestions]
-    else
-      suggestions
-    end
+    suggestions =
+      if length(opportunities.underutilized_peers) > 0 do
+        ["Experiment with peer engagement strategies" | suggestions]
+      else
+        suggestions
+      end
 
-    suggestions = if opportunities.efficiency_score < 0.5 do
-      ["Experiment with context pruning" | suggestions]
-    else
-      suggestions
-    end
+    suggestions =
+      if opportunities.efficiency_score < 0.5 do
+        ["Experiment with context pruning" | suggestions]
+      else
+        suggestions
+      end
 
     if suggestions == [] do
       ["Explore new problem domains", "Test alternative reasoning patterns"]

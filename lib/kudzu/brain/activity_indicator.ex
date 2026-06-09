@@ -12,12 +12,18 @@ defmodule Kudzu.Brain.ActivityIndicator do
   @tick_ms 80
   @frames ~w(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
   @colors %{
-    learning: "\e[36m",    # cyan
-    reasoning: "\e[33m",   # yellow
-    curiosity: "\e[35m",   # magenta
-    health: "\e[32m",      # green
-    distilling: "\e[34m",  # blue
-    default: "\e[37m"      # white
+    # cyan
+    learning: "\e[36m",
+    # yellow
+    reasoning: "\e[33m",
+    # magenta
+    curiosity: "\e[35m",
+    # green
+    health: "\e[32m",
+    # blue
+    distilling: "\e[34m",
+    # white
+    default: "\e[37m"
   }
   @reset "\e[0m"
   @dim "\e[2m"
@@ -80,12 +86,13 @@ defmodule Kudzu.Brain.ActivityIndicator do
     state = %{state | activities: new_activities}
 
     # Start ticking if this is the first activity
-    state = if map_size(state.activities) == 1 and is_nil(state.timer) do
-      timer = Process.send_after(self(), :tick, @tick_ms)
-      %{state | timer: timer}
-    else
-      state
-    end
+    state =
+      if map_size(state.activities) == 1 and is_nil(state.timer) do
+        timer = Process.send_after(self(), :tick, @tick_ms)
+        %{state | timer: timer}
+      else
+        state
+      end
 
     {:noreply, state}
   end
@@ -101,22 +108,25 @@ defmodule Kudzu.Brain.ActivityIndicator do
     state = %{state | activities: new_activities}
 
     # Stop ticking if no activities left
-    state = if map_size(state.activities) == 0 and state.timer do
-      Process.cancel_timer(state.timer)
-      %{state | timer: nil}
-    else
-      state
-    end
+    state =
+      if map_size(state.activities) == 0 and state.timer do
+        Process.cancel_timer(state.timer)
+        %{state | timer: nil}
+      else
+        state
+      end
 
     {:noreply, state}
   end
 
   @impl true
   def handle_call(:active, _from, state) do
-    list = Enum.map(state.activities, fn {id, act} ->
-      elapsed = System.monotonic_time(:millisecond) - act.started_at
-      %{id: id, description: act.description, elapsed_ms: elapsed}
-    end)
+    list =
+      Enum.map(state.activities, fn {id, act} ->
+        elapsed = System.monotonic_time(:millisecond) - act.started_at
+        %{id: id, description: act.description, elapsed_ms: elapsed}
+      end)
+
     {:reply, list, state}
   end
 
@@ -140,7 +150,8 @@ defmodule Kudzu.Brain.ActivityIndicator do
     frame_char = Enum.at(@frames, rem(state.frame, length(@frames)))
     now = System.monotonic_time(:millisecond)
 
-    parts = state.activities
+    parts =
+      state.activities
       |> Enum.sort_by(fn {_id, act} -> act.started_at end)
       |> Enum.map(fn {_id, act} ->
         elapsed = div(now - act.started_at, 1000)
@@ -149,20 +160,23 @@ defmodule Kudzu.Brain.ActivityIndicator do
         "#{color}#{act.description}#{@reset} #{@dim}#{time_str}#{@reset}"
       end)
 
-    line = case parts do
-      [single] ->
-        " #{frame_char} #{single}"
-      multiple ->
-        first = hd(multiple)
-        rest_count = length(multiple) - 1
-        " #{frame_char} #{first} #{@dim}(+#{rest_count} more)#{@reset}"
-    end
+    line =
+      case parts do
+        [single] ->
+          " #{frame_char} #{single}"
+
+        multiple ->
+          first = hd(multiple)
+          rest_count = length(multiple) - 1
+          " #{frame_char} #{first} #{@dim}(+#{rest_count} more)#{@reset}"
+      end
 
     # Truncate to terminal width (assume 120 cols, strip ANSI for length check)
     IO.write("\r\e[2K#{line}")
   end
 
   defp format_elapsed(seconds) when seconds < 60, do: "#{seconds}s"
+
   defp format_elapsed(seconds) do
     m = div(seconds, 60)
     s = rem(seconds, 60)
@@ -171,6 +185,7 @@ defmodule Kudzu.Brain.ActivityIndicator do
 
   defp categorize(id) do
     id_str = to_string(id)
+
     cond do
       String.contains?(id_str, "learn") -> :learning
       String.contains?(id_str, "reason") -> :reasoning

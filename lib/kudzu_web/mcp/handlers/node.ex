@@ -9,6 +9,7 @@ defmodule KudzuWeb.MCP.Handlers.Node do
     opts = []
     opts = if params["data_dir"], do: [{:data_dir, params["data_dir"]} | opts], else: opts
     opts = if params["node_name"], do: [{:node_name, params["node_name"]} | opts], else: opts
+
     case Kudzu.Node.init_node(opts) do
       :ok -> {:ok, %{status: "initialized"}}
       {:error, reason} -> {:error, -32603, inspect(reason)}
@@ -24,6 +25,7 @@ defmodule KudzuWeb.MCP.Handlers.Node do
 
   def handle("kudzu_mesh_join", %{"node" => node_str}) do
     node = String.to_atom(node_str)
+
     case Kudzu.Node.join_mesh(node) do
       {:ok, status} -> {:ok, %{status: status}}
       {:error, reason} -> {:error, -32603, inspect(reason)}

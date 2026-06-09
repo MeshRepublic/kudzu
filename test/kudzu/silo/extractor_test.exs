@@ -85,16 +85,19 @@ defmodule Kudzu.Silo.ExtractorTest do
 
     test "downcases all terms" do
       json = ~s([["Water","Causes","Erosion"]])
+
       assert {:ok, [{"water", "causes", "erosion"}]} =
                Extractor.parse_extraction_response(json)
     end
 
     test "handles JSON embedded in surrounding text" do
       text = ~s(Here are the triples: [["elixir","uses","beam"]] That's all.)
+
       assert {:ok, [{"elixir", "uses", "beam"}]} =
                Extractor.parse_extraction_response(text)
     end
   end
+
   describe "extract_claude/3 — max_tokens default and override (DP.3)" do
     test "default max_tokens is 8192 (raised from 1024 by DP.3)" do
       # We can't easily intercept the outbound HTTP call without a mock
@@ -143,5 +146,4 @@ defmodule Kudzu.Silo.ExtractorTest do
       end
     end
   end
-
 end

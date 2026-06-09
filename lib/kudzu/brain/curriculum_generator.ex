@@ -45,13 +45,14 @@ defmodule Kudzu.Brain.CurriculumGenerator do
   defp call_ollama(prompt) do
     url = get_ollama_url()
 
-    body = Jason.encode!(%{
-      model: @model,
-      prompt: prompt,
-      stream: false,
-      options: %{num_predict: 4000, temperature: 0.3},
-      keep_alive: "10m"
-    })
+    body =
+      Jason.encode!(%{
+        model: @model,
+        prompt: prompt,
+        stream: false,
+        options: %{num_predict: 4000, temperature: 0.3},
+        keep_alive: "10m"
+      })
 
     request = {~c"#{url}/api/generate", [], ~c"application/json", body}
 
@@ -71,17 +72,19 @@ defmodule Kudzu.Brain.CurriculumGenerator do
   end
 
   defp parse_curriculum_json(text) do
-    cleaned = text
-    |> String.replace(~r/```json\s*/m, "")
-    |> String.replace(~r/```\s*/m, "")
-    |> String.trim()
+    cleaned =
+      text
+      |> String.replace(~r/```json\s*/m, "")
+      |> String.replace(~r/```\s*/m, "")
+      |> String.trim()
 
     case Jason.decode(cleaned) do
       {:ok, items} when is_list(items) ->
-        items = items
-        |> Enum.filter(&is_binary/1)
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == ""))
+        items =
+          items
+          |> Enum.filter(&is_binary/1)
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
 
         if length(items) > 0, do: {:ok, items}, else: {:error, :empty}
 
@@ -94,11 +97,18 @@ defmodule Kudzu.Brain.CurriculumGenerator do
           [json_str] ->
             case Jason.decode(json_str) do
               {:ok, items} when is_list(items) ->
-                items = items |> Enum.filter(&is_binary/1) |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+                items =
+                  items
+                  |> Enum.filter(&is_binary/1)
+                  |> Enum.map(&String.trim/1)
+                  |> Enum.reject(&(&1 == ""))
+
                 if length(items) > 0, do: {:ok, items}, else: {:error, :empty}
+
               _ ->
                 {:error, :json_parse_failed}
             end
+
           nil ->
             {:error, :json_parse_failed}
         end

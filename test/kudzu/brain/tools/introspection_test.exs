@@ -3,7 +3,13 @@ defmodule Kudzu.Brain.Tools.IntrospectionTest do
 
   alias Kudzu.Brain.Tool
   alias Kudzu.Brain.Tools.Introspection
-  alias Kudzu.Brain.Tools.Introspection.{CheckHealth, ListHolograms, CheckConsolidation, SemanticRecall}
+
+  alias Kudzu.Brain.Tools.Introspection.{
+    CheckHealth,
+    ListHolograms,
+    CheckConsolidation,
+    SemanticRecall
+  }
 
   # ── all_tools/0 ───────────────────────────────────────────────────
 

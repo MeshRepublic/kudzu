@@ -32,7 +32,8 @@ defmodule Kudzu.Brain.Vectors.Router do
   """
   @spec learn(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def learn(topic, opts \\ []) do
-    ranked = rank_vectors(topic)
+    ranked =
+      rank_vectors(topic)
       |> Enum.filter(fn {_mod, score} -> score >= @relevance_threshold end)
       |> Enum.filter(fn {mod, _score} ->
         try do
@@ -48,7 +49,10 @@ defmodule Kudzu.Brain.Vectors.Router do
         {:ok, result}
 
       {:error, reason} ->
-        Logger.warning("[VectorRouter] All vectors failed for '#{String.slice(topic, 0, 60)}': #{inspect(reason)}")
+        Logger.warning(
+          "[VectorRouter] All vectors failed for '#{String.slice(topic, 0, 60)}': #{inspect(reason)}"
+        )
+
         {:error, reason}
     end
   end
@@ -60,11 +64,13 @@ defmodule Kudzu.Brain.Vectors.Router do
   def rank_vectors(topic) do
     @vectors
     |> Enum.map(fn mod ->
-      score = try do
-        mod.relevance(topic)
-      rescue
-        _ -> 0.0
-      end
+      score =
+        try do
+          mod.relevance(topic)
+        rescue
+          _ -> 0.0
+        end
+
       {mod, score}
     end)
     |> Enum.sort_by(fn {_, score} -> score end, :desc)
@@ -78,15 +84,23 @@ defmodule Kudzu.Brain.Vectors.Router do
     Enum.map(@vectors, fn mod ->
       %{
         name: mod.name(),
-        available: (try do mod.available?() rescue _ -> false end),
+        available:
+          try do
+            mod.available?()
+          rescue
+            _ -> false
+          end,
         module: mod
       }
     end)
   end
 
   defp try_vectors([], _topic, _opts), do: {:error, :all_vectors_failed}
+
   defp try_vectors([{mod, score} | rest], topic, opts) do
-    Logger.debug("[VectorRouter] Trying #{mod.name()} (score=#{Float.round(score, 2)}) for: #{String.slice(topic, 0, 80)}")
+    Logger.debug(
+      "[VectorRouter] Trying #{mod.name()} (score=#{Float.round(score, 2)}) for: #{String.slice(topic, 0, 80)}"
+    )
 
     case mod.learn(topic, opts) do
       {:ok, result} ->

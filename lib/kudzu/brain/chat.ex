@@ -106,25 +106,31 @@ defmodule Kudzu.Brain.Chat do
   """
   @spec integrate_thought(Brain.t(), Thought.Result.t() | any()) :: Brain.t()
   def integrate_thought(%{working_memory: nil} = state, _result), do: state
+
   def integrate_thought(state, %Thought.Result{} = result) do
     wm = state.working_memory
 
     # Activate concepts from the thought
-    wm = Enum.reduce(result.activations, wm, fn
-      {concept, score, source}, acc ->
-        WorkingMemory.activate(acc, concept, %{score: score, source: source})
-      _, acc -> acc
-    end)
+    wm =
+      Enum.reduce(result.activations, wm, fn
+        {concept, score, source}, acc ->
+          WorkingMemory.activate(acc, concept, %{score: score, source: source})
+
+        _, acc ->
+          acc
+      end)
 
     # Add the chain
-    wm = if result.chain != [] do
-      WorkingMemory.add_chain(wm, result.chain)
-    else
-      wm
-    end
+    wm =
+      if result.chain != [] do
+        WorkingMemory.add_chain(wm, result.chain)
+      else
+        wm
+      end
 
     %{state | working_memory: wm}
   end
+
   def integrate_thought(state, _result), do: state
 
   # ── Directive Parsing (Learn X, progress) ───────────────────────────
@@ -161,6 +167,7 @@ defmodule Kudzu.Brain.Chat do
 
   defp parse_directive(message) do
     trimmed = String.trim(message)
+
     cond do
       Regex.match?(~r/^learn\s+/i, trimmed) ->
         topic = Regex.replace(~r/^learn\s+/i, trimmed, "") |> String.trim() |> String.trim(".")
@@ -196,17 +203,21 @@ defmodule Kudzu.Brain.Chat do
 
     # ── Tier 1: Semantic Recall (free) ──
     Logger.info("[Brain] Escalation Tier 1: Semantic Recall")
-    recall_results = try do
-      Kudzu.Consolidation.semantic_query(message, 0.0)
-    catch
-      _, _ -> []
-    end
 
-    top_score = case recall_results do
-      [%{similarity: score} | _] -> score
-      [{_purpose, score} | _] -> score  # fallback format
-      _ -> 0.0
-    end
+    recall_results =
+      try do
+        Kudzu.Consolidation.semantic_query(message, 0.0)
+      catch
+        _, _ -> []
+      end
+
+    top_score =
+      case recall_results do
+        [%{similarity: score} | _] -> score
+        # fallback format
+        [{_purpose, score} | _] -> score
+        _ -> 0.0
+      end
 
     context = %{context | recall_results: recall_results}
 
@@ -222,22 +233,28 @@ defmodule Kudzu.Brain.Chat do
         message: String.slice(message, 0, 200)
       })
 
-      Logger.info("[Brain] Escalation resolved at Tier 1 (recall, score=#{Float.round(top_score, 3)})")
+      Logger.info(
+        "[Brain] Escalation resolved at Tier 1 (recall, score=#{Float.round(top_score, 3)})"
+      )
+
       {response, :recall, [], 0.0, state}
     else
       # ── Tier 2: Silo Inference (free, instant) ──
       Logger.info("[Brain] Escalation Tier 2: Silo Inference (Thought)")
-      priming = if state.working_memory do
-        WorkingMemory.get_priming_concepts(state.working_memory, 5)
-      else
-        []
-      end
 
-      thought_result = Thought.run(message,
-        monarch_pid: self(),
-        timeout: 10_000,
-        priming: priming
-      )
+      priming =
+        if state.working_memory do
+          WorkingMemory.get_priming_concepts(state.working_memory, 5)
+        else
+          []
+        end
+
+      thought_result =
+        Thought.run(message,
+          monarch_pid: self(),
+          timeout: 10_000,
+          priming: priming
+        )
 
       state = integrate_thought(state, thought_result)
       context = %{context | thought_result: thought_result}
@@ -254,21 +271,27 @@ defmodule Kudzu.Brain.Chat do
           message: String.slice(message, 0, 200)
         })
 
-        Logger.info("[Brain] Escalation resolved at Tier 2 (synthesis, confidence=#{Float.round(thought_result.confidence, 3)})")
+        Logger.info(
+          "[Brain] Escalation resolved at Tier 2 (synthesis, confidence=#{Float.round(thought_result.confidence, 3)})"
+        )
+
         {response, :synthesis, [], 0.0, state}
       else
         # ── Tier 3: Web Search (free, slow) ──
         Logger.info("[Brain] Escalation Tier 3: Web Search")
-        web_result = try do
-          WebLearner.research(message)
-        catch
-          _, _ -> {:error, :crashed}
-        end
 
-        context = case web_result do
-          {:ok, findings} -> %{context | web_findings: findings}
-          _ -> context
-        end
+        web_result =
+          try do
+            WebLearner.research(message)
+          catch
+            _, _ -> {:error, :crashed}
+          end
+
+        context =
+          case web_result do
+            {:ok, findings} -> %{context | web_findings: findings}
+            _ -> context
+          end
 
         web_found = match?({:ok, %{chains_stored: n}} when n > 0, web_result)
 
@@ -284,7 +307,10 @@ defmodule Kudzu.Brain.Chat do
             message: String.slice(message, 0, 200)
           })
 
-          Logger.info("[Brain] Escalation resolved at Tier 3 (web, #{findings.chains_stored} chains)")
+          Logger.info(
+            "[Brain] Escalation resolved at Tier 3 (web, #{findings.chains_stored} chains)"
+          )
+
           {response, :web, [], 0.0, state}
         else
           # ── Tier 4: Claude API (paid, last resort) ──
@@ -305,11 +331,12 @@ defmodule Kudzu.Brain.Chat do
             chat_with_claude(state, enhanced_message)
 
           # Distill knowledge from Claude's response
-          new_state = if tier == 3 and response_text != "" do
-            Reasoning.distill_claude_response(new_state, response_text)
-          else
-            new_state
-          end
+          new_state =
+            if tier == 3 and response_text != "" do
+              Reasoning.distill_claude_response(new_state, response_text)
+            else
+              new_state
+            end
 
           {response_text, tier, tool_calls, cost, new_state}
         end
@@ -322,70 +349,104 @@ defmodule Kudzu.Brain.Chat do
 
     # Tier 1: Semantic Recall
     send(stream_to, {:thinking, :recall, "Searching stored knowledge..."})
-    recall_results = try do
-      Kudzu.Consolidation.semantic_query(message, 0.0)
-    catch
-      _, _ -> []
-    end
 
-    top_score = case recall_results do
-      [%{similarity: score} | _] -> score
-      [{_purpose, score} | _] -> score  # fallback format
-      _ -> 0.0
-    end
+    recall_results =
+      try do
+        Kudzu.Consolidation.semantic_query(message, 0.0)
+      catch
+        _, _ -> []
+      end
+
+    top_score =
+      case recall_results do
+        [%{similarity: score} | _] -> score
+        # fallback format
+        [{_purpose, score} | _] -> score
+        _ -> 0.0
+      end
 
     context = %{context | recall_results: recall_results}
 
     if top_score > 0.6 do
       response = format_recall_response(message, recall_results)
-      Brain.record_trace(state, :thought, %{source: "chat_escalation", tier: "recall", top_score: top_score})
+
+      Brain.record_trace(state, :thought, %{
+        source: "chat_escalation",
+        tier: "recall",
+        top_score: top_score
+      })
+
       send(stream_to, {:chunk, response})
       {response, :recall, [], 0.0, state}
     else
       # Tier 2: Silo Inference
       send(stream_to, {:thinking, :synthesis, "Running silo inference..."})
-      priming = if state.working_memory do
-        WorkingMemory.get_priming_concepts(state.working_memory, 5)
-      else
-        []
-      end
 
-      thought_result = Thought.run(message, monarch_pid: self(), timeout: 10_000, priming: priming)
+      priming =
+        if state.working_memory do
+          WorkingMemory.get_priming_concepts(state.working_memory, 5)
+        else
+          []
+        end
+
+      thought_result =
+        Thought.run(message, monarch_pid: self(), timeout: 10_000, priming: priming)
+
       state = integrate_thought(state, thought_result)
       context = %{context | thought_result: thought_result}
 
       if thought_result.resolution == :found and thought_result.confidence > 0.5 do
         response = format_thought_result(message, thought_result)
-        Brain.record_trace(state, :thought, %{source: "chat_escalation", tier: "synthesis", confidence: thought_result.confidence})
+
+        Brain.record_trace(state, :thought, %{
+          source: "chat_escalation",
+          tier: "synthesis",
+          confidence: thought_result.confidence
+        })
+
         send(stream_to, {:chunk, response})
         {response, :synthesis, [], 0.0, state}
       else
         # Tier 3: Web Search
         send(stream_to, {:thinking, :web, "Searching the web..."})
-        web_result = try do
-          WebLearner.research(message)
-        catch
-          _, _ -> {:error, :crashed}
-        end
 
-        context = case web_result do
-          {:ok, findings} -> %{context | web_findings: findings}
-          _ -> context
-        end
+        web_result =
+          try do
+            WebLearner.research(message)
+          catch
+            _, _ -> {:error, :crashed}
+          end
+
+        context =
+          case web_result do
+            {:ok, findings} -> %{context | web_findings: findings}
+            _ -> context
+          end
 
         web_found = match?({:ok, %{chains_stored: n}} when n > 0, web_result)
 
         if web_found do
           {:ok, findings} = web_result
           response = format_web_response(message, findings)
-          Brain.record_trace(state, :thought, %{source: "chat_escalation", tier: "web", chains_stored: findings.chains_stored})
+
+          Brain.record_trace(state, :thought, %{
+            source: "chat_escalation",
+            tier: "web",
+            chains_stored: findings.chains_stored
+          })
+
           send(stream_to, {:chunk, response})
           {response, :web, [], 0.0, state}
         else
           # Tier 4: Claude API
           send(stream_to, {:thinking, :claude, "Consulting Claude API..."})
           enhanced_message = build_enriched_message(message, context)
-          Brain.record_trace(state, :thought, %{source: "chat_escalation", tier: "claude", reason: "free_tiers_exhausted"})
+
+          Brain.record_trace(state, :thought, %{
+            source: "chat_escalation",
+            tier: "claude",
+            reason: "free_tiers_exhausted"
+          })
 
           {response_text, tier, tool_calls, cost, new_state} =
             chat_with_claude_stream(state, enhanced_message, stream_to)
@@ -407,35 +468,43 @@ defmodule Kudzu.Brain.Chat do
   end
 
   defp format_recall_response(_message, recall_results) do
-    snippets = recall_results
-    |> Enum.take(5)
-    |> Enum.map(fn
-      %{similarity: sim, record: record} when is_map(record) ->
-        hint = record.reconstruction_hint || %{}
-        content = Map.get(hint, "content") || Map.get(hint, :content) ||
-                  Map.get(hint, "text") || Map.get(hint, :text) ||
-                  Map.get(hint, "summary") || Map.get(hint, :summary) ||
-                  Map.get(hint, "message") || Map.get(hint, :message) || ""
-        # Build a triple description if available
-        subj = Map.get(hint, "subject") || Map.get(hint, :subject)
-        rel = Map.get(hint, "relation") || Map.get(hint, :relation)
-        obj = Map.get(hint, "object") || Map.get(hint, :object)
-        triple_text = if subj && rel && obj, do: "#{subj} #{rel} #{obj}", else: nil
+    snippets =
+      recall_results
+      |> Enum.take(5)
+      |> Enum.map(fn
+        %{similarity: sim, record: record} when is_map(record) ->
+          hint = record.reconstruction_hint || %{}
 
-        text = cond do
-          content != "" -> String.slice(to_string(content), 0, 300)
-          triple_text -> triple_text
-          true -> inspect(hint) |> String.slice(0, 200)
-        end
+          content =
+            Map.get(hint, "content") || Map.get(hint, :content) ||
+              Map.get(hint, "text") || Map.get(hint, :text) ||
+              Map.get(hint, "summary") || Map.get(hint, :summary) ||
+              Map.get(hint, "message") || Map.get(hint, :message) || ""
 
-        purpose = if is_struct(record) and Map.has_key?(record, :purpose),
-          do: "(#{record.purpose}) ", else: ""
-        "- #{purpose}#{text} [#{Float.round(sim, 3)}]"
+          # Build a triple description if available
+          subj = Map.get(hint, "subject") || Map.get(hint, :subject)
+          rel = Map.get(hint, "relation") || Map.get(hint, :relation)
+          obj = Map.get(hint, "object") || Map.get(hint, :object)
+          triple_text = if subj && rel && obj, do: "#{subj} #{rel} #{obj}", else: nil
 
-      {purpose, similarity} ->
-        "- #{purpose} (relevance: #{Float.round(similarity, 3)})"
-    end)
-    |> Enum.join("\n")
+          text =
+            cond do
+              content != "" -> String.slice(to_string(content), 0, 300)
+              triple_text -> triple_text
+              true -> inspect(hint) |> String.slice(0, 200)
+            end
+
+          purpose =
+            if is_struct(record) and Map.has_key?(record, :purpose),
+              do: "(#{record.purpose}) ",
+              else: ""
+
+          "- #{purpose}#{text} [#{Float.round(sim, 3)}]"
+
+        {purpose, similarity} ->
+          "- #{purpose} (relevance: #{Float.round(similarity, 3)})"
+      end)
+      |> Enum.join("\n")
 
     "Based on my stored knowledge:\n\n#{snippets}"
   end
@@ -451,76 +520,98 @@ defmodule Kudzu.Brain.Chat do
     parts = [message]
 
     # Add recall context
-    parts = if context.recall_results != [] do
-      recall_summary = context.recall_results
-      |> Enum.take(5)
-      |> Enum.map(fn {purpose, sim} -> "#{purpose} (#{Float.round(sim, 3)})" end)
-      |> Enum.join(", ")
+    parts =
+      if context.recall_results != [] do
+        recall_summary =
+          context.recall_results
+          |> Enum.take(5)
+          |> Enum.map(fn {purpose, sim} -> "#{purpose} (#{Float.round(sim, 3)})" end)
+          |> Enum.join(", ")
 
-      parts ++ ["\n\n[Memory recall found related purposes: #{recall_summary}]"]
-    else
-      parts
-    end
+        parts ++ ["\n\n[Memory recall found related purposes: #{recall_summary}]"]
+      else
+        parts
+      end
 
     # Add web findings context
-    parts = case context.web_findings do
-      %{pages_read: pages, chains_stored: chains} when chains > 0 ->
-        parts ++ ["\n[Web research: #{pages} pages read, #{chains} knowledge chains extracted]"]
-      _ -> parts
-    end
+    parts =
+      case context.web_findings do
+        %{pages_read: pages, chains_stored: chains} when chains > 0 ->
+          parts ++ ["\n[Web research: #{pages} pages read, #{chains} knowledge chains extracted]"]
+
+        _ ->
+          parts
+      end
 
     # Add thought context
-    parts = case context.thought_result do
-      %Thought.Result{chain: chain} when chain != [] ->
-        chain_summary = chain
-        |> Enum.map(fn
-          %{concept: c, source: src} -> "#{c} (from #{src})"
-          {concept, _score, source} -> "#{concept} (from #{source})"
-          _ -> ""
-        end)
-        |> Enum.reject(&(&1 == ""))
-        |> Enum.join(", ")
+    parts =
+      case context.thought_result do
+        %Thought.Result{chain: chain} when chain != [] ->
+          chain_summary =
+            chain
+            |> Enum.map(fn
+              %{concept: c, source: src} -> "#{c} (from #{src})"
+              {concept, _score, source} -> "#{concept} (from #{source})"
+              _ -> ""
+            end)
+            |> Enum.reject(&(&1 == ""))
+            |> Enum.join(", ")
 
-        parts ++ ["\n[Silo reasoning found related concepts: #{chain_summary}]"]
-      _ -> parts
-    end
+          parts ++ ["\n[Silo reasoning found related concepts: #{chain_summary}]"]
+
+        _ ->
+          parts
+      end
 
     Enum.join(parts)
   end
 
   defp format_thought_result(_message, %Thought.Result{} = result) do
-    chain_parts = result.chain
-    |> Enum.map(fn
-      %{concept: c, similarity: s, source: src} ->
-        "- #{c} (#{src}, score: #{Float.round(s * 1.0, 2)})"
-      {concept, score, source} ->
-        "- #{concept} (#{source}, score: #{Float.round(score * 1.0, 2)})"
-      other -> "- #{inspect(other)}"
-    end)
+    chain_parts =
+      result.chain
+      |> Enum.map(fn
+        %{concept: c, similarity: s, source: src} ->
+          "- #{c} (#{src}, score: #{Float.round(s * 1.0, 2)})"
 
-    chain_text = if chain_parts != [] do
-      "Reasoning chain:\n" <> Enum.join(chain_parts, "\n")
-    else
-      "No reasoning chain available."
-    end
+        {concept, score, source} ->
+          "- #{concept} (#{source}, score: #{Float.round(score * 1.0, 2)})"
+
+        other ->
+          "- #{inspect(other)}"
+      end)
+
+    chain_text =
+      if chain_parts != [] do
+        "Reasoning chain:\n" <> Enum.join(chain_parts, "\n")
+      else
+        "No reasoning chain available."
+      end
 
     "Based on my reasoning:\n\n#{chain_text}\n\nConfidence: #{Float.round(result.confidence * 1.0, 2)}"
   end
 
   defp chat_with_claude(state, message) do
     api_key = state.config[:api_key] || state.config["api_key"]
-    budget_limit = state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
+
+    budget_limit =
+      state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
 
     cond do
       is_nil(api_key) or api_key == "" ->
         Logger.debug("[Brain] Chat: No API key configured, skipping Tier 3")
+
         {"I don't have an API key configured for Claude, so I can't process this with Tier 3 reasoning. " <>
-           "My reflexes and silo inference didn't find a match for your message either.", 3, [], 0.0, state}
+           "My reflexes and silo inference didn't find a match for your message either.", 3, [],
+         0.0, state}
 
       not Budget.within_budget?(state.budget, budget_limit) ->
-        Logger.warning("[Brain] Chat: Monthly budget exceeded ($#{state.budget.estimated_cost_usd})")
+        Logger.warning(
+          "[Brain] Chat: Monthly budget exceeded ($#{state.budget.estimated_cost_usd})"
+        )
+
         {"I've exceeded my monthly API budget, so I can't use Tier 3 reasoning right now. " <>
-           "My reflexes and silo inference didn't find a match for your message.", 3, [], 0.0, state}
+           "My reflexes and silo inference didn't find a match for your message.", 3, [], 0.0,
+         state}
 
       true ->
         system_prompt = PromptBuilder.build_chat(state)
@@ -577,8 +668,8 @@ defmodule Kudzu.Brain.Chat do
             )
 
             cost =
-              (Map.get(usage, :input_tokens, 0) / 1_000_000 * 3.0) +
-                (Map.get(usage, :output_tokens, 0) / 1_000_000 * 15.0)
+              Map.get(usage, :input_tokens, 0) / 1_000_000 * 3.0 +
+                Map.get(usage, :output_tokens, 0) / 1_000_000 * 15.0
 
             budget = Budget.record_usage(state.budget, usage)
             new_state = %{state | budget: budget}
@@ -590,6 +681,7 @@ defmodule Kudzu.Brain.Chat do
             Process.delete(:chat_tool_calls)
 
             Logger.error("[Brain] Chat Claude API error: #{inspect(reason)}")
+
             {"I encountered an error while processing your message with Claude: #{inspect(reason)}",
              3, tool_calls, 0.0, state}
         end
@@ -598,22 +690,30 @@ defmodule Kudzu.Brain.Chat do
 
   defp chat_with_claude_stream(state, message, stream_to) do
     api_key = state.config[:api_key] || state.config["api_key"]
-    budget_limit = state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
+
+    budget_limit =
+      state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
 
     cond do
       is_nil(api_key) or api_key == "" ->
         Logger.debug("[Brain] Stream Chat: No API key configured, skipping Tier 3")
+
         error_msg =
           "I don't have an API key configured for Claude, so I can't process this with Tier 3 reasoning. " <>
             "My reflexes and silo inference didn't find a match for your message either."
+
         send(stream_to, {:chunk, error_msg})
         {error_msg, 3, [], 0.0, state}
 
       not Budget.within_budget?(state.budget, budget_limit) ->
-        Logger.warning("[Brain] Stream Chat: Monthly budget exceeded ($#{state.budget.estimated_cost_usd})")
+        Logger.warning(
+          "[Brain] Stream Chat: Monthly budget exceeded ($#{state.budget.estimated_cost_usd})"
+        )
+
         error_msg =
           "I've exceeded my monthly API budget, so I can't use Tier 3 reasoning right now. " <>
             "My reflexes and silo inference didn't find a match for your message."
+
         send(stream_to, {:chunk, error_msg})
         {error_msg, 3, [], 0.0, state}
 
@@ -673,8 +773,8 @@ defmodule Kudzu.Brain.Chat do
             )
 
             cost =
-              (Map.get(usage, :input_tokens, 0) / 1_000_000 * 3.0) +
-                (Map.get(usage, :output_tokens, 0) / 1_000_000 * 15.0)
+              Map.get(usage, :input_tokens, 0) / 1_000_000 * 3.0 +
+                Map.get(usage, :output_tokens, 0) / 1_000_000 * 15.0
 
             budget = Budget.record_usage(state.budget, usage)
             new_state = %{state | budget: budget}
@@ -686,7 +786,10 @@ defmodule Kudzu.Brain.Chat do
             Process.delete(:chat_tool_calls)
 
             Logger.error("[Brain] Stream Chat Claude API error: #{inspect(reason)}")
-            error_msg = "I encountered an error while processing your message with Claude: #{inspect(reason)}"
+
+            error_msg =
+              "I encountered an error while processing your message with Claude: #{inspect(reason)}"
+
             send(stream_to, {:chunk, error_msg})
             {error_msg, 3, tool_calls, 0.0, state}
         end

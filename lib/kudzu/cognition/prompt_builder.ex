@@ -85,10 +85,11 @@ defmodule Kudzu.Cognition.PromptBuilder do
   end
 
   defp desires_section(%{desires: desires}) when is_list(desires) and desires != [] do
-    desire_list = desires
-    |> Enum.with_index(1)
-    |> Enum.map(fn {d, i} -> "  #{i}. #{d}" end)
-    |> Enum.join("\n")
+    desire_list =
+      desires
+      |> Enum.with_index(1)
+      |> Enum.map(fn {d, i} -> "  #{i}. #{d}" end)
+      |> Enum.join("\n")
 
     """
     == ACTIVE DESIRES ==
@@ -96,27 +97,31 @@ defmodule Kudzu.Cognition.PromptBuilder do
     #{desire_list}
     """
   end
+
   defp desires_section(_), do: ""
 
   defp traces_section(%{traces: traces}) when is_map(traces) and map_size(traces) > 0 do
-    trace_summaries = traces
-    |> Map.values()
-    |> Enum.sort_by(& &1.timestamp, {:desc, Kudzu.VectorClock})
-    |> Enum.take(@max_traces)
-    |> Enum.map(&format_trace/1)
-    |> Enum.join("\n")
+    trace_summaries =
+      traces
+      |> Map.values()
+      |> Enum.sort_by(& &1.timestamp, {:desc, Kudzu.VectorClock})
+      |> Enum.take(@max_traces)
+      |> Enum.map(&format_trace/1)
+      |> Enum.join("\n")
 
     """
     == RECENT TRACES (your navigational memory) ==
     #{trace_summaries}
     """
   end
+
   defp traces_section(_), do: "== TRACES ==\nNo traces recorded yet.\n"
 
   defp format_trace(trace) do
-    hints = trace.reconstruction_hint
-    |> Enum.map(fn {k, v} -> "#{k}=#{inspect(v)}" end)
-    |> Enum.join(", ")
+    hints =
+      trace.reconstruction_hint
+      |> Enum.map(fn {k, v} -> "#{k}=#{inspect(v)}" end)
+      |> Enum.join(", ")
 
     path_str = Enum.join(trace.path, " -> ")
 
@@ -124,19 +129,22 @@ defmodule Kudzu.Cognition.PromptBuilder do
   end
 
   defp peers_section(%{peers: peers}) when is_map(peers) and map_size(peers) > 0 do
-    peer_list = peers
-    |> Enum.sort_by(fn {_, score} -> score end, :desc)
-    |> Enum.take(@max_peers)
-    |> Enum.map(fn {id, score} ->
-      proximity = cond do
-        score > 0.8 -> "very close"
-        score > 0.5 -> "close"
-        score > 0.2 -> "moderate"
-        true -> "distant"
-      end
-      "  #{id}: #{proximity} (#{Float.round(score, 2)})"
-    end)
-    |> Enum.join("\n")
+    peer_list =
+      peers
+      |> Enum.sort_by(fn {_, score} -> score end, :desc)
+      |> Enum.take(@max_peers)
+      |> Enum.map(fn {id, score} ->
+        proximity =
+          cond do
+            score > 0.8 -> "very close"
+            score > 0.5 -> "close"
+            score > 0.2 -> "moderate"
+            true -> "distant"
+          end
+
+        "  #{id}: #{proximity} (#{Float.round(score, 2)})"
+      end)
+      |> Enum.join("\n")
 
     """
     == PEER AWARENESS ==
@@ -144,6 +152,7 @@ defmodule Kudzu.Cognition.PromptBuilder do
     #{peer_list}
     """
   end
+
   defp peers_section(_), do: "== PEERS ==\nNo peers known yet.\n"
 
   defp peer_states_section(peer_states) do
@@ -170,9 +179,10 @@ defmodule Kudzu.Cognition.PromptBuilder do
   end
 
   defp stimulus_section(%{type: type} = stimulus) do
-    details = Map.drop(stimulus, [:type])
-    |> Enum.map(fn {k, v} -> "  #{k}: #{inspect(v)}" end)
-    |> Enum.join("\n")
+    details =
+      Map.drop(stimulus, [:type])
+      |> Enum.map(fn {k, v} -> "  #{k}: #{inspect(v)}" end)
+      |> Enum.join("\n")
 
     """
     == STIMULUS ==

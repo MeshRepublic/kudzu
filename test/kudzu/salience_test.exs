@@ -144,39 +144,46 @@ defmodule Kudzu.SalienceTest do
     end
 
     test "low score traces are not candidates" do
-      salience = %{Salience.new() |
-        created_at: DateTime.add(DateTime.utc_now(), -7200, :second),
-        novelty: 0.01
+      salience = %{
+        Salience.new()
+        | created_at: DateTime.add(DateTime.utc_now(), -7200, :second),
+          novelty: 0.01
       }
+
       refute Salience.consolidation_candidate?(salience, min_score: 0.5)
     end
   end
 
   describe "archival_candidate?/2" do
     test "critical importance traces are never archived" do
-      salience = %{Salience.new() |
-        importance: :critical,
-        created_at: DateTime.add(DateTime.utc_now(), -172800, :second),
-        consolidation_count: 5,
-        novelty: 0.01
+      salience = %{
+        Salience.new()
+        | importance: :critical,
+          created_at: DateTime.add(DateTime.utc_now(), -172_800, :second),
+          consolidation_count: 5,
+          novelty: 0.01
       }
+
       refute Salience.archival_candidate?(salience)
     end
 
     test "unconsolidated traces are not archived" do
-      salience = %{Salience.new() |
-        created_at: DateTime.add(DateTime.utc_now(), -172800, :second),
-        consolidation_count: 0
+      salience = %{
+        Salience.new()
+        | created_at: DateTime.add(DateTime.utc_now(), -172_800, :second),
+          consolidation_count: 0
       }
+
       refute Salience.archival_candidate?(salience)
     end
   end
 
   describe "serialization" do
     test "to_map/1 and from_map/1 roundtrip" do
-      original = Salience.new(importance: :high, novelty: 0.7)
-      |> Salience.on_access()
-      |> Salience.strengthen_associations(0.3)
+      original =
+        Salience.new(importance: :high, novelty: 0.7)
+        |> Salience.on_access()
+        |> Salience.strengthen_associations(0.3)
 
       map = Salience.to_map(original)
       restored = Salience.from_map(map)

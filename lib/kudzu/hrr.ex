@@ -68,6 +68,7 @@ defmodule Kudzu.HRR do
   @spec bundle([vector()]) :: vector()
   def bundle([]), do: raise(ArgumentError, "Cannot bundle empty list")
   def bundle([v]), do: v
+
   def bundle(vectors) do
     try do
       backend().bundle(vectors)
@@ -85,6 +86,7 @@ defmodule Kudzu.HRR do
 
   @spec decode(vector(), %{any() => vector()}) :: {any(), float()} | nil
   def decode(_query, codebook) when map_size(codebook) == 0, do: nil
+
   def decode(query, codebook) do
     codebook
     |> Enum.map(fn {key, vec} -> {key, probe(query, vec)} end)
@@ -143,6 +145,7 @@ defmodule Kudzu.HRR do
   end
 
   defp do_from_binary(<<>>, acc), do: acc
+
   defp do_from_binary(<<f::float-32, rest::binary>>, acc) do
     do_from_binary(rest, [f | acc])
   end
@@ -170,22 +173,27 @@ defmodule Kudzu.HRR do
     fc = complex_multiply(fa, fb)
 
     # Inverse FFT and take real parts
-    result = ifft(fc)
-    |> Enum.map(fn {real, _imag} -> real / n end)
+    result =
+      ifft(fc)
+      |> Enum.map(fn {real, _imag} -> real / n end)
 
     normalize_legacy(result)
   end
 
   defp bundle_legacy(vectors) do
     dim = length(hd(vectors))
-    summed = Enum.reduce(vectors, zero_vector(dim), fn vec, acc ->
-      Enum.zip(vec, acc) |> Enum.map(fn {a, b} -> a + b end)
-    end)
+
+    summed =
+      Enum.reduce(vectors, zero_vector(dim), fn vec, acc ->
+        Enum.zip(vec, acc) |> Enum.map(fn {a, b} -> a + b end)
+      end)
+
     normalize_legacy(summed)
   end
 
   defp normalize_legacy(vec) do
     mag_sq = Enum.reduce(vec, 0.0, fn x, acc -> acc + x * x end)
+
     if mag_sq == 0.0 do
       vec
     else
@@ -201,6 +209,7 @@ defmodule Kudzu.HRR do
   # --- Radix-2 Cooley-Tukey FFT (recursive, list-based) ---
 
   defp fft([x]), do: [x]
+
   defp fft(xs) do
     n = length(xs)
     half = div(n, 2)
@@ -228,9 +237,10 @@ defmodule Kudzu.HRR do
     ti = wr * oi_val + wi * or_val
 
     {er, ei} = e
-    butterflies(es, os, half, step, k + 1,
-      [{er + tr, ei + ti} | first_acc],
-      [{er - tr, ei - ti} | second_acc])
+
+    butterflies(es, os, half, step, k + 1, [{er + tr, ei + ti} | first_acc], [
+      {er - tr, ei - ti} | second_acc
+    ])
   end
 
   defp ifft(xs) do
@@ -245,6 +255,7 @@ defmodule Kudzu.HRR do
   end
 
   defp do_split([], _idx, evens, odds), do: {Enum.reverse(evens), Enum.reverse(odds)}
+
   defp do_split([h | t], idx, evens, odds) do
     if rem(idx, 2) == 0 do
       do_split(t, idx + 1, [h | evens], odds)

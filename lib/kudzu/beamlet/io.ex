@@ -26,15 +26,24 @@ defmodule Kudzu.Beamlet.IO do
 
   # Blocked IP ranges for SSRF protection
   @blocked_ip_patterns [
-    ~r/^127\./,                          # Loopback
-    ~r/^10\./,                           # Private Class A
-    ~r/^172\.(1[6-9]|2[0-9]|3[0-1])\./,  # Private Class B
-    ~r/^192\.168\./,                     # Private Class C
-    ~r/^169\.254\./,                     # Link-local / Cloud metadata
-    ~r/^0\./,                            # Current network
-    ~r/^localhost$/i,                    # Localhost hostname
-    ~r/^.*\.internal$/i,                 # Internal domains
-    ~r/^.*\.local$/i                     # Local domains
+    # Loopback
+    ~r/^127\./,
+    # Private Class A
+    ~r/^10\./,
+    # Private Class B
+    ~r/^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+    # Private Class C
+    ~r/^192\.168\./,
+    # Link-local / Cloud metadata
+    ~r/^169\.254\./,
+    # Current network
+    ~r/^0\./,
+    # Localhost hostname
+    ~r/^localhost$/i,
+    # Internal domains
+    ~r/^.*\.internal$/i,
+    # Local domains
+    ~r/^.*\.local$/i
   ]
 
   @impl Kudzu.Beamlet.Behaviour
@@ -48,6 +57,7 @@ defmodule Kudzu.Beamlet.IO do
       {:error, :path_not_allowed} ->
         Logger.warning("IO Beamlet: blocked file_read to disallowed path #{path}")
         {:error, :path_not_allowed}
+
       {:error, reason} ->
         {:error, {:file_error, reason}}
     end
@@ -63,6 +73,7 @@ defmodule Kudzu.Beamlet.IO do
       {:error, :path_not_allowed} ->
         Logger.warning("IO Beamlet: blocked file_write to disallowed path #{path}")
         {:error, :path_not_allowed}
+
       {:error, reason} ->
         {:error, {:file_error, reason}}
     end
@@ -150,7 +161,10 @@ defmodule Kudzu.Beamlet.IO do
 
         # Check if any resolved IP is internal
         if Enum.any?(ips, &internal_ip?/1) do
-          Logger.warning("IO Beamlet: blocked dns_resolve for #{hostname} - resolves to internal IP")
+          Logger.warning(
+            "IO Beamlet: blocked dns_resolve for #{hostname} - resolves to internal IP"
+          )
+
           {:error, :internal_ip_blocked}
         else
           {:ok, ips}

@@ -32,10 +32,12 @@ defmodule KudzuWeb.StorageController do
   def temporal(conn, params) do
     with {:ok, from_dt} <- parse_datetime(params["from"]),
          {:ok, to_dt} <- parse_datetime(params["to"]) do
-      opts = case params["purpose"] do
-        nil -> []
-        p -> [purpose: String.to_existing_atom(p)]
-      end
+      opts =
+        case params["purpose"] do
+          nil -> []
+          p -> [purpose: String.to_existing_atom(p)]
+        end
+
       results = Kudzu.Storage.query_temporal(from_dt, to_dt, opts)
 
       json(conn, %{
@@ -49,6 +51,7 @@ defmodule KudzuWeb.StorageController do
   end
 
   defp parse_datetime(nil), do: {:error, :missing}
+
   defp parse_datetime(str) do
     case DateTime.from_iso8601(str) do
       {:ok, dt, _} -> {:ok, dt}

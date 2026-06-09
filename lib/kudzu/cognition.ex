@@ -102,6 +102,7 @@ defmodule Kudzu.Cognition do
   @spec available?(String.t() | nil) :: boolean()
   def available?(ollama_url \\ nil) do
     url = ollama_url || get_ollama_url()
+
     case Kudzu.HTTP.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5000}]) do
       {:ok, {{_, 200, _}, _, _}} -> true
       _ -> false
@@ -114,11 +115,13 @@ defmodule Kudzu.Cognition do
   @spec list_models(String.t() | nil) :: {:ok, [String.t()]} | {:error, term()}
   def list_models(ollama_url \\ nil) do
     url = ollama_url || get_ollama_url()
+
     case Kudzu.HTTP.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 10_000}]) do
       {:ok, {{_, 200, _}, _, body}} ->
         case Jason.decode(to_string(body)) do
           {:ok, %{"models" => models}} ->
             {:ok, Enum.map(models, & &1["name"])}
+
           _ ->
             {:ok, []}
         end
@@ -132,15 +135,16 @@ defmodule Kudzu.Cognition do
   defp call_ollama(ollama_url, model, prompt, temperature) do
     # Ensure inets is started
 
-    body = Jason.encode!(%{
-      model: model,
-      prompt: prompt,
-      stream: false,
-      options: %{
-        temperature: temperature,
-        num_predict: 512
-      }
-    })
+    body =
+      Jason.encode!(%{
+        model: model,
+        prompt: prompt,
+        stream: false,
+        options: %{
+          temperature: temperature,
+          num_predict: 512
+        }
+      })
 
     request = {
       ~c"#{ollama_url}/api/generate",
@@ -154,8 +158,10 @@ defmodule Kudzu.Cognition do
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"response" => response}} ->
             {:ok, String.trim(response)}
+
           {:ok, other} ->
             {:error, {:unexpected_response, other}}
+
           {:error, reason} ->
             {:error, {:json_decode, reason}}
         end
@@ -172,13 +178,14 @@ defmodule Kudzu.Cognition do
   defp parse_response(response, state) do
     lines = String.split(response, "\n", trim: true)
 
-    {actions, traces} = Enum.reduce(lines, {[], []}, fn line, {acts, trs} ->
-      case parse_action_line(line, state) do
-        {:action, action} -> {[action | acts], trs}
-        {:trace, trace} -> {acts, [trace | trs]}
-        :skip -> {acts, trs}
-      end
-    end)
+    {actions, traces} =
+      Enum.reduce(lines, {[], []}, fn line, {acts, trs} ->
+        case parse_action_line(line, state) do
+          {:action, action} -> {[action | acts], trs}
+          {:trace, trace} -> {acts, [trace | trs]}
+          :skip -> {acts, trs}
+        end
+      end)
 
     {Enum.reverse(actions), Enum.reverse(traces)}
   end
@@ -197,7 +204,9 @@ defmodule Kudzu.Cognition do
         case String.split(line, ":", parts: 3) do
           [_, peer_id, purpose] ->
             {:action, {:query_peer, String.trim(peer_id), safe_to_atom(String.trim(purpose))}}
-          _ -> :skip
+
+          _ ->
+            :skip
         end
 
       # SHARE_TRACE:peer_id:trace_id
@@ -205,7 +214,9 @@ defmodule Kudzu.Cognition do
         case String.split(line, ":", parts: 3) do
           [_, peer_id, trace_id] ->
             {:action, {:share_trace, String.trim(peer_id), String.trim(trace_id)}}
-          _ -> :skip
+
+          _ ->
+            :skip
         end
 
       # UPDATE_DESIRE:new desire text
@@ -239,8 +250,10 @@ defmodule Kudzu.Cognition do
         purpose_atom = purpose |> String.trim() |> safe_to_atom()
         hints = parse_hints(hints_str)
         {:ok, purpose_atom, hints}
+
       [_, purpose] ->
         {:ok, purpose |> String.trim() |> safe_to_atom(), %{}}
+
       _ ->
         :error
     end
@@ -278,6 +291,7 @@ defmodule Kudzu.Cognition do
       Atom.to_string(atom) == normalized
     end)
   end
+
   defp safe_to_atom(_), do: :unknown
 
   defp parse_single_action(response) do

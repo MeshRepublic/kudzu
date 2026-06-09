@@ -73,11 +73,12 @@ defmodule Kudzu.Trace do
     content_hash = compute_content_hash(origin, purpose, reconstruction_hint)
 
     # Use content-addressable ID or random
-    id = if content_addressable do
-      content_hash
-    else
-      generate_id()
-    end
+    id =
+      if content_addressable do
+        content_hash
+      else
+        generate_id()
+      end
 
     # Initialize salience
     salience = Salience.new(importance: importance)
@@ -97,18 +98,26 @@ defmodule Kudzu.Trace do
   @doc """
   Create a trace with an existing vector clock (for receiving traces from peers).
   """
-  @spec new_with_clock(String.t(), atom() | String.t(), VectorClock.t(), [String.t()] | nil, map(), keyword()) :: t()
+  @spec new_with_clock(
+          String.t(),
+          atom() | String.t(),
+          VectorClock.t(),
+          [String.t()] | nil,
+          map(),
+          keyword()
+        ) :: t()
   def new_with_clock(origin, purpose, clock, path \\ nil, reconstruction_hint \\ %{}, opts \\ []) do
     content_addressable = Keyword.get(opts, :content_addressable, true)
     importance = Keyword.get(opts, :importance, :normal)
 
     content_hash = compute_content_hash(origin, purpose, reconstruction_hint)
 
-    id = if content_addressable do
-      content_hash
-    else
-      generate_id()
-    end
+    id =
+      if content_addressable do
+        content_hash
+      else
+        generate_id()
+      end
 
     salience = Salience.new(importance: importance)
 
@@ -134,10 +143,7 @@ defmodule Kudzu.Trace do
   """
   @spec follow(t(), String.t()) :: t()
   def follow(%__MODULE__{path: path, timestamp: clock} = trace, follower_id) do
-    %{trace |
-      path: path ++ [follower_id],
-      timestamp: clock |> VectorClock.increment(follower_id)
-    }
+    %{trace | path: path ++ [follower_id], timestamp: clock |> VectorClock.increment(follower_id)}
   end
 
   @doc """
@@ -154,11 +160,7 @@ defmodule Kudzu.Trace do
     merged_path = merge_paths(t1.path, t2.path)
     merged_hints = Map.merge(t1.reconstruction_hint, t2.reconstruction_hint)
 
-    {:ok, %{t1 |
-      timestamp: merged_clock,
-      path: merged_path,
-      reconstruction_hint: merged_hints
-    }}
+    {:ok, %{t1 | timestamp: merged_clock, path: merged_path, reconstruction_hint: merged_hints}}
   end
 
   def merge(%__MODULE__{}, %__MODULE__{}), do: {:error, :incompatible_traces}
@@ -203,6 +205,7 @@ defmodule Kudzu.Trace do
   """
   @spec on_access(t()) :: t()
   def on_access(%__MODULE__{salience: nil} = trace), do: trace
+
   def on_access(%__MODULE__{salience: salience} = trace) do
     %{trace | salience: Salience.on_access(salience)}
   end
@@ -212,6 +215,7 @@ defmodule Kudzu.Trace do
   """
   @spec on_consolidation(t()) :: t()
   def on_consolidation(%__MODULE__{salience: nil} = trace), do: trace
+
   def on_consolidation(%__MODULE__{salience: salience} = trace) do
     %{trace | salience: Salience.on_consolidation(salience)}
   end
@@ -228,6 +232,7 @@ defmodule Kudzu.Trace do
   """
   @spec verify_integrity(t()) :: boolean()
   def verify_integrity(%__MODULE__{content_hash: nil}), do: true
+
   def verify_integrity(%__MODULE__{} = trace) do
     computed = compute_content_hash(trace.origin, trace.purpose, trace.reconstruction_hint)
     computed == trace.content_hash
@@ -238,6 +243,7 @@ defmodule Kudzu.Trace do
   """
   @spec consolidation_candidate?(t(), keyword()) :: boolean()
   def consolidation_candidate?(%__MODULE__{salience: nil}, _opts), do: false
+
   def consolidation_candidate?(%__MODULE__{salience: salience}, opts) do
     Salience.consolidation_candidate?(salience, opts)
   end
@@ -247,6 +253,7 @@ defmodule Kudzu.Trace do
   """
   @spec archival_candidate?(t(), keyword()) :: boolean()
   def archival_candidate?(%__MODULE__{salience: nil}, _opts), do: false
+
   def archival_candidate?(%__MODULE__{salience: salience}, opts) do
     Salience.archival_candidate?(salience, opts)
   end
@@ -270,10 +277,11 @@ defmodule Kudzu.Trace do
     purpose_str = if is_atom(purpose), do: Atom.to_string(purpose), else: purpose
 
     # Sort hint keys for consistency
-    hint_str = reconstruction_hint
-    |> Enum.sort_by(fn {k, _v} -> to_string(k) end)
-    |> Enum.map(fn {k, v} -> "#{k}:#{inspect(v)}" end)
-    |> Enum.join("|")
+    hint_str =
+      reconstruction_hint
+      |> Enum.sort_by(fn {k, _v} -> to_string(k) end)
+      |> Enum.map(fn {k, v} -> "#{k}:#{inspect(v)}" end)
+      |> Enum.join("|")
 
     content = "#{origin}|#{purpose_str}|#{hint_str}"
 

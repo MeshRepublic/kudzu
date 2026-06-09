@@ -3,7 +3,8 @@ defmodule Kudzu.HologramTest do
 
   alias Kudzu.{Hologram, Application}
 
-  @moduletag timeout: 300_000  # 5 minutes for large tests
+  # 5 minutes for large tests
+  @moduletag timeout: 300_000
 
   describe "basic hologram operations" do
     test "spawns and records traces" do
@@ -101,9 +102,10 @@ defmodule Kudzu.HologramTest do
       holograms
       |> Task.async_stream(
         fn {_id, pid} ->
-          peers = holograms
-          |> Enum.reject(fn {_, p} -> p == pid end)
-          |> Enum.take_random(connections_per_node)
+          peers =
+            holograms
+            |> Enum.reject(fn {_, p} -> p == pid end)
+            |> Enum.take_random(connections_per_node)
 
           Enum.each(peers, fn {peer_id, _peer_pid} ->
             Hologram.introduce_peer(pid, peer_id)
@@ -124,38 +126,43 @@ defmodule Kudzu.HologramTest do
 
       trace_purposes = [:memory, :interaction, :observation]
 
-      all_traces = holograms
-      |> Task.async_stream(
-        fn {id, pid} ->
-          Enum.map(1..traces_per_node, fn i ->
-            purpose = Enum.at(trace_purposes, rem(i, 3))
-            {:ok, trace} = Hologram.record_trace(pid, purpose, %{
-              node: id,
-              index: i,
-              data: :crypto.strong_rand_bytes(32) |> Base.encode64()
-            })
+      all_traces =
+        holograms
+        |> Task.async_stream(
+          fn {id, pid} ->
+            Enum.map(1..traces_per_node, fn i ->
+              purpose = Enum.at(trace_purposes, rem(i, 3))
 
-            # Share with random peers
-            peers = Hologram.get_peers(pid)
-            share_targets = peers
-            |> Map.keys()
-            |> Enum.take_random(3)
+              {:ok, trace} =
+                Hologram.record_trace(pid, purpose, %{
+                  node: id,
+                  index: i,
+                  data: :crypto.strong_rand_bytes(32) |> Base.encode64()
+                })
 
-            Enum.each(share_targets, fn peer_id ->
-              case Application.find_by_id(peer_id) do
-                {:ok, peer_pid} -> Hologram.receive_trace(peer_pid, trace, id)
-                _ -> :ok
-              end
+              # Share with random peers
+              peers = Hologram.get_peers(pid)
+
+              share_targets =
+                peers
+                |> Map.keys()
+                |> Enum.take_random(3)
+
+              Enum.each(share_targets, fn peer_id ->
+                case Application.find_by_id(peer_id) do
+                  {:ok, peer_pid} -> Hologram.receive_trace(peer_pid, trace, id)
+                  _ -> :ok
+                end
+              end)
+
+              {trace.id, trace.purpose}
             end)
-
-            {trace.id, trace.purpose}
-          end)
-        end,
-        max_concurrency: System.schedulers_online() * 4,
-        ordered: false,
-        timeout: 120_000
-      )
-      |> Enum.flat_map(fn {:ok, traces} -> traces end)
+          end,
+          max_concurrency: System.schedulers_online() * 4,
+          ordered: false,
+          timeout: 120_000
+        )
+        |> Enum.flat_map(fn {:ok, traces} -> traces end)
 
       trace_time = System.monotonic_time(:millisecond) - start_time
       IO.puts("Recorded #{length(all_traces)} traces in #{trace_time}ms")
@@ -172,9 +179,11 @@ defmodule Kudzu.HologramTest do
       _survivor_ids = MapSet.new(survivors, fn {id, _} -> id end)
 
       start_time = System.monotonic_time(:millisecond)
+
       Enum.each(to_kill, fn {_id, pid} ->
         Application.stop_hologram(pid)
       end)
+
       kill_time = System.monotonic_time(:millisecond) - start_time
 
       IO.puts("Killed #{num_to_kill} holograms in #{kill_time}ms")
@@ -191,13 +200,14 @@ defmodule Kudzu.HologramTest do
       IO.puts("Post-kill trace counts: #{inspect(post_kill_counts)}")
 
       # Test network queries from random survivors
-      query_results = survivors
-      |> Enum.take_random(50)
-      |> Enum.map(fn {_id, pid} ->
-        purpose = Enum.random(trace_purposes)
-        traces = Kudzu.network_query(pid, purpose, max_hops: 3, max_results: 20)
-        {purpose, length(traces)}
-      end)
+      query_results =
+        survivors
+        |> Enum.take_random(50)
+        |> Enum.map(fn {_id, pid} ->
+          purpose = Enum.random(trace_purposes)
+          traces = Kudzu.network_query(pid, purpose, max_hops: 3, max_results: 20)
+          {purpose, length(traces)}
+        end)
 
       successful_queries = Enum.count(query_results, fn {_, count} -> count > 0 end)
       query_time = System.monotonic_time(:millisecond) - start_time
@@ -218,8 +228,11 @@ defmodule Kudzu.HologramTest do
       IO.puts("Successful network queries: #{successful_queries}/50")
 
       # With 10 connections per node and 30% kill rate, we expect good recovery
-      assert recovery_rate >= 0.5, "Expected at least 50% trace recovery, got #{recovery_rate * 100}%"
-      assert successful_queries >= 25, "Expected at least 50% successful queries, got #{successful_queries}/50"
+      assert recovery_rate >= 0.5,
+             "Expected at least 50% trace recovery, got #{recovery_rate * 100}%"
+
+      assert successful_queries >= 25,
+             "Expected at least 50% successful queries, got #{successful_queries}/50"
 
       IO.puts("\n✓ Network survived #{round(kill_percentage * 100)}% node loss")
       IO.puts("✓ Context reconstruction via alternate paths verified")
@@ -230,19 +243,20 @@ defmodule Kudzu.HologramTest do
   defp count_traces_by_purpose(holograms, purposes) do
     purposes
     |> Enum.map(fn purpose ->
-      count = holograms
-      |> Task.async_stream(
-        fn {_id, pid} ->
-          if Process.alive?(pid) do
-            length(Hologram.recall(pid, purpose))
-          else
-            0
-          end
-        end,
-        max_concurrency: System.schedulers_online() * 2,
-        ordered: false
-      )
-      |> Enum.reduce(0, fn {:ok, c}, acc -> acc + c end)
+      count =
+        holograms
+        |> Task.async_stream(
+          fn {_id, pid} ->
+            if Process.alive?(pid) do
+              length(Hologram.recall(pid, purpose))
+            else
+              0
+            end
+          end,
+          max_concurrency: System.schedulers_online() * 2,
+          ordered: false
+        )
+        |> Enum.reduce(0, fn {:ok, c}, acc -> acc + c end)
 
       {purpose, count}
     end)

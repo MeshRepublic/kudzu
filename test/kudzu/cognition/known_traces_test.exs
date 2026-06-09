@@ -196,5 +196,4 @@ defmodule Kudzu.Cognition.KnownTracesTest do
       assert Enum.all?(results, & &1), "all concurrent reads should observe the marked trace"
     end
   end
-
 end

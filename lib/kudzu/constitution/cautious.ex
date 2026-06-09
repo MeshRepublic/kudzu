@@ -85,7 +85,8 @@ defmodule Kudzu.Constitution.Cautious do
     # Aggressively constrain desires
     desires
     |> Enum.map(&sanitize_desire/1)
-    |> Enum.take(3)  # Limit number of active desires
+    # Limit number of active desires
+    |> Enum.take(3)
     |> add_caution_desire(state)
   end
 
@@ -156,7 +157,10 @@ defmodule Kudzu.Constitution.Cautious do
   # Private
 
   defp normalize_action({type, params}) when is_atom(type) and is_map(params), do: {type, params}
-  defp normalize_action({type, _purpose, params}) when is_atom(type) and is_map(params), do: {type, params}
+
+  defp normalize_action({type, _purpose, params}) when is_atom(type) and is_map(params),
+    do: {type, params}
+
   defp normalize_action({type, params}) when is_binary(type), do: {String.to_atom(type), params}
   defp normalize_action(type) when is_atom(type), do: {type, %{}}
   # Catch-all for malformed actions from LLM parsing
@@ -178,6 +182,7 @@ defmodule Kudzu.Constitution.Cautious do
 
   defp add_caution_desire(desires, _state) do
     caution = "Proceed carefully and verify before acting"
+
     if caution in desires do
       desires
     else

@@ -12,9 +12,15 @@ defmodule Kudzu.Protocol do
 
   alias Kudzu.{VectorClock, Trace}
 
-  @type message_type :: :ping | :pong | :query | :query_response |
-                        :trace_share | :ack | :reconstruction_request |
-                        :reconstruction_response
+  @type message_type ::
+          :ping
+          | :pong
+          | :query
+          | :query_response
+          | :trace_share
+          | :ack
+          | :reconstruction_request
+          | :reconstruction_response
 
   @type message :: map()
 
@@ -134,9 +140,10 @@ defmodule Kudzu.Protocol do
   def encode(message) do
     try do
       # Convert VectorClock to serializable format
-      serializable = message
-      |> Map.update(:timestamp, nil, &VectorClock.to_map/1)
-      |> maybe_serialize_trace()
+      serializable =
+        message
+        |> Map.update(:timestamp, nil, &VectorClock.to_map/1)
+        |> maybe_serialize_trace()
 
       {:ok, :erlang.term_to_binary(serializable, [:compressed])}
     rescue
@@ -145,9 +152,16 @@ defmodule Kudzu.Protocol do
   end
 
   # Allowlist of valid message type atoms
-  @valid_message_types [:ping, :pong, :query, :query_response,
-                        :trace_share, :ack, :reconstruction_request,
-                        :reconstruction_response]
+  @valid_message_types [
+    :ping,
+    :pong,
+    :query,
+    :query_response,
+    :trace_share,
+    :ack,
+    :reconstruction_request,
+    :reconstruction_response
+  ]
 
   @doc """
   Decode a binary message back to a map.
@@ -164,9 +178,10 @@ defmodule Kudzu.Protocol do
       with %{type: type} <- decoded,
            true <- type in @valid_message_types do
         # Reconstruct VectorClock
-        message = decoded
-        |> Map.update(:timestamp, VectorClock.new(nil), &VectorClock.from_map/1)
-        |> maybe_deserialize_trace()
+        message =
+          decoded
+          |> Map.update(:timestamp, VectorClock.new(nil), &VectorClock.from_map/1)
+          |> maybe_deserialize_trace()
 
         {:ok, message}
       else
@@ -185,6 +200,7 @@ defmodule Kudzu.Protocol do
       when is_atom(type) and is_binary(origin) and is_struct(ts, VectorClock) do
     true
   end
+
   def valid?(_), do: false
 
   @doc """
@@ -200,20 +216,29 @@ defmodule Kudzu.Protocol do
   defp maybe_serialize_trace(%{trace: %Trace{} = trace} = msg) do
     Map.put(msg, :trace, trace_to_map(trace))
   end
+
   defp maybe_serialize_trace(%{traces: traces} = msg) when is_list(traces) do
     Map.put(msg, :traces, Enum.map(traces, &trace_to_map/1))
   end
+
   defp maybe_serialize_trace(msg), do: msg
 
-  defp maybe_deserialize_trace(%{trace: trace_map} = msg) when is_map(trace_map) and not is_struct(trace_map) do
+  defp maybe_deserialize_trace(%{trace: trace_map} = msg)
+       when is_map(trace_map) and not is_struct(trace_map) do
     Map.put(msg, :trace, map_to_trace(trace_map))
   end
+
   defp maybe_deserialize_trace(%{traces: traces} = msg) when is_list(traces) do
-    Map.put(msg, :traces, Enum.map(traces, fn
-      t when is_map(t) and not is_struct(t) -> map_to_trace(t)
-      t -> t
-    end))
+    Map.put(
+      msg,
+      :traces,
+      Enum.map(traces, fn
+        t when is_map(t) and not is_struct(t) -> map_to_trace(t)
+        t -> t
+      end)
+    )
   end
+
   defp maybe_deserialize_trace(msg), do: msg
 
   defp trace_to_map(%Trace{} = trace) do

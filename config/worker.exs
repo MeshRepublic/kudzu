@@ -9,5 +9,4 @@ config :kudzu,
   default_model: "mistral:latest"
 
 # Worker doesn't serve web — but still configure endpoint in case needed
-config :kudzu, KudzuWeb.MCP.Endpoint,
-  server: false
+config :kudzu, KudzuWeb.MCP.Endpoint, server: false

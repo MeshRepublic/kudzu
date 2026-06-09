@@ -52,7 +52,8 @@ defmodule Kudzu.TraceTest do
 
     test "rejects incompatible traces" do
       t1 = Trace.new("agent-1", :test)
-      t2 = Trace.new("agent-2", :test)  # Different origin
+      # Different origin
+      t2 = Trace.new("agent-2", :test)
 
       assert {:error, :incompatible_traces} = Trace.merge(t1, t2)
     end
@@ -84,9 +85,10 @@ defmodule Kudzu.TraceTest do
     end
 
     test "add_hint adds reconstruction metadata" do
-      trace = Trace.new("a", :test)
-      |> Trace.add_hint(:key1, "value1")
-      |> Trace.add_hint(:key2, "value2")
+      trace =
+        Trace.new("a", :test)
+        |> Trace.add_hint(:key1, "value1")
+        |> Trace.add_hint(:key2, "value2")
 
       assert trace.reconstruction_hint == %{key1: "value1", key2: "value2"}
     end
