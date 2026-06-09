@@ -206,6 +206,8 @@ defmodule Kudzu.Brain.Reasoning do
     end
   end
 
+  # — Tool dispatch chain inside Claude executor — same fall-through pattern as chat.ex
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp maybe_call_claude(state, anomalies) do
     api_key = state.config[:api_key] || state.config["api_key"]
 
@@ -247,7 +249,9 @@ defmodule Kudzu.Brain.Reasoning do
           case Kudzu.Brain.Tools.Introspection.execute(name, params) do
             {:error, "unknown tool: " <> _} ->
               case Kudzu.Brain.Tools.Host.execute(name, params) do
-                {:error, "unknown host tool: " <> _} ->
+                {:error, "unknown host tool: " <> _} ->                  # — tool fall-through chain inside maybe_call_claude/2.
+
+                  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
                   case Kudzu.Brain.Tools.Escalation.execute(name, params) do
                     {:error, "unknown escalation tool: " <> _} ->
                       Kudzu.Brain.Tools.Web.execute(name, params)

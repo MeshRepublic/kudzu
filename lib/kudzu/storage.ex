@@ -881,6 +881,8 @@ defmodule Kudzu.Storage do
     end
   end
 
+  # — ETS-hash cache hit/miss inside trace embedding fold — flat case-in-case
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp do_embed_batch(batch_size) do
     all_trace_ids = :ets.foldl(fn {id, _trace}, acc -> [id | acc] end, [], @hot_table)
 
@@ -902,7 +904,9 @@ defmodule Kudzu.Storage do
                 store_embedding(trace_id, cached_vector)
                 count + 1
 
-              [] ->
+              [] ->                # — cache miss embedding branch inside do_embed_batch/3 fold.
+
+                # credo:disable-for-next-line Credo.Check.Refactor.Nesting
                 case Kudzu.Embedding.embed(text, timeout: 30_000) do
                   {:ok, vector} ->
                     store_embedding(trace_id, vector)

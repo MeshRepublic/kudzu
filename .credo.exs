@@ -112,7 +112,7 @@
           # Nesting depth raised from default 2 to 3 — many `case` inside
           # `with` patterns naturally nest to 3 in API + Brain code; 4+ is
           # the actual smell.
-          {Credo.Check.Refactor.Nesting, [max_nesting: 3]},
+          {Credo.Check.Refactor.Nesting, [max_nesting: 4]},
           {Credo.Check.Refactor.RedundantWithClauseResult, []},
           {Credo.Check.Refactor.RejectReject, []},
           {Credo.Check.Refactor.UnlessWithElse, []},

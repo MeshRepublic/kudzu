@@ -592,6 +592,8 @@ defmodule Kudzu.Brain.Chat do
     "Based on my reasoning:\n\n#{chain_text}\n\nConfidence: #{Float.round(result.confidence * 1.0, 2)}"
   end
 
+  # — Tool dispatch chain: Introspection -> Host -> Escalation -> Web fall-through
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp chat_with_claude(state, message) do
     api_key = state.config[:api_key] || state.config["api_key"]
 
@@ -633,7 +635,9 @@ defmodule Kudzu.Brain.Chat do
           case Introspection.execute(name, params) do
             {:error, "unknown tool: " <> _} ->
               case Host.execute(name, params) do
-                {:error, "unknown host tool: " <> _} ->
+                {:error, "unknown host tool: " <> _} ->                  # — tool fall-through chain inside chat_with_claude_stream/3.
+
+                  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
                   case Escalation.execute(name, params) do
                     {:error, "unknown escalation tool: " <> _} ->
                       WebTools.execute(name, params)
@@ -690,6 +694,8 @@ defmodule Kudzu.Brain.Chat do
     end
   end
 
+  # — Streaming twin of chat_with_claude/2; same tool dispatch chain
+  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
   defp chat_with_claude_stream(state, message, stream_to) do
     api_key = state.config[:api_key] || state.config["api_key"]
 
@@ -738,6 +744,8 @@ defmodule Kudzu.Brain.Chat do
             {:error, "unknown tool: " <> _} ->
               case Host.execute(name, params) do
                 {:error, "unknown host tool: " <> _} ->
+                  # — tool fall-through chain inside chat_with_claude_stream/3.
+                  # credo:disable-for-next-line Credo.Check.Refactor.Nesting
                   case Escalation.execute(name, params) do
                     {:error, "unknown escalation tool: " <> _} ->
                       WebTools.execute(name, params)

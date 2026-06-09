@@ -13,10 +13,10 @@ defmodule Kudzu.Beamlet.Base do
   # health-check tick) into the using module. The quote block intentionally
   # spans 200+ lines because splitting it would require multiple smaller quote
   # blocks with unquote_splicing seams that hurt readability more than help.
-  # credo:disable-for-next-line Credo.Check.Refactor.LongQuoteBlocks
   defmacro __using__(opts) do
     capabilities = Keyword.get(opts, :capabilities, [])
 
+    # credo:disable-for-next-line Credo.Check.Refactor.LongQuoteBlocks
     quote do
       use GenServer
       @behaviour Kudzu.Beamlet.Behaviour
