@@ -18,6 +18,12 @@ defmodule KudzuWeb.MetricsController do
       _ -> %{status: :not_running}
     end
 
+    known_traces_stats = try do
+      Kudzu.Cognition.KnownTraces.stats()
+    rescue
+      _ -> %{sessions: 0, traces_known: 0}
+    end
+
     metrics = %{
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
       storage: %{
@@ -32,6 +38,7 @@ defmodule KudzuWeb.MetricsController do
         active_count: hologram_count
       },
       consolidation: consolidation_status,
+      known_traces: known_traces_stats,
       brain: brain_status,
       node: %{
         uptime_seconds: node_uptime(),
