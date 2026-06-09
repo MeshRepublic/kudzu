@@ -28,6 +28,12 @@ defmodule Kudzu.Storage do
 
   @hot_table :kudzu_traces_hot
 
+  # Cold-tier Mnesia table name. Must match Kudzu.Storage.MnesiaSchema's
+  # @trace_table so reads and writes hit the same table. The mismatch
+  # between Storage's old :kudzu_traces and MnesiaSchema's :kudzu_cold_traces
+  # was the bug that kept the cold tier empty.
+  @cold_table :kudzu_cold_traces
+
   # Embedding storage (separate from traces for performance)
   @embedding_table :kudzu_embeddings
   @content_hash_table :kudzu_content_hashes
@@ -110,6 +116,22 @@ defmodule Kudzu.Storage do
     GenServer.call(__MODULE__, :age_traces, 60_000)
   end
 
+  @doc """
+  Demote a specific trace from the warm DETS tier into Mnesia cold storage.
+
+  Returns `:ok` if the trace was found in warm tier and written to cold,
+  `:not_found` if the trace was not in warm tier, or `{:error, reason}` if
+  the Mnesia transaction failed. After a successful demotion the trace is
+  no longer in the warm DETS and is readable only via the cold tier.
+
+  Used by `Kudzu.Consolidation.archive_stale_traces/1` and by tests that
+  need to exercise the cold-tier read path.
+  """
+  @spec demote_to_cold(String.t()) :: :ok | :not_found | {:error, term()}
+  def demote_to_cold(trace_id) do
+    GenServer.call(__MODULE__, {:demote_to_cold, trace_id}, 30_000)
+  end
+
   @doc "Get storage statistics"
   def stats do
     GenServer.call(__MODULE__, :stats)
@@ -185,7 +207,7 @@ defmodule Kudzu.Storage do
       case :mnesia.system_info(:is_running) do
         :yes ->
           tables = :mnesia.system_info(:tables)
-          :kudzu_traces in tables
+          @cold_table in tables
         _ ->
           false
       end
@@ -291,6 +313,28 @@ defmodule Kudzu.Storage do
   def handle_call(:age_traces, _from, state) do
     {demoted_to_warm, demoted_to_cold} = do_age_traces()
     {:reply, %{to_warm: demoted_to_warm, to_cold: demoted_to_cold}, state}
+  end
+
+  @impl true
+  def handle_call({:demote_to_cold, trace_id}, _from, state) do
+    result =
+      case :dets.lookup(warm_file(), trace_id) do
+        [{^trace_id, record}] ->
+          case write_cold(record) do
+            :ok ->
+              :dets.delete(warm_file(), trace_id)
+              :ets.delete(@hot_table, trace_id)
+              :ok
+
+            {:error, _} = err ->
+              err
+          end
+
+        [] ->
+          :not_found
+      end
+
+    {:reply, result, state}
   end
 
   @impl true
@@ -532,7 +576,7 @@ defmodule Kudzu.Storage do
 
   defp mnesia_size do
     try do
-      :mnesia.table_info(:kudzu_traces, :size)
+      :mnesia.table_info(@cold_table, :size)
     rescue
       _ -> 0
     end
@@ -562,7 +606,7 @@ defmodule Kudzu.Storage do
           else
             acc
           end
-        end, [], :kudzu_traces)
+        end, [], @cold_table)
       end)
       results
     rescue
@@ -607,9 +651,40 @@ defmodule Kudzu.Storage do
     deleted
   end
 
+  # Write a TraceRecord to the Mnesia cold tier. Returns :ok on success
+  # or {:error, reason} if the transaction aborts or Mnesia is unavailable.
+  # Used by demote_to_cold and by Kudzu.Consolidation.archive_stale_traces.
+  defp write_cold(%TraceRecord{} = record) do
+    try do
+      result =
+        :mnesia.transaction(fn ->
+          :mnesia.write({@cold_table,
+            record.id,
+            record.hologram_id,
+            record.purpose,
+            record.reconstruction_hint,
+            record.origin,
+            record.path,
+            record.clock,
+            record.created_at,
+            record.last_accessed,
+            record.access_count,
+            record.importance
+          })
+        end)
+
+      case result do
+        {:atomic, :ok} -> :ok
+        {:aborted, reason} -> {:error, reason}
+      end
+    rescue
+      e -> {:error, e}
+    end
+  end
+
   defp retrieve_cold(trace_id) do
     try do
-      case :mnesia.transaction(fn -> :mnesia.read({:kudzu_traces, trace_id}) end) do
+      case :mnesia.transaction(fn -> :mnesia.read({@cold_table, trace_id}) end) do
         {:atomic, [{_, id, hologram_id, purpose, hint, origin, path, clock, created, accessed, count, importance}]} ->
           {:ok, %TraceRecord{
             id: id,

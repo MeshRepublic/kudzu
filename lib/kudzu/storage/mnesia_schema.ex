@@ -47,20 +47,32 @@ defmodule Kudzu.Storage.MnesiaSchema do
   @doc """
   Initialize Mnesia on this node (run on each node).
 
-  Mnesia's `:dir` env var must be set BEFORE `:mnesia.start/0` is called,
-  because it is read once at start. We derive the directory from the
-  `:data_root` runtime config so test runs land in a /tmp path and never
-  share a directory with the production node.
+  Mnesia's `:dir` env var is read once at start, so if Mnesia is already
+  running on the default dir (because it is in :extra_applications and OTP
+  auto-started it), we stop it first, point it at the data_root-derived
+  directory, then restart. We derive the directory from the `:data_root`
+  runtime config so test runs land in a /tmp path and never share a
+  directory with the production node.
   """
   def init_node do
     mnesia_dir = String.to_charlist(Path.join([data_root(), "mnesia", to_string(node())]))
     File.mkdir_p!(to_string(mnesia_dir))
+
+    # If Mnesia is already running on the wrong dir, stop it so the new
+    # :dir env takes effect on restart.
+    if :mnesia.system_info(:is_running) == :yes do
+      configured = Application.get_env(:mnesia, :dir)
+
+      if configured != mnesia_dir do
+        :mnesia.stop()
+      end
+    end
+
     Application.put_env(:mnesia, :dir, mnesia_dir)
 
-    # Start Mnesia
     case :mnesia.start() do
       :ok ->
-        Logger.info("Mnesia started on #{node()}")
+        Logger.info("Mnesia started on #{node()} (dir: #{mnesia_dir})")
         :ok
       {:error, reason} ->
         Logger.error("Failed to start Mnesia: #{inspect(reason)}")
