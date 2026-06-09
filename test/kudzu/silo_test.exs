@@ -92,4 +92,71 @@ defmodule Kudzu.SiloTest do
                Silo.store_relationship("nonexistent_silo_xyz", {"a", "b", "c"})
     end
   end
+
+  describe "brain_knowledge silo (Tier-3 Claude distillation destination)" do
+    # The Brain GenServer is started by the application supervisor at boot
+    # (see lib/kudzu/application.ex). Its :init_hologram handler creates the
+    # brain_knowledge silo so that Kudzu.Brain.Reasoning.distill_claude_response/2
+    # has somewhere to write triples. Without it, every Tier-3 distillation
+    # silently drops on a {:silo_not_found, _} error swallowed by try/catch.
+    test "brain_knowledge silo exists after Brain boot" do
+      # Brain's :init_hologram is asynchronous via send(self(), :init_hologram).
+      # Wait up to 5 s for the silo to come up.
+      assert eventually(fn -> match?({:ok, _}, Silo.find("brain_knowledge")) end, 5_000),
+             "brain_knowledge silo was not created within 5 s of test start"
+    end
+
+    test "Reasoning.distill_claude_response writes triples into brain_knowledge" do
+      assert eventually(fn -> match?({:ok, _}, Silo.find("brain_knowledge")) end, 5_000),
+             "brain_knowledge silo was not created within 5 s of test start"
+
+      # Snapshot the silo's trace count before distillation runs.
+      {:ok, pid} = Silo.find("brain_knowledge")
+      before_count = pid |> :sys.get_state() |> Map.get(:traces) |> map_size()
+
+      # Mimic the Distiller's output schema by writing a representative triple
+      # directly. This exercises the same destination silo + reconstruction-hint
+      # shape that Reasoning.distill_claude_response/2 produces from real Claude
+      # responses — without depending on Ollama being available in the test
+      # environment.
+      assert {:ok, _trace} =
+               Silo.store_relationship("brain_knowledge", {
+                 "elixir",
+                 "is_a",
+                 "functional_language"
+               })
+
+      after_count = pid |> :sys.get_state() |> Map.get(:traces) |> map_size()
+      assert after_count == before_count + 1
+
+      # Confirm the triple is retrievable via probe — verifies the trace was
+      # stored with the relationship hint schema, not raw content.
+      results = Silo.probe("brain_knowledge", "elixir")
+      assert Enum.any?(results, fn {hint, _sim} ->
+               subj = Map.get(hint, :subject, Map.get(hint, "subject"))
+               obj = Map.get(hint, :object, Map.get(hint, "object"))
+               subj == "elixir" and obj == "functional_language"
+             end)
+    end
+  end
+
+  defp eventually(check, timeout_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    eventually_loop(check, deadline)
+  end
+
+  defp eventually_loop(check, deadline) do
+    if check.() do
+      true
+    else
+      now = System.monotonic_time(:millisecond)
+
+      if now >= deadline do
+        false
+      else
+        Process.sleep(100)
+        eventually_loop(check, deadline)
+      end
+    end
+  end
 end

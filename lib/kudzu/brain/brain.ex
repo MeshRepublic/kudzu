@@ -296,6 +296,27 @@ defmodule Kudzu.Brain do
           kind, reason ->
             Logger.warning("[Brain] Self-model init failed: #{inspect({kind, reason})}")
         end
+
+        # brain_knowledge silo — destination for triples distilled out of
+        # Claude responses (Tier 3 reasoning). Created here at boot so
+        # `Kudzu.Brain.Reasoning.distill_claude_response/2` never silently
+        # drops triples on a missing-silo path.
+        try do
+          case Kudzu.Silo.create("brain_knowledge") do
+            {:ok, _silo_pid} ->
+              Logger.info("[Brain] brain_knowledge silo ready")
+
+            {:error, reason} ->
+              Logger.warning(
+                "[Brain] brain_knowledge silo init failed: #{inspect(reason)}"
+              )
+          end
+        catch
+          kind, reason ->
+            Logger.warning(
+              "[Brain] brain_knowledge silo init crashed: #{inspect({kind, reason})}"
+            )
+        end
         new_state = %{state | hologram_pid: pid, hologram_id: id}
         new_state = %{new_state | working_memory: WorkingMemory.new()}
         # Restore persisted learning goals
