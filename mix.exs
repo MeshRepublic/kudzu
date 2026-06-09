@@ -8,6 +8,7 @@ defmodule Kudzu.MixProject do
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       # Enable all schedulers for 128 core usage
       elixirc_options: [warnings_as_errors: true],
       dialyzer: [
@@ -35,6 +36,18 @@ defmodule Kudzu.MixProject do
     [
       extra_applications: [:logger, :crypto, :inets, :ssl, :mnesia],
       mod: {Kudzu.Application, []}
+    ]
+  end
+
+  defp aliases do
+    [
+      #  runs the full static-analysis gate (format, credo,
+      # dialyzer). Wire into CI; in dev run individually for faster feedback.
+      quality: [
+        "format --check-formatted",
+        "credo --strict",
+        "dialyzer --halt-exit-status"
+      ]
     ]
   end
 
