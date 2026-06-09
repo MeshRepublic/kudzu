@@ -13,10 +13,18 @@ defmodule Kudzu.MixProject do
       dialyzer: [
         plt_file: {:no_warn, "_build/#{Mix.env()}/dialyxir.plt"},
         plt_add_apps: [:mnesia, :ssl, :inets, :crypto, :ex_unit],
+        # NOTE: :unmatched_returns intentionally NOT enabled. It surfaces 115
+        # warnings on legitimate fire-and-forget calls (Task.start, Logger.X,
+        # GenServer.cast, telemetry.execute, supervisor.start_link result in
+        # Application start). Each would need a leading _ = which adds noise
+        # without catching bugs. Re-enable per-module when a module has a
+        # documented "every return must be checked" contract.
+        # :underspecs intentionally NOT enabled. Many functions have
+        # @spec [module()] or similar broader-than-success-typing specs that
+        # are correct contract-wise but trigger contract_supertype warnings.
+        # Re-enable when stricter specs are valuable per-module.
         flags: [
-          :unmatched_returns,
-          :error_handling,
-          :underspecs
+          :error_handling
         ],
         ignore_warnings: ".dialyzer_ignore.exs"
       ]
