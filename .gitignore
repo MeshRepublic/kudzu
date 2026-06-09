@@ -34,3 +34,7 @@ erl_crash.dump
 
 # Redis dump
 dump.rdb
+
+# dialyxir PLT files
+_build/*/dialyxir*.plt
+_build/*/dialyxir*.plt.hash
