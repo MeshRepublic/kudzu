@@ -21,6 +21,17 @@ config :kudzu, :api_auth,
   enabled: true,
   api_keys: String.split(kudzu_api_key, ",", trim: true)
 
+# Runtime data root for DETS warm files and Mnesia cold tier.
+# Tests override this in config/test.exs to an isolated /tmp path so they
+# never touch production DETS files / Mnesia node directories. For dev /
+# prod / worker, default to /home/eel/kudzu_data unless KUDZU_DATA_ROOT
+# is set in the environment.
+if config_env() != :test do
+  data_root = System.get_env("KUDZU_DATA_ROOT") || "/home/eel/kudzu_data"
+  File.mkdir_p!(data_root)
+  config :kudzu, :data_root, data_root
+end
+
 # Worker node configuration — point Ollama to titan, disable web endpoint
 if System.get_env("KUDZU_ROLE") == "worker" do
   ollama_host = System.get_env("KUDZU_OLLAMA_HOST", "100.70.67.110")

@@ -7,3 +7,11 @@ import Config
 # CUDA / NCCL installed.
 config :nx, :default_backend, Nx.BinaryBackend
 config :nx, :default_defn_options, []
+
+# Isolated data root for tests — never touches production DETS / Mnesia.
+# Unique per `mix test` invocation so back-to-back runs do not collide
+# on left-over DETS files. The directory is created here so module-level
+# `init/1` callbacks can open DETS files inside it immediately.
+test_root = Path.join(System.tmp_dir!(), "kudzu-test-#{System.system_time(:millisecond)}")
+File.mkdir_p!(test_root)
+config :kudzu, :data_root, test_root
