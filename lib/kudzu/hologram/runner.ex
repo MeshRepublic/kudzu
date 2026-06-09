@@ -16,8 +16,8 @@ defmodule Kudzu.Hologram.Runner do
   use GenServer
   require Logger
 
-  alias Kudzu.{Constitution, Hologram}
   alias Kudzu.Brain.Vectors.Router, as: VectorRouter
+  alias Kudzu.{Constitution, Hologram}
 
   @default_cycle_interval 60_000
   @research_cooldown 300_000

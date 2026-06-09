@@ -21,7 +21,7 @@ defmodule KudzuWeb.MCP.Router do
       {:error, :invalid_request} ->
         conn
         |> put_resp_content_type("application/json")
-        |> send_resp(400, Jason.encode!(Protocol.encode_error(nil, -32700, "Parse error")))
+        |> send_resp(400, Jason.encode!(Protocol.encode_error(nil, -32_700, "Parse error")))
 
       parsed ->
         result = Controller.dispatch(parsed)

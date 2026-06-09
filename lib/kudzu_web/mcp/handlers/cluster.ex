@@ -21,8 +21,8 @@ defmodule KudzuWeb.MCP.Handlers.Cluster do
 
     case Node.connect(node) do
       true -> {:ok, %{connected: true, node: node_str}}
-      false -> {:error, -32603, "Failed to connect to #{node_str}"}
-      :ignored -> {:error, -32603, "Node not alive — start with --name or --sname"}
+      false -> {:error, -32_603, "Failed to connect to #{node_str}"}
+      :ignored -> {:error, -32_603, "Node not alive — start with --name or --sname"}
     end
   end
 

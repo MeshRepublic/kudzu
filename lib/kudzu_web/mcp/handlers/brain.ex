@@ -11,10 +11,10 @@ defmodule KudzuWeb.MCP.Handlers.Brain do
     if api_key in configured_keys do
       case Kudzu.Brain.chat(message) do
         {:ok, result} -> {:ok, result}
-        {:error, reason} -> {:error, -32603, inspect(reason)}
+        {:error, reason} -> {:error, -32_603, inspect(reason)}
       end
     else
-      {:error, -32602, "Invalid or missing api_key"}
+      {:error, -32_602, "Invalid or missing api_key"}
     end
   end
 
@@ -35,5 +35,5 @@ defmodule KudzuWeb.MCP.Handlers.Brain do
      }}
   end
 
-  def handle(tool, _args), do: {:error, -32602, "Unknown brain tool: #{tool}"}
+  def handle(tool, _args), do: {:error, -32_602, "Unknown brain tool: #{tool}"}
 end

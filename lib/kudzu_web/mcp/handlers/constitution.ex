@@ -20,7 +20,7 @@ defmodule KudzuWeb.MCP.Handlers.Constitution do
     if atom in @frameworks do
       {:ok, %{name: atom, principles: Constitution.principles(atom)}}
     else
-      {:error, -32602, "Unknown constitution: #{name}"}
+      {:error, -32_602, "Unknown constitution: #{name}"}
     end
   end
 
@@ -33,7 +33,7 @@ defmodule KudzuWeb.MCP.Handlers.Constitution do
       result = Constitution.permitted?(atom, action_tuple, %{})
       {:ok, %{constitution: atom, action: action, result: format_decision(result)}}
     else
-      {:error, -32602, "Unknown constitution: #{name}"}
+      {:error, -32_602, "Unknown constitution: #{name}"}
     end
   end
 

@@ -6,9 +6,9 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
   Co-occurrence data from the HRR encoder improves results over time.
   """
 
-  alias Kudzu.{Application, HRR, Hologram}
-  alias Kudzu.HRR.{Encoder, EncoderState, Tokenizer}
   alias Kudzu.Consolidation
+  alias Kudzu.HRR.{Encoder, EncoderState, Tokenizer}
+  alias Kudzu.{Application, HRR, Hologram}
 
   def handle("kudzu_semantic_recall", params) do
     query = params["query"] || ""
@@ -17,7 +17,7 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
     threshold = Map.get(params, "threshold", 0.01)
 
     if query == "" do
-      {:error, -32602, "Query text is required"}
+      {:error, -32_602, "Query text is required"}
     else
       {_codebook, encoder_state} = get_encoder_context()
 
@@ -83,7 +83,7 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
     k = Map.get(params, "k", 10)
 
     if token == "" do
-      {:error, -32602, "Token is required"}
+      {:error, -32_602, "Token is required"}
     else
       {_codebook, encoder_state} = get_encoder_context()
 

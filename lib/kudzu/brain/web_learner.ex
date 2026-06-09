@@ -9,8 +9,8 @@ defmodule Kudzu.Brain.WebLearner do
 
   require Logger
 
-  alias Kudzu.Brain.Tools.Web.{WebRead, WebSearch}
   alias Kudzu.Brain.Distiller
+  alias Kudzu.Brain.Tools.Web.{WebRead, WebSearch}
 
   @max_read_pages 3
   @max_chains_per_page 20

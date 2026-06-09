@@ -39,7 +39,7 @@ defmodule Kudzu.Brain.PromptBuilder do
     * `:model_id` — atom or string identifying the model being prompted.
       Defaults to `"claude"`.
   """
-  @spec build(%Kudzu.Brain{}, keyword()) :: String.t()
+  @spec build(Kudzu.Brain.t(), keyword()) :: String.t()
   def build(brain_state, opts \\ []) do
     {session_id, model_id} = resolve_session(brain_state, opts)
 
@@ -84,7 +84,7 @@ defmodule Kudzu.Brain.PromptBuilder do
   Same opts as `build/2`. Oriented toward interactive conversation rather
   than autonomous anomaly resolution.
   """
-  @spec build_chat(%Kudzu.Brain{}, keyword()) :: String.t()
+  @spec build_chat(Kudzu.Brain.t(), keyword()) :: String.t()
   def build_chat(brain_state, opts \\ []) do
     {session_id, model_id} = resolve_session(brain_state, opts)
 

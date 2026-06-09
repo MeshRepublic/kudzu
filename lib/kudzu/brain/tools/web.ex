@@ -49,9 +49,9 @@ defmodule Kudzu.Brain.Tools.Web do
     end
 
     @impl true
-    def execute(params) do
-      Kudzu.Brain.Tools.Web.execute("web_search", params)
-    end
+    # credo:disable-for-next-line Credo.Check.Design.AliasUsage — parent module,
+    # aliasing it inside a nested defmodule of the same parent is awkward.
+    def execute(params), do: Kudzu.Brain.Tools.Web.execute("web_search", params)
   end
 
   # ── WebRead ───────────────────────────────────────────────────────
@@ -83,9 +83,9 @@ defmodule Kudzu.Brain.Tools.Web do
     end
 
     @impl true
-    def execute(params) do
-      Kudzu.Brain.Tools.Web.execute("web_read", params)
-    end
+    # credo:disable-for-next-line Credo.Check.Design.AliasUsage — parent module,
+    # aliasing it inside a nested defmodule of the same parent is awkward.
+    def execute(params), do: Kudzu.Brain.Tools.Web.execute("web_read", params)
   end
 
   # ── Module-Level Functions ────────────────────────────────────────
@@ -176,11 +176,11 @@ defmodule Kudzu.Brain.Tools.Web do
     encoded_query = URI.encode_www_form(query)
     url = @searxng_url ++ String.to_charlist("?q=#{encoded_query}&format=json")
 
-    case Kudzu.HTTP.request(
+    case :httpc.request(
            :get,
            {url, [{~c"User-Agent", @user_agent}]},
            [timeout: @http_timeout, connect_timeout: 5000],
-           body_format: :binary
+           [body_format: :binary]
          ) do
       {:ok, {{_, 200, _}, _headers, body}} ->
         case Jason.decode(body) do
@@ -218,11 +218,11 @@ defmodule Kudzu.Brain.Tools.Web do
 
     ssl_opts = ssl_options()
 
-    case Kudzu.HTTP.request(
+    case :httpc.request(
            :get,
            {url, [{~c"User-Agent", @user_agent}]},
            [timeout: @http_timeout, connect_timeout: 5000] ++ ssl_opts,
-           body_format: :binary
+           [body_format: :binary]
          ) do
       {:ok, {{_, status, _}, _headers, body}} when status in [200, 301, 302] ->
         results = parse_duckduckgo_html(body)
@@ -310,11 +310,11 @@ defmodule Kudzu.Brain.Tools.Web do
         []
       end
 
-    case Kudzu.HTTP.request(
+    case :httpc.request(
            :get,
            {charlist_url, [{~c"User-Agent", @user_agent}]},
            [timeout: @http_timeout, connect_timeout: 5000] ++ ssl_opts,
-           body_format: :binary
+           [body_format: :binary]
          ) do
       {:ok, {{_, 200, _}, _headers, body}} ->
         truncated =
@@ -433,6 +433,7 @@ defmodule Kudzu.Brain.Tools.Web do
   end
 
   defp ensure_httpc_started do
-    Kudzu.HTTP.ensure_started()
+    :inets.start()
+    :ssl.start()
   end
 end

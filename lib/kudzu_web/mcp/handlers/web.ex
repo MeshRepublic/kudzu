@@ -6,16 +6,16 @@ defmodule KudzuWeb.MCP.Handlers.Web do
   def handle("kudzu_web_search", params) do
     case Web.execute("web_search", params) do
       {:ok, result} -> {:ok, result}
-      {:error, reason} -> {:error, -32603, reason}
+      {:error, reason} -> {:error, -32_603, reason}
     end
   end
 
   def handle("kudzu_web_read", params) do
     case Web.execute("web_read", params) do
       {:ok, result} -> {:ok, result}
-      {:error, reason} -> {:error, -32603, reason}
+      {:error, reason} -> {:error, -32_603, reason}
     end
   end
 
-  def handle(tool, _args), do: {:error, -32602, "Unknown web tool: #{tool}"}
+  def handle(tool, _args), do: {:error, -32_602, "Unknown web tool: #{tool}"}
 end

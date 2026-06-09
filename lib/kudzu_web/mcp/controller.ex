@@ -118,7 +118,7 @@ defmodule KudzuWeb.MCP.Controller do
 
     case Map.get(@handler_map, tool_name) do
       nil ->
-        {:response, Protocol.encode_error(id, -32602, "Unknown tool: #{tool_name}")}
+        {:response, Protocol.encode_error(id, -32_602, "Unknown tool: #{tool_name}")}
 
       handler ->
         try do
@@ -150,7 +150,7 @@ defmodule KudzuWeb.MCP.Controller do
   end
 
   def dispatch({:request, id, method, _params}) do
-    {:response, Protocol.encode_error(id, -32601, "Method not found: #{method}")}
+    {:response, Protocol.encode_error(id, -32_601, "Method not found: #{method}")}
   end
 
   def dispatch({:notification, "initialized", _params}) do

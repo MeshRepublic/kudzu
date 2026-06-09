@@ -259,6 +259,7 @@ defmodule Kudzu.Brain.Learning do
     end
   end
 
+  # the cross-product and is most readable as one function close to the schema.
   defp deserialize_goals(serialized) do
     Enum.map(serialized, fn g ->
       topics =

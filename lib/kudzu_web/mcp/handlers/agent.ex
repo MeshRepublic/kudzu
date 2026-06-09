@@ -15,7 +15,7 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
 
     case Agent.create(name, opts) do
       {:ok, pid} -> {:ok, %{name: name, id: Agent.id(pid), status: "created"}}
-      {:error, reason} -> {:error, -32603, "Failed: #{inspect(reason)}"}
+      {:error, reason} -> {:error, -32_603, "Failed: #{inspect(reason)}"}
     end
   end
 
@@ -42,7 +42,7 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
 
       case Agent.remember(pid, content, opts) do
         {:ok, trace_id} -> {:ok, %{trace_id: trace_id, type: "memory"}}
-        {:error, reason} -> {:error, -32603, inspect(reason)}
+        {:error, reason} -> {:error, -32_603, inspect(reason)}
       end
     end)
   end
@@ -55,7 +55,7 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
 
       case Agent.learn(pid, pattern, opts) do
         {:ok, trace_id} -> {:ok, %{trace_id: trace_id, type: "learning"}}
-        {:error, reason} -> {:error, -32603, inspect(reason)}
+        {:error, reason} -> {:error, -32_603, inspect(reason)}
       end
     end)
   end
@@ -64,7 +64,7 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
     with_agent(name, fn pid ->
       case Agent.think(pid, thought) do
         {:ok, trace_id} -> {:ok, %{trace_id: trace_id, type: "thought"}}
-        {:error, reason} -> {:error, -32603, inspect(reason)}
+        {:error, reason} -> {:error, -32_603, inspect(reason)}
       end
     end)
   end
@@ -77,7 +77,7 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
 
       case Agent.observe(pid, observation, opts) do
         {:ok, trace_id} -> {:ok, %{trace_id: trace_id, type: "observation"}}
-        {:error, reason} -> {:error, -32603, inspect(reason)}
+        {:error, reason} -> {:error, -32_603, inspect(reason)}
       end
     end)
   end
@@ -98,7 +98,7 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
 
       case Agent.decide(pid, decision, rationale, opts) do
         {:ok, trace_id} -> {:ok, %{trace_id: trace_id, type: "decision"}}
-        {:error, reason} -> {:error, -32603, inspect(reason)}
+        {:error, reason} -> {:error, -32_603, inspect(reason)}
       end
     end)
   end
@@ -131,7 +131,7 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
       case Agent.stimulate(pid, prompt) do
         {:ok, response, actions} -> {:ok, %{response: response, actions: length(actions)}}
         {:ok, response} -> {:ok, %{response: response}}
-        {:error, reason} -> {:error, -32603, inspect(reason)}
+        {:error, reason} -> {:error, -32_603, inspect(reason)}
       end
     end)
   end
@@ -175,7 +175,7 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
         Agent.connect(pid, peer)
         {:ok, %{status: "connected", peer: peer}}
       else
-        {:error, -32602, "Peer not found"}
+        {:error, -32_602, "Peer not found"}
       end
     end)
   end
@@ -183,7 +183,7 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
   defp with_agent(name, fun) do
     case Agent.find(name) do
       {:ok, pid} -> fun.(pid)
-      {:error, :not_found} -> {:error, -32602, "Agent not found: #{name}"}
+      {:error, :not_found} -> {:error, -32_602, "Agent not found: #{name}"}
     end
   end
 

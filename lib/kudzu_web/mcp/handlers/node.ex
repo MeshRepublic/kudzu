@@ -12,14 +12,14 @@ defmodule KudzuWeb.MCP.Handlers.Node do
 
     case Kudzu.Node.init_node(opts) do
       :ok -> {:ok, %{status: "initialized"}}
-      {:error, reason} -> {:error, -32603, inspect(reason)}
+      {:error, reason} -> {:error, -32_603, inspect(reason)}
     end
   end
 
   def handle("kudzu_mesh_create", _params) do
     case Kudzu.Node.create_mesh() do
       :ok -> {:ok, %{status: "mesh_created"}}
-      {:error, reason} -> {:error, -32603, inspect(reason)}
+      {:error, reason} -> {:error, -32_603, inspect(reason)}
     end
   end
 
@@ -28,7 +28,7 @@ defmodule KudzuWeb.MCP.Handlers.Node do
 
     case Kudzu.Node.join_mesh(node) do
       {:ok, status} -> {:ok, %{status: status}}
-      {:error, reason} -> {:error, -32603, inspect(reason)}
+      {:error, reason} -> {:error, -32_603, inspect(reason)}
     end
   end
 

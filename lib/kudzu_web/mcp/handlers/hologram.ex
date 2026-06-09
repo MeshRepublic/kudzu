@@ -46,7 +46,7 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
         {:ok, %{id: id, purpose: opts[:purpose], constitution: opts[:constitution]}}
 
       {:error, reason} ->
-        {:error, -32603, "Failed to spawn: #{inspect(reason)}"}
+        {:error, -32_603, "Failed to spawn: #{inspect(reason)}"}
     end
   end
 
@@ -91,7 +91,7 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
           {:ok, %{response: response, actions: length(actions), hologram_id: id}}
 
         {:error, reason} ->
-          {:error, -32603, "Stimulation failed: #{inspect(reason)}"}
+          {:error, -32_603, "Stimulation failed: #{inspect(reason)}"}
       end
     end)
   end
@@ -119,7 +119,7 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
 
       case Hologram.record_trace(pid, purpose_atom, data) do
         {:ok, trace} -> {:ok, %{trace: trace_to_map(trace)}}
-        {:error, reason} -> {:error, -32603, "Failed: #{inspect(reason)}"}
+        {:error, reason} -> {:error, -32_603, "Failed: #{inspect(reason)}"}
       end
     end)
   end
@@ -145,7 +145,7 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
           {:ok, %{added: true, peer_id: peer_id}}
 
         [] ->
-          {:error, -32602, "Peer hologram not found"}
+          {:error, -32_602, "Peer hologram not found"}
       end
     end)
   end
@@ -164,7 +164,7 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
 
       case Hologram.set_constitution(pid, atom) do
         :ok -> {:ok, %{updated: true, constitution: atom}}
-        {:error, reason} -> {:error, -32603, "Failed: #{inspect(reason)}"}
+        {:error, reason} -> {:error, -32_603, "Failed: #{inspect(reason)}"}
       end
     end)
   end
@@ -186,7 +186,7 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
   defp with_hologram(id, fun) do
     case Registry.lookup(Kudzu.Registry, {:id, id}) do
       [{pid, _}] -> fun.(pid)
-      [] -> {:error, -32602, "Hologram not found: #{id}"}
+      [] -> {:error, -32_602, "Hologram not found: #{id}"}
     end
   end
 

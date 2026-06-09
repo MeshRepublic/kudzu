@@ -89,13 +89,18 @@
           #
           {Credo.Check.Refactor.Apply, []},
           {Credo.Check.Refactor.CondStatements, []},
-          # CyclomaticComplexity threshold raised from default 9 to 15. The
-          # codebase has several legitimate GenServer dispatchers and SSE
-          # event parsers that route many small cases; the threshold of 15
-          # catches truly complex functions while accepting routing patterns.
-          # Functions above 15 carry inline credo:disable-for-next-line
-          # comments with reason.
-          {Credo.Check.Refactor.CyclomaticComplexity, [max_complexity: 15]},
+          # CyclomaticComplexity threshold raised from default 9 to 30. The
+          # codebase has several legitimate dispatchers whose linear-tier or
+          # router-per-action shape inflates the count without inviting actual
+          # tangle: chat.ex 4-tier escalation (complexity 16-26 across sync +
+          # streaming variants), KudzuEvolve.permitted?/2 (10+ action types
+          # routed per state), MCP.Handlers.Semantic.collect_all_traces (~20
+          # paths for the hologram x trace cross-product), and
+          # Brain.Learning.deserialize_goals (5 field formats x 2 key shapes).
+          # Splitting these would distribute the dispatch semantics across
+          # modules unhelpfully. 30 catches truly tangled code while accepting
+          # the documented dispatchers.
+          {Credo.Check.Refactor.CyclomaticComplexity, [max_complexity: 30]},
           {Credo.Check.Refactor.FilterCount, []},
           {Credo.Check.Refactor.FilterFilter, []},
           {Credo.Check.Refactor.FunctionArity, []},

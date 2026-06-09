@@ -20,6 +20,10 @@ defmodule Kudzu.Brain.Chat do
   alias Kudzu.Brain.Reasoning
   alias Kudzu.Brain.Reflexes
   alias Kudzu.Brain.Thought
+  alias Kudzu.Brain.Tools.Escalation
+  alias Kudzu.Brain.Tools.Host
+  alias Kudzu.Brain.Tools.Introspection
+  alias Kudzu.Brain.Tools.Web, as: WebTools
   alias Kudzu.Brain.WebLearner
   alias Kudzu.Brain.WorkingMemory
 
@@ -331,6 +335,7 @@ defmodule Kudzu.Brain.Chat do
             chat_with_claude(state, enhanced_message)
 
           # Distill knowledge from Claude's response
+                  # — chat_escalate complexity 26 from 4-tier escalation; intentional linear shape.
           new_state =
             if tier == 3 and response_text != "" do
               Reasoning.distill_claude_response(new_state, response_text)
@@ -617,10 +622,10 @@ defmodule Kudzu.Brain.Chat do
         system_prompt = PromptBuilder.build_chat(state)
 
         tools =
-          Kudzu.Brain.Tools.Introspection.to_claude_format() ++
-            Kudzu.Brain.Tools.Host.to_claude_format() ++
-            Kudzu.Brain.Tools.Escalation.to_claude_format() ++
-            Kudzu.Brain.Tools.Web.to_claude_format()
+          Introspection.to_claude_format() ++
+            Host.to_claude_format() ++
+            Escalation.to_claude_format() ++
+            WebTools.to_claude_format()
 
         # Set up tool executor with call tracking
         Process.put(:chat_tool_calls, [])
@@ -628,13 +633,13 @@ defmodule Kudzu.Brain.Chat do
         executor = fn name, params ->
           Process.put(:chat_tool_calls, [name | Process.get(:chat_tool_calls)])
 
-          case Kudzu.Brain.Tools.Introspection.execute(name, params) do
+          case Introspection.execute(name, params) do
             {:error, "unknown tool: " <> _} ->
-              case Kudzu.Brain.Tools.Host.execute(name, params) do
+              case Host.execute(name, params) do
                 {:error, "unknown host tool: " <> _} ->
-                  case Kudzu.Brain.Tools.Escalation.execute(name, params) do
+                  case Escalation.execute(name, params) do
                     {:error, "unknown escalation tool: " <> _} ->
-                      Kudzu.Brain.Tools.Web.execute(name, params)
+                      WebTools.execute(name, params)
 
                     result ->
                       result
@@ -721,10 +726,10 @@ defmodule Kudzu.Brain.Chat do
         system_prompt = PromptBuilder.build_chat(state)
 
         tools =
-          Kudzu.Brain.Tools.Introspection.to_claude_format() ++
-            Kudzu.Brain.Tools.Host.to_claude_format() ++
-            Kudzu.Brain.Tools.Escalation.to_claude_format() ++
-            Kudzu.Brain.Tools.Web.to_claude_format()
+          Introspection.to_claude_format() ++
+            Host.to_claude_format() ++
+            Escalation.to_claude_format() ++
+            WebTools.to_claude_format()
 
         # Set up tool executor with call tracking
         Process.put(:chat_tool_calls, [])
@@ -732,13 +737,13 @@ defmodule Kudzu.Brain.Chat do
         executor = fn name, params ->
           Process.put(:chat_tool_calls, [name | Process.get(:chat_tool_calls)])
 
-          case Kudzu.Brain.Tools.Introspection.execute(name, params) do
+          case Introspection.execute(name, params) do
             {:error, "unknown tool: " <> _} ->
-              case Kudzu.Brain.Tools.Host.execute(name, params) do
+              case Host.execute(name, params) do
                 {:error, "unknown host tool: " <> _} ->
-                  case Kudzu.Brain.Tools.Escalation.execute(name, params) do
+                  case Escalation.execute(name, params) do
                     {:error, "unknown escalation tool: " <> _} ->
-                      Kudzu.Brain.Tools.Web.execute(name, params)
+                      WebTools.execute(name, params)
 
                     result ->
                       result

@@ -15,9 +15,9 @@ defmodule Kudzu.Brain.InferenceEngine do
   - **confidence/1** — Classify similarity scores into confidence levels
   """
 
+  alias Kudzu.HRR
   alias Kudzu.Silo
   alias Kudzu.Silo.Relationship
-  alias Kudzu.HRR
 
   @doc """
   Probe a silo for concepts related to a query.

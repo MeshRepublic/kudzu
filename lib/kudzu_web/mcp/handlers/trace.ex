@@ -43,7 +43,7 @@ defmodule KudzuWeb.MCP.Handlers.Trace do
       end)
 
     case result do
-      nil -> {:error, -32602, "Trace not found: #{trace_id}"}
+      nil -> {:error, -32_602, "Trace not found: #{trace_id}"}
       trace -> {:ok, trace_to_map(trace)}
     end
   end
@@ -61,10 +61,10 @@ defmodule KudzuWeb.MCP.Handlers.Trace do
         Hologram.receive_trace(to_pid, trace, from_id)
         {:ok, %{shared: true, trace_id: trace_id, from: from_id, to: to_id}}
       else
-        {:error, -32602, "Trace not found in source hologram"}
+        {:error, -32_602, "Trace not found in source hologram"}
       end
     else
-      _ -> {:error, -32602, "Hologram not found"}
+      _ -> {:error, -32_602, "Hologram not found"}
     end
   end
 

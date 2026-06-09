@@ -18,7 +18,7 @@ defmodule KudzuWeb.MCP.Handlers.Beamlet do
   end
 
   def handle("kudzu_get_beamlet", %{"id" => _id}) do
-    {:error, -32602, "Beamlet lookup by ID not supported — use kudzu_list_beamlets"}
+    {:error, -32_602, "Beamlet lookup by ID not supported — use kudzu_list_beamlets"}
   end
 
   def handle("kudzu_find_beamlets", %{"capability" => capability}) do

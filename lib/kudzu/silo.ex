@@ -9,8 +9,8 @@ defmodule Kudzu.Silo do
 
   require Logger
 
-  alias Kudzu.Silo.Relationship
   alias Kudzu.HRR
+  alias Kudzu.Silo.Relationship
 
   @purpose_prefix "expertise:"
 

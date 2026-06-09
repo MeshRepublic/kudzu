@@ -54,7 +54,7 @@ defmodule Kudzu.Constitution do
   like in operational terms.
   """
 
-  alias Kudzu.Constitution.{MeshRepublic, Cautious, Open, KudzuEvolve}
+  alias Kudzu.Constitution.{Cautious, KudzuEvolve, MeshRepublic, Open}
 
   @type framework :: :mesh_republic | :cautious | :open | :kudzu_evolve | module()
   @type action :: {atom(), map()} | atom()
