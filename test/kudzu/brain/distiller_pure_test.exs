@@ -118,4 +118,28 @@ defmodule Kudzu.Brain.DistillerPureTest do
       assert String.starts_with?(result, "valid")
     end
   end
+
+  describe "real-world examples from 5-pages experiment (regression coverage)" do
+    test "(apt, has_version, 2.8.3) survives with relation and version intact" do
+      assert {"apt", "has_version", "2.8.3"} =
+               Distiller.normalize_claude_triple({"apt", "has_version", "2.8.3"})
+    end
+
+    test "(softlockup_threshold, equals, 2x_watchdog_thresh) keeps equals not relates_to" do
+      assert {"softlockup_threshold", "equals", "2x_watchdog_thresh"} =
+               Distiller.normalize_claude_triple(
+                 {"softlockup_threshold", "equals", "2x_watchdog_thresh"}
+               )
+    end
+
+    test "(systemctl, controls, systemd) keeps controls not relates_to" do
+      assert {"systemctl", "controls", "systemd"} =
+               Distiller.normalize_claude_triple({"systemctl", "controls", "systemd"})
+    end
+
+    test "(masked_unit, cannot_be, started) keeps cannot_be not relates_to" do
+      assert {"masked_unit", "cannot_be", "started"} =
+               Distiller.normalize_claude_triple({"masked_unit", "cannot_be", "started"})
+    end
+  end
 end

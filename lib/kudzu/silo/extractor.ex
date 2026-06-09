@@ -59,16 +59,39 @@ defmodule Kudzu.Silo.Extractor do
   Text to extract from:
   """
 
-  @doc "Extract triples using Claude API (costs tokens, higher quality)"
+  # Default Claude output budget. Raised from 1024 -> 8192 after the 5-pages
+  # experiment showed pages >40KB silently truncated mid-JSON at 1024 tokens,
+  # yielding zero stored triples (the JSON array couldn'"'"'t close and
+  # `parse_extraction_response/1` failed with `:invalid_json`). Claude
+  # Sonnet 4.6 supports up to 8192 output tokens, so 8192 is the natural
+  # ceiling here. Callers can override per-call with `opts[:max_tokens]`.
+  @default_max_tokens 8192
+
+  @doc """
+  Extract triples using the Claude API.
+
+  Costs tokens but yields higher-quality, less-noisy triples than the
+  Ollama/pattern paths. Returns `{:ok, [{subject, relation, object}, ...]}`
+  on success or `{:error, reason}` on transport/parsing failure.
+
+  ## Options
+
+    * `:model` — Claude model id (default `"claude-sonnet-4-6"`)
+    * `:max_tokens` — output token budget
+      (default `#{@default_max_tokens}` — raised from 1024 after the
+      5-pages experiment proved 1024 truncated pages >40 KB to zero
+      triples; Sonnet 4.6 supports up to 8192 output tokens)
+  """
   @spec extract_claude(String.t(), String.t(), keyword()) ::
           {:ok, list({String.t(), String.t(), String.t()})} | {:error, term()}
   def extract_claude(text, api_key, opts \\ []) do
     model = Keyword.get(opts, :model, "claude-sonnet-4-6")
+    max_tokens = Keyword.get(opts, :max_tokens, @default_max_tokens)
     message = @extraction_prompt <> text
 
     case Claude.call(api_key, [%{role: "user", content: message}], [],
            model: model,
-           max_tokens: 1024
+           max_tokens: max_tokens
          ) do
       {:ok, response} ->
         parse_extraction_response(response.text)
