@@ -430,7 +430,34 @@ defmodule Kudzu.Brain do
         end
         if text && String.length(text) > 20 do
           try do
-            Kudzu.Brain.Distiller.distill(text, [])
+            # Pass live silo domains so find_knowledge_gaps/2 actually
+            # filters against known concepts, and persist extracted
+            # chains into brain_knowledge (the silo created for
+            # Brain-side distillations — same destination as Tier-3
+            # Claude-response distillations).
+            silo_domains =
+              case Kudzu.Silo.list() do
+                domains when is_list(domains) ->
+                  Enum.map(domains, fn
+                    {domain, _, _} -> domain
+                    domain when is_binary(domain) -> domain
+                    _ -> nil
+                  end)
+                  |> Enum.reject(&is_nil/1)
+
+                _ ->
+                  []
+              end
+
+            result = Kudzu.Brain.Distiller.distill(text, silo_domains)
+
+            Enum.each(result.chains, fn {subject, relation, object} ->
+              try do
+                Kudzu.Silo.store_relationship("brain_knowledge", {subject, relation, object})
+              catch
+                _, _ -> :ok
+              end
+            end)
           rescue
             _ -> :ok
           end

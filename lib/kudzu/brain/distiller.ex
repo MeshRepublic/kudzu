@@ -55,6 +55,19 @@ defmodule Kudzu.Brain.Distiller do
   - `:knowledge_gaps` -- concepts not found in any silo
   """
   def distill(text, silo_domains, context \\ %{}) do
+    if silo_domains == [] do
+      # An empty silo_domains list is almost always a bug at the call site:
+      # find_knowledge_gaps/2 has nothing to filter against, so every
+      # token in `text` becomes a "gap." Historically two call sites
+      # passed `[]` and the extracted chains were not even stored, so
+      # the whole distillation was a no-op-with-log-spam. Warn loudly so
+      # future regressions don't sneak back in silently.
+      Logger.warning(
+        "[Distiller] distill/3 called with empty silo_domains — caller is likely missing a silo list. " <>
+          "Knowledge-gap detection will treat every token as novel."
+      )
+    end
+
     chains = extract_chains(text)
     reflex_candidates = extract_reflex_candidates(chains, context)
     knowledge_gaps = find_knowledge_gaps(text, silo_domains)
