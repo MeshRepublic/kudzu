@@ -901,8 +901,8 @@ defmodule Kudzu.Storage do
                 store_embedding(trace_id, cached_vector)
                 count + 1
 
-              [] ->                # — cache miss embedding branch inside do_embed_batch/3 fold.
-
+              # — cache miss embedding branch inside do_embed_batch/3 fold.
+              [] ->
                 # credo:disable-for-next-line Credo.Check.Refactor.Nesting
                 case Kudzu.Embedding.embed(text, timeout: 30_000) do
                   {:ok, vector} ->

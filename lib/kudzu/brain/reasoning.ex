@@ -240,8 +240,8 @@ defmodule Kudzu.Brain.Reasoning do
           case Kudzu.Brain.Tools.Introspection.execute(name, params) do
             {:error, "unknown tool: " <> _} ->
               case Kudzu.Brain.Tools.Host.execute(name, params) do
-                {:error, "unknown host tool: " <> _} ->                  # — tool fall-through chain inside maybe_call_claude/2.
-
+                # — tool fall-through chain inside maybe_call_claude/2.
+                {:error, "unknown host tool: " <> _} ->
                   # credo:disable-for-next-line Credo.Check.Refactor.Nesting
                   case Kudzu.Brain.Tools.Escalation.execute(name, params) do
                     {:error, "unknown escalation tool: " <> _} ->

@@ -331,7 +331,7 @@ defmodule Kudzu.Brain.Chat do
             chat_with_claude(state, enhanced_message)
 
           # Distill knowledge from Claude's response
-                  # — chat_escalate complexity 26 from 4-tier escalation; intentional linear shape.
+          # — chat_escalate complexity 26 from 4-tier escalation; intentional linear shape.
           new_state =
             if tier == 3 and response_text != "" do
               Reasoning.distill_claude_response(new_state, response_text)
@@ -631,8 +631,8 @@ defmodule Kudzu.Brain.Chat do
           case Introspection.execute(name, params) do
             {:error, "unknown tool: " <> _} ->
               case Host.execute(name, params) do
-                {:error, "unknown host tool: " <> _} ->                  # — tool fall-through chain inside chat_with_claude_stream/3.
-
+                # — tool fall-through chain inside chat_with_claude_stream/3.
+                {:error, "unknown host tool: " <> _} ->
                   # credo:disable-for-next-line Credo.Check.Refactor.Nesting
                   case Escalation.execute(name, params) do
                     {:error, "unknown escalation tool: " <> _} ->

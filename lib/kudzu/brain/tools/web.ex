@@ -138,17 +138,17 @@ defmodule Kudzu.Brain.Tools.Web do
     if String.starts_with?(url, "http://") or String.starts_with?(url, "https://") do
       ensure_httpc_started()
 
-        case fetch_url(url) do
-          {:ok, body} ->
-            title = extract_title(body)
-            text = strip_html(body)
-            word_count = text |> String.split(~r/\s+/, trim: true) |> length()
+      case fetch_url(url) do
+        {:ok, body} ->
+          title = extract_title(body)
+          text = strip_html(body)
+          word_count = text |> String.split(~r/\s+/, trim: true) |> length()
 
-            {:ok, %{url: url, title: title, text: text, word_count: word_count}}
+          {:ok, %{url: url, title: title, text: text, word_count: word_count}}
 
-          {:error, reason} ->
-            {:error, "web_read failed: #{reason}"}
-        end
+        {:error, reason} ->
+          {:error, "web_read failed: #{reason}"}
+      end
     else
       {:error, "URL must start with http:// or https://"}
     end
@@ -180,7 +180,7 @@ defmodule Kudzu.Brain.Tools.Web do
            :get,
            {url, [{~c"User-Agent", @user_agent}]},
            [timeout: @http_timeout, connect_timeout: 5000],
-           [body_format: :binary]
+           body_format: :binary
          ) do
       {:ok, {{_, 200, _}, _headers, body}} ->
         case Jason.decode(body) do
@@ -222,7 +222,7 @@ defmodule Kudzu.Brain.Tools.Web do
            :get,
            {url, [{~c"User-Agent", @user_agent}]},
            [timeout: @http_timeout, connect_timeout: 5000] ++ ssl_opts,
-           [body_format: :binary]
+           body_format: :binary
          ) do
       {:ok, {{_, status, _}, _headers, body}} when status in [200, 301, 302] ->
         results = parse_duckduckgo_html(body)
@@ -314,7 +314,7 @@ defmodule Kudzu.Brain.Tools.Web do
            :get,
            {charlist_url, [{~c"User-Agent", @user_agent}]},
            [timeout: @http_timeout, connect_timeout: 5000] ++ ssl_opts,
-           [body_format: :binary]
+           body_format: :binary
          ) do
       {:ok, {{_, 200, _}, _headers, body}} ->
         truncated =
