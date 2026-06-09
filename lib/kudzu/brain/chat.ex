@@ -386,7 +386,21 @@ defmodule Kudzu.Brain.Chat do
           send(stream_to, {:thinking, :claude, "Consulting Claude API..."})
           enhanced_message = build_enriched_message(message, context)
           Brain.record_trace(state, :thought, %{source: "chat_escalation", tier: "claude", reason: "free_tiers_exhausted"})
-          chat_with_claude_stream(state, enhanced_message, stream_to)
+
+          {response_text, tier, tool_calls, cost, new_state} =
+            chat_with_claude_stream(state, enhanced_message, stream_to)
+
+          # Distill knowledge from Claude's streamed response — mirrors
+          # the non-streaming chat_escalate path so streaming clients do
+          # not silently bypass brain_knowledge ingestion.
+          new_state =
+            if tier == 3 and is_binary(response_text) and response_text != "" do
+              Reasoning.distill_claude_response(new_state, response_text)
+            else
+              new_state
+            end
+
+          {response_text, tier, tool_calls, cost, new_state}
         end
       end
     end
