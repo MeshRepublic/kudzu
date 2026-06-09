@@ -22,8 +22,14 @@ defmodule Kudzu.HologramRegistry do
   use GenServer
   require Logger
 
-  @dets_file ~c"/home/eel/kudzu_data/dets/hologram_registry.dets"
   @persist_interval_ms 60_000
+
+  # The DETS file path is derived from the runtime :data_root config so test
+  # runs land in /tmp and never share a file with the production node.
+  @spec dets_file() :: charlist()
+  defp dets_file do
+    String.to_charlist(Path.join([Application.fetch_env!(:kudzu, :data_root), "dets", "hologram_registry.dets"]))
+  end
 
   # Client API
 
@@ -80,17 +86,18 @@ defmodule Kudzu.HologramRegistry do
 
   @impl true
   def init(_opts) do
-    dets_dir = Path.dirname(to_string(@dets_file))
+    file = dets_file()
+    dets_dir = Path.dirname(to_string(file))
     File.mkdir_p!(dets_dir)
 
-    {:ok, _} = :dets.open_file(@dets_file, type: :set)
+    {:ok, _} = :dets.open_file(file, type: :set)
 
-    count = :dets.info(@dets_file, :size)
+    count = :dets.info(file, :size)
     Logger.info("[HologramRegistry] Opened registry with #{count} persisted holograms")
 
     Process.send_after(self(), :persist_live, @persist_interval_ms)
 
-    {:ok, %{dets: @dets_file}}
+    {:ok, %{dets: file}}
   end
 
   @impl true

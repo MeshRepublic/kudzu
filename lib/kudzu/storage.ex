@@ -27,11 +27,9 @@ defmodule Kudzu.Storage do
   require Logger
 
   @hot_table :kudzu_traces_hot
-  @warm_file ~c"/home/eel/kudzu_data/dets/traces_warm.dets"
 
   # Embedding storage (separate from traces for performance)
   @embedding_table :kudzu_embeddings
-  @embedding_file ~c"/home/eel/kudzu_data/dets/embeddings.dets"
   @content_hash_table :kudzu_content_hashes
 
   # Aging thresholds
@@ -41,7 +39,20 @@ defmodule Kudzu.Storage do
   @max_hot_entries 50_000
   @max_warm_bytes 500_000_000       # 500MB
   @max_total_bytes 2_000_000_000    # 2GB
-  @warm_path "/home/eel/kudzu_data/dets/traces_warm.dets"
+
+  # DETS files live under the runtime :data_root config (see config/runtime.exs
+  # and config/test.exs). The path-as-charlist doubles as the DETS table name.
+  @spec warm_file() :: charlist()
+  defp warm_file, do: String.to_charlist(warm_path())
+
+  @spec warm_path() :: String.t()
+  defp warm_path, do: Path.join([data_root(), "dets", "traces_warm.dets"])
+
+  @spec embedding_file() :: charlist()
+  defp embedding_file, do: String.to_charlist(Path.join([data_root(), "dets", "embeddings.dets"]))
+
+  @spec data_root() :: String.t()
+  defp data_root, do: Application.fetch_env!(:kudzu, :data_root)
 
   # Trace record for Mnesia
   # {trace_id, hologram_id, purpose, reconstruction_hint, timestamp, last_accessed, access_count}
@@ -145,16 +156,17 @@ defmodule Kudzu.Storage do
     # Initialize hot tier (ETS)
     :ets.new(@hot_table, [:named_table, :set, :public, read_concurrency: true])
 
+    # Ensure DETS directory exists before opening any file in it
+    File.mkdir_p!(Path.join(data_root(), "dets"))
+
     # Initialize embedding index
     :ets.new(@embedding_table, [:named_table, :set, :public, read_concurrency: true])
     :ets.new(@content_hash_table, [:named_table, :set, :public, read_concurrency: true])
-    {:ok, _} = :dets.open_file(@embedding_file, [type: :set])
+    {:ok, _} = :dets.open_file(embedding_file(), [type: :set])
     load_embeddings_from_dets()
 
     # Initialize warm tier (DETS)
-    warm_dir = Path.dirname(to_string(@warm_file))
-    File.mkdir_p!(warm_dir)
-    {:ok, _} = :dets.open_file(@warm_file, [type: :set])
+    {:ok, _} = :dets.open_file(warm_file(), [type: :set])
 
     # Check if Mnesia cold tier is available
     mnesia_ready = check_mnesia_ready()
@@ -200,7 +212,7 @@ defmodule Kudzu.Storage do
 
     # Write to both hot (fast reads) and warm (durable) tiers
     :ets.insert(@hot_table, {trace.id, record})
-    :dets.insert(@warm_file, {trace.id, record})
+    :dets.insert(warm_file(), {trace.id, record})
 
     # Broadcast new trace for event-driven reactions
     Phoenix.PubSub.broadcast(Kudzu.PubSub, "traces:new", {:trace_stored, record})
@@ -223,7 +235,7 @@ defmodule Kudzu.Storage do
           touch_hot(trace_id, record)
           {:hot, record}
         [] ->
-          case :dets.lookup(@warm_file, trace_id) do
+          case :dets.lookup(warm_file(), trace_id) do
             [{^trace_id, record}] ->
               # Promote to hot on access
               promote_to_hot(trace_id, record)
@@ -289,7 +301,7 @@ defmodule Kudzu.Storage do
 
     stats = %{
       hot: :ets.info(@hot_table, :size),
-      warm: :dets.info(@warm_file, :size),
+      warm: :dets.info(warm_file(), :size),
       cold: cold_size,
       mnesia_ready: mnesia_ready
     }
@@ -307,7 +319,7 @@ defmodule Kudzu.Storage do
     hot_bytes = hot_words * wordsize
 
     warm_bytes =
-      case File.stat(@warm_path) do
+      case File.stat(warm_path()) do
         {:ok, %{size: size}} -> size
         _ -> 0
       end
@@ -377,7 +389,7 @@ defmodule Kudzu.Storage do
       else
         acc
       end
-    end, [], @warm_file)
+    end, [], warm_file())
 
     all = (hot_results ++ warm_results)
     |> Enum.sort_by(& &1.created_at, {:desc, DateTime})
@@ -389,7 +401,7 @@ defmodule Kudzu.Storage do
   @impl true
   def handle_cast({:store_embedding, trace_id, vector}, state) do
     :ets.insert(@embedding_table, {trace_id, vector})
-    :dets.insert(@embedding_file, {trace_id, vector})
+    :dets.insert(embedding_file(), {trace_id, vector})
     {:noreply, state}
   end
 
@@ -422,7 +434,7 @@ defmodule Kudzu.Storage do
     }
     :ets.insert(@hot_table, {trace_id, updated})
     # Remove from lower tier
-    :dets.delete(@warm_file, trace_id)
+    :dets.delete(warm_file(), trace_id)
     # Cold deletion handled by Mnesia if present
   end
 
@@ -440,7 +452,7 @@ defmodule Kudzu.Storage do
           should_demote = DateTime.compare(record.last_accessed, effective_threshold) == :lt
 
           if should_demote do
-            :dets.insert(@warm_file, {id, record})
+            :dets.insert(warm_file(), {id, record})
             :ets.delete(@hot_table, id)
             acc + 1
           else
@@ -498,7 +510,7 @@ defmodule Kudzu.Storage do
       else
         acc
       end
-    end, [], @warm_file)
+    end, [], warm_file())
   end
   defp query_dets_by_purpose(_purpose, _limit), do: []
 
@@ -509,7 +521,7 @@ defmodule Kudzu.Storage do
       else
         acc
       end
-    end, [], @warm_file)
+    end, [], warm_file())
   end
   defp query_dets_by_hologram(_hologram_id, _limit), do: []
 
@@ -577,7 +589,7 @@ defmodule Kudzu.Storage do
         access_count = record.access_count || 0
         score = access_count / (1 + hours_since_access)
         [{id, score} | acc]
-      end, [], @warm_file)
+      end, [], warm_file())
 
     # Sort by score ascending (lowest = least valuable = evict first)
     to_evict =
@@ -587,7 +599,7 @@ defmodule Kudzu.Storage do
 
     # Delete the selected traces
     Enum.each(to_evict, fn {id, _score} ->
-      :dets.delete(@warm_file, id)
+      :dets.delete(warm_file(), id)
     end)
 
     deleted = length(to_evict)
@@ -628,7 +640,7 @@ defmodule Kudzu.Storage do
     count = :dets.foldl(fn {trace_id, vector}, acc ->
       :ets.insert(@embedding_table, {trace_id, vector})
       acc + 1
-    end, 0, @embedding_file)
+    end, 0, embedding_file())
 
     if count > 0 do
       Logger.info("[Storage] Loaded #{count} embeddings from DETS")
@@ -715,7 +727,7 @@ defmodule Kudzu.Storage do
       record = case :ets.lookup(@hot_table, trace_id) do
         [{^trace_id, rec}] -> rec
         [] ->
-          case :dets.lookup(@warm_file, trace_id) do
+          case :dets.lookup(warm_file(), trace_id) do
             [{^trace_id, rec}] -> rec
             [] -> nil
           end

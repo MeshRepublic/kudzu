@@ -27,10 +27,16 @@ defmodule Kudzu.HRR.EncoderState do
     traces_processed: 0
   ]
 
-  @dets_file ~c"/home/eel/kudzu_data/dets/encoder_state.dets"
   @top_k_neighbors 5
   @decay_factor 0.98
   @prune_threshold 1.0
+
+  # DETS file path is derived from the runtime :data_root config so test
+  # runs land in /tmp and never share a file with the production node.
+  @spec dets_file() :: charlist()
+  defp dets_file do
+    String.to_charlist(Path.join([Application.fetch_env!(:kudzu, :data_root), "dets", "encoder_state.dets"]))
+  end
 
   # --- Construction ---
 
@@ -210,7 +216,10 @@ defmodule Kudzu.HRR.EncoderState do
   """
   @spec save(t()) :: :ok | {:error, term()}
   def save(%__MODULE__{} = state) do
-    case :dets.open_file(:encoder_state, file: @dets_file, type: :set) do
+    file = dets_file()
+    File.mkdir_p!(Path.dirname(to_string(file)))
+
+    case :dets.open_file(:encoder_state, file: file, type: :set) do
       {:ok, table} ->
         :dets.insert(table, {:encoder_state, state})
         :dets.close(table)
@@ -225,7 +234,10 @@ defmodule Kudzu.HRR.EncoderState do
   """
   @spec load(pos_integer()) :: t()
   def load(dim \\ HRR.default_dim()) do
-    case :dets.open_file(:encoder_state, file: @dets_file, type: :set) do
+    file = dets_file()
+    File.mkdir_p!(Path.dirname(to_string(file)))
+
+    case :dets.open_file(:encoder_state, file: file, type: :set) do
       {:ok, table} ->
         result = case :dets.lookup(table, :encoder_state) do
           [{:encoder_state, %__MODULE__{} = state}] -> state

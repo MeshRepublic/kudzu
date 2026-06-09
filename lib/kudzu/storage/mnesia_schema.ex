@@ -46,10 +46,14 @@ defmodule Kudzu.Storage.MnesiaSchema do
 
   @doc """
   Initialize Mnesia on this node (run on each node).
+
+  Mnesia's `:dir` env var must be set BEFORE `:mnesia.start/0` is called,
+  because it is read once at start. We derive the directory from the
+  `:data_root` runtime config so test runs land in a /tmp path and never
+  share a directory with the production node.
   """
   def init_node do
-    # Set Mnesia directory (user-accessible)
-    mnesia_dir = ~c"/home/eel/kudzu_data/mnesia/#{node()}"
+    mnesia_dir = String.to_charlist(Path.join([data_root(), "mnesia", to_string(node())]))
     File.mkdir_p!(to_string(mnesia_dir))
     Application.put_env(:mnesia, :dir, mnesia_dir)
 
@@ -63,6 +67,9 @@ defmodule Kudzu.Storage.MnesiaSchema do
         {:error, reason}
     end
   end
+
+  @spec data_root() :: String.t()
+  defp data_root, do: Application.fetch_env!(:kudzu, :data_root)
 
   @doc """
   Create the distributed schema (run once on first node).

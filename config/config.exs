@@ -61,6 +61,8 @@ if config_env() == :test do
   config :kudzu, KudzuWeb.MCP.Endpoint,
     http: [port: 4003],
     server: false
+
+  import_config "test.exs"
 end
 
 if config_env() == :dev do
