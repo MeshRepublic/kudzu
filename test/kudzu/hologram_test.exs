@@ -18,6 +18,24 @@ defmodule Kudzu.HologramTest do
       assert length(traces) == 1
     end
 
+    test "delete_trace removes a trace from the in-memory map" do
+      {:ok, h} = Application.spawn_hologram(purpose: :test)
+      {:ok, t1} = Hologram.record_trace(h, :a, %{n: 1})
+      {:ok, _t2} = Hologram.record_trace(h, :a, %{n: 2})
+
+      assert length(Hologram.recall(h, :a)) == 2
+      assert :ok = Hologram.delete_trace(h, t1.id)
+      assert length(Hologram.recall(h, :a)) == 1
+    end
+
+    test "delete_trace is a no-op for unknown trace ids" do
+      {:ok, h} = Application.spawn_hologram(purpose: :test)
+      {:ok, _t} = Hologram.record_trace(h, :a, %{n: 1})
+
+      assert :ok = Hologram.delete_trace(h, "nonexistent-trace-id-xyz")
+      assert length(Hologram.recall(h, :a)) == 1
+    end
+
     test "introduces peers and tracks proximity" do
       {:ok, h1} = Application.spawn_hologram(purpose: :test)
       {:ok, h2} = Application.spawn_hologram(purpose: :test)

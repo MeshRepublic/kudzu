@@ -372,16 +372,15 @@ defmodule Kudzu.Brain.Distiller do
 
   defp delete_triple_from_silo(triple) do
     try do
-      # Remove the trace from the hologram's in-memory state
-      # We send a call to update state — but hologram doesn't expose trace deletion,
-      # so we use the silo pid to get state and remove the trace via :sys
       pid = triple.silo_pid
       trace_id = triple.trace_id
 
       if Process.alive?(pid) do
-        state = :sys.get_state(pid)
-        new_traces = Map.delete(state.traces, trace_id)
-        :sys.replace_state(pid, fn s -> %{s | traces: new_traces} end)
+        # Use the hologram's own delete_trace message instead of mutating
+        # GenServer state externally via :sys.replace_state/2. The old
+        # path was racy with in-flight handle_call/2's and bypassed the
+        # hologram's message protocol entirely.
+        Kudzu.Hologram.delete_trace(pid, trace_id)
       end
     rescue
       _ -> :ok

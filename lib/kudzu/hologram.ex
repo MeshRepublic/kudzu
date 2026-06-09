@@ -86,6 +86,23 @@ defmodule Kudzu.Hologram do
   end
 
   @doc """
+  Remove a single trace from this hologram's in-memory trace map.
+
+  Returns `:ok` regardless of whether the trace existed. Intended for
+  knowledge-review pruning paths (see `Kudzu.Brain.Distiller.review_knowledge/1`)
+  that need to delete low-quality triples without bypassing the
+  hologram's message protocol the way `:sys.replace_state/2` did.
+
+  Does not currently touch durable storage tiers — the trace will reappear
+  if the hologram restarts and reloads from DETS/Mnesia. A storage-aware
+  variant can be added when the pruning use case demands it.
+  """
+  @spec delete_trace(GenServer.server(), String.t()) :: :ok
+  def delete_trace(hologram, trace_id) when is_binary(trace_id) do
+    GenServer.call(hologram, {:delete_trace, trace_id})
+  end
+
+  @doc """
   Recall all traces.
   """
   @spec recall_all(GenServer.server()) :: [Trace.t()]
@@ -429,6 +446,12 @@ defmodule Kudzu.Hologram do
     |> Enum.filter(fn trace -> trace.purpose == purpose end)
 
     {:reply, matching, state}
+  end
+
+  @impl true
+  def handle_call({:delete_trace, trace_id}, _from, state) do
+    new_state = %{state | traces: Map.delete(state.traces, trace_id)}
+    {:reply, :ok, new_state}
   end
 
   @impl true
