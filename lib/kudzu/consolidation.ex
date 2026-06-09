@@ -14,8 +14,19 @@ defmodule Kudzu.Consolidation do
 
   ## Consolidation Cycles
 
-  - **Light (10 minutes)**: Process new traces, update co-occurrence matrix
-  - **Deep (6 hours)**: Rebuild vectors, decay/prune co-occurrence, persist encoder state
+  - **Light (10 minutes)**: Process new traces, update co-occurrence matrix,
+    persist encoder state to DETS (subject to `:encoder_persist_interval_cycles`)
+  - **Deep (6 hours)**: Rebuild vectors, decay/prune co-occurrence, persist
+    maintained encoder state to DETS
+
+  ## Encoder Persistence
+
+  Encoder co-occurrence state is persisted to DETS on every light cycle
+  by default so a crash in the middle of a deep cycle cannot lose more than
+  one light cycle's worth of vocabulary learning. Operators can throttle
+  the cadence via the `:encoder_persist_interval_cycles` application env;
+  setting it to `N` persists every `N`th light cycle. Deep cycles always
+  persist regardless of the light-cycle interval.
   """
 
   use GenServer
@@ -28,12 +39,22 @@ defmodule Kudzu.Consolidation do
   @deep_consolidation_interval_ms 21_600_000  # 6 hours
   @batch_size 100
 
+  # Persist the HRR encoder state to DETS every N light cycles. With the
+  # 10-minute light cycle, the default of 1 means persistence every
+  # 10 minutes — sufficient to bound vocabulary-learning loss to a
+  # single cycle's worth on crash. Operators can raise this to throttle
+  # DETS sync IO on encoder states large enough that sub-100ms persist
+  # cost would become contentious. Measured at ~15ms for a 251KB encoder
+  # state on titan, so default of 1 is safe.
+  @default_encoder_persist_interval_cycles 1
+
   defstruct [
     :hrr_codebook,
     :encoder_state,
     :consolidated_vectors,  # %{purpose => HRR.vector()}
     :last_consolidation,
     :last_deep_consolidation,
+    :light_cycles_since_persist,
     :stats
   ]
 
@@ -140,12 +161,14 @@ defmodule Kudzu.Consolidation do
       consolidated_vectors: %{},
       last_consolidation: nil,
       last_deep_consolidation: nil,
+      light_cycles_since_persist: 0,
       stats: %{
         consolidations: 0,
         deep_consolidations: 0,
         traces_processed: 0,
         traces_archived: 0,
-        associations_formed: 0
+        associations_formed: 0,
+        encoder_persists: 0
       }
     }
 
@@ -201,7 +224,8 @@ defmodule Kudzu.Consolidation do
       last_light_cycle: state.last_consolidation,
       last_deep_cycle: state.last_deep_consolidation,
       light_cycle_count: state.stats.consolidations,
-      deep_cycle_count: state.stats.deep_consolidations
+      deep_cycle_count: state.stats.deep_consolidations,
+      encoder_persists: state.stats.encoder_persists
     }
     {:reply, status, state}
   end
@@ -275,10 +299,17 @@ defmodule Kudzu.Consolidation do
     {processed, new_vectors, new_encoder_state} =
       process_hot_traces(state.hrr_codebook, state.encoder_state, state.consolidated_vectors)
 
-    new_stats = %{state.stats |
+    base_stats = %{state.stats |
       consolidations: state.stats.consolidations + 1,
       traces_processed: state.stats.traces_processed + processed
     }
+
+    # Persist encoder state on a configurable light-cycle cadence so a crash
+    # mid-deep-cycle cannot lose more than `interval_cycles` worth of
+    # vocabulary learning. DETS sync is sub-100ms for typical encoder state
+    # sizes; safe to run every cycle by default.
+    {persist_counter, persist_stats} =
+      maybe_persist_encoder(state.light_cycles_since_persist + 1, new_encoder_state, base_stats, :light)
 
     Logger.debug("[Consolidation] Processed #{processed} traces, vocab: #{map_size(new_encoder_state.token_counts)}, storage: hot=#{storage_stats.hot}, warm=#{storage_stats.warm}")
 
@@ -286,7 +317,8 @@ defmodule Kudzu.Consolidation do
       consolidated_vectors: new_vectors,
       encoder_state: new_encoder_state,
       last_consolidation: DateTime.utc_now(),
-      stats: new_stats
+      light_cycles_since_persist: persist_counter,
+      stats: persist_stats
     }
   end
 
@@ -300,20 +332,22 @@ defmodule Kudzu.Consolidation do
     # 2. Maintain encoder state (decay + prune co-occurrence)
     maintained_state = EncoderState.maintain(state.encoder_state)
 
-    # 3. Persist encoder state to DETS
-    case EncoderState.save(maintained_state) do
-      :ok ->
-        Logger.info("[Consolidation] Encoder state persisted to DETS")
-      {:error, reason} ->
-        Logger.warning("[Consolidation] Failed to persist encoder state: #{inspect(reason)}")
-    end
+    base_stats = %{state.stats |
+      deep_consolidations: state.stats.deep_consolidations + 1
+    }
+
+    # 3. Persist the maintained encoder state to DETS unconditionally.
+    # Deep cycles are infrequent (every 6h) so persistence on every deep
+    # cycle is desirable regardless of the light-cycle interval. Reset the
+    # light-cycle counter since this persist is just as good.
+    {_persist_counter, post_persist_stats} =
+      persist_encoder(maintained_state, base_stats, :deep)
 
     # 4. Archive stale traces
     archived = archive_stale_traces(all_traces)
 
-    new_stats = %{state.stats |
-      deep_consolidations: state.stats.deep_consolidations + 1,
-      traces_archived: state.stats.traces_archived + archived
+    new_stats = %{post_persist_stats |
+      traces_archived: post_persist_stats.traces_archived + archived
     }
 
     Logger.info("[Consolidation] Deep consolidation complete: rebuilt #{map_size(new_vectors)} vectors, archived #{archived} traces, vocab: #{map_size(maintained_state.token_counts)}")
@@ -322,8 +356,55 @@ defmodule Kudzu.Consolidation do
       consolidated_vectors: new_vectors,
       encoder_state: maintained_state,
       last_deep_consolidation: DateTime.utc_now(),
+      light_cycles_since_persist: 0,
       stats: new_stats
     }
+  end
+
+  # Persist the encoder state when `pending_cycles` has reached the
+  # configured cadence. Returns the updated counter (reset to 0 on persist)
+  # and the updated stats map (encoder_persists incremented on persist).
+  @spec maybe_persist_encoder(non_neg_integer(), EncoderState.t(), map(), :light | :deep) ::
+          {non_neg_integer(), map()}
+  defp maybe_persist_encoder(pending_cycles, encoder_state, stats, cycle) do
+    interval =
+      Application.get_env(
+        :kudzu,
+        :encoder_persist_interval_cycles,
+        @default_encoder_persist_interval_cycles
+      )
+
+    if pending_cycles >= interval do
+      {0, elem(persist_encoder(encoder_state, stats, cycle), 1)}
+    else
+      {pending_cycles, stats}
+    end
+  end
+
+  # Save encoder state to DETS, emit telemetry, and bump the persist
+  # counter on success. Failures are logged but do not crash the cycle —
+  # next cycle will retry. The returned counter is always 0 since this
+  # function only runs when we actually persist.
+  @spec persist_encoder(EncoderState.t(), map(), :light | :deep) :: {non_neg_integer(), map()}
+  defp persist_encoder(encoder_state, stats, cycle) do
+    case EncoderState.save(encoder_state) do
+      :ok ->
+        :telemetry.execute(
+          [:kudzu, :encoder, :persisted],
+          %{count: 1},
+          %{cycle: cycle}
+        )
+
+        Logger.debug("[Consolidation] Encoder state persisted to DETS (cycle: #{cycle})")
+        {0, %{stats | encoder_persists: stats.encoder_persists + 1}}
+
+      {:error, reason} ->
+        Logger.warning(
+          "[Consolidation] Failed to persist encoder state (cycle: #{cycle}): #{inspect(reason)}"
+        )
+
+        {0, stats}
+    end
   end
 
   defp process_hot_traces(codebook, encoder_state, existing_vectors) do
