@@ -2,41 +2,38 @@ defmodule Kudzu.Brain do
   @moduledoc """
   Brain GenServer — always-awake autonomous learning with tiered reasoning.
 
-  The Brain is the autonomous executive layer of Kudzu. It wakes periodically,
-  runs health checks (the "pre-check gate"), and when anomalies are detected,
-  reasons about them through a multi-tier pipeline enhanced by a thinking layer:
+  The Brain is the autonomous executive layer of Kudzu. This module owns
+  the GenServer lifecycle and message routing; the actual cognitive work
+  lives in focused sub-modules:
 
-  1. **Tier 1 — Reflexes**: Instant pattern → action mappings, zero cost.
-  2. **Thinking Layer — Thought**: Ephemeral reasoning via silo HRR activation,
-     chain building, and working memory integration.
-  3. **Tier 3 — Claude API**: LLM-driven reasoning for novel situations,
-     followed by Distiller extraction of knowledge back into silos.
+  * `Kudzu.Brain.Reasoning` — autonomous-cycle three-tier pipeline
+    (reflexes → silo inference → Claude) plus Claude-response
+    distillation.
+  * `Kudzu.Brain.Chat` — interactive chat: synchronous and streaming
+    four-tier escalation (recall → silo inference → web → Claude),
+    Thought integration, and directive parsing (`Learn X`, `progress`).
+  * `Kudzu.Brain.Learning` — directed learning-goal lifecycle plus
+    persistence/restoration through the kudzu_brain hologram.
+  * `Kudzu.Brain.Activities` — the always-awake activity tick (health,
+    distillation, storage, web learning, curiosity) and the hologram
+    pre-check gate.
 
   ## Wake Cycle
 
-  Every `cycle_interval` milliseconds (default 5 minutes), the Brain:
-
-  1. Runs `pre_check/1` — a battery of health checks
-  2. If all nominal → explores curiosity-driven questions
-  3. If anomalies detected → enters the reasoning pipeline
-  4. Decays working memory and schedules the next wake cycle
+  Every `@activity_tick` (10s) the Brain dispatches one overdue
+  activity via `Activities.run_cycle/1`, decays working memory, and
+  reschedules itself.
 
   ## Chat
 
-  The Brain supports interactive chat via `chat/2`. Messages flow through:
-
-  1. Tier 1 — Reflexes check for known patterns
-  2. Tier 2 — Semantic Recall from stored traces (free)
-  3. Tier 3 — Web Search for external knowledge (free)
-  4. Tier 4 — Silo Inference via Thought reasoning (free)
-  5. Tier 5 — Claude API as absolute last resort (paid)
-  6. Distiller extracts knowledge from Claude responses
+  `chat/2` and `chat_stream/3` enter the four-tier escalation in
+  `Chat.chat_reason/3` / `Chat.chat_reason_stream/4`.
 
   ## Desires
 
-  The Brain maintains a list of high-level desires that guide its reasoning.
-  These are aspirational goals, not tasks — they shape what the Brain pays
-  attention to and how it prioritizes anomalies.
+  The Brain maintains a list of high-level desires that guide its
+  reasoning. These are aspirational goals, not tasks — they shape what
+  the Brain pays attention to and how it prioritizes anomalies.
   """
 
   use GenServer
@@ -154,7 +151,13 @@ defmodule Kudzu.Brain do
     GenServer.cast(__MODULE__, {:chat_stream, message, stream_to, opts})
   end
 
-  @doc "Get Brain status for metrics"
+  @doc """
+  Return a status snapshot of the Brain for metrics endpoints.
+
+  Returns `%{status: :not_running}` if the Brain GenServer is not
+  registered (e.g. application starting up).
+  """
+  @spec status() :: map()
   def status do
     GenServer.call(__MODULE__, :status, 5_000)
   rescue
@@ -394,7 +397,6 @@ defmodule Kudzu.Brain do
     {:noreply, state}
   end
 
-
   @impl true
   def handle_info({:trace_stored, record}, state) do
     if record.importance in [:critical, :high] do
@@ -416,6 +418,7 @@ defmodule Kudzu.Brain do
     end
     {:noreply, state}
   end
+
   def handle_info(msg, state) do
     Logger.debug("[Brain] Unexpected message: #{inspect(msg)}")
     {:noreply, state}
@@ -445,6 +448,4 @@ defmodule Kudzu.Brain do
   def ensure_map(%_{} = struct), do: Map.from_struct(struct)
   def ensure_map(map) when is_map(map), do: map
   def ensure_map(other), do: %{value: inspect(other)}
-
-
 end
