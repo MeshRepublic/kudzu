@@ -63,8 +63,33 @@ defmodule Kudzu.Brain.Distiller do
 
   @doc """
   Extract causal/relational chains from text as {subject, relation, object} triples.
+
+  When the `:kudzu, :distiller_use_claude` application env is true and an
+  `ANTHROPIC_API_KEY` is set, the higher-quality Claude-backed
+  `Kudzu.Silo.Extractor.extract_claude/3` is consulted first. The local
+  Ollama path remains the default and is also used as fallback when the
+  Claude call returns no triples or errors out.
   """
   def extract_chains(text) when is_binary(text) do
+    if use_claude_extractor?() do
+      case extract_with_claude(text) do
+        {:ok, chains} when chains != [] ->
+          Logger.debug("[Distiller] Claude extracted #{length(chains)} chains")
+          chains
+
+        other ->
+          Logger.debug(
+            "[Distiller] Claude extractor unavailable/empty (#{inspect(other) |> String.slice(0, 200)}), falling back to Ollama"
+          )
+
+          extract_chains_via_ollama(text)
+      end
+    else
+      extract_chains_via_ollama(text)
+    end
+  end
+
+  defp extract_chains_via_ollama(text) do
     ollama_result = try do
       extract_with_ollama(text)
     rescue
@@ -85,6 +110,55 @@ defmodule Kudzu.Brain.Distiller do
         |> Enum.flat_map(&extract_from_sentence/1)
         |> Enum.uniq()
     end
+  end
+
+  defp use_claude_extractor? do
+    Application.get_env(:kudzu, :distiller_use_claude, false) and
+      is_binary(System.get_env("ANTHROPIC_API_KEY"))
+  end
+
+  defp extract_with_claude(text) do
+    api_key = System.get_env("ANTHROPIC_API_KEY")
+
+    try do
+      case Kudzu.Silo.Extractor.extract_claude(text, api_key) do
+        {:ok, triples} when is_list(triples) ->
+          chains =
+            triples
+            |> Enum.map(&normalize_claude_triple/1)
+            |> Enum.reject(&is_nil/1)
+            |> Enum.uniq()
+
+          {:ok, chains}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    rescue
+      e -> {:error, {:crashed, Exception.message(e)}}
+    catch
+      :exit, e -> {:error, {:exit, inspect(e) |> String.slice(0, 200)}}
+    end
+  end
+
+  # Coerce Claude's wider relation vocabulary into the Distiller whitelist
+  # so downstream review/scoring/probing is consistent across extractors.
+  defp normalize_claude_triple({subject, relation, object}) do
+    s = subject |> to_string() |> normalize_term()
+    o = object |> to_string() |> normalize_term()
+    r = coerce_relation(to_string(relation))
+
+    if String.length(s) > 1 and String.length(o) > 1 do
+      {s, r, o}
+    end
+  end
+
+  defp normalize_claude_triple(_), do: nil
+
+  @whitelisted_relations ~w(caused_by causes requires uses is_a contains relates_to produces provides because)
+  defp coerce_relation(rel) when is_binary(rel) do
+    rel = String.downcase(String.trim(rel))
+    if rel in @whitelisted_relations, do: rel, else: "relates_to"
   end
 
   @doc """
