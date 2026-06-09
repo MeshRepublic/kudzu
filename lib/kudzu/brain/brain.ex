@@ -448,18 +448,9 @@ defmodule Kudzu.Brain do
             # Brain-side distillations — same destination as Tier-3
             # Claude-response distillations).
             silo_domains =
-              case Kudzu.Silo.list() do
-                domains when is_list(domains) ->
-                  Enum.map(domains, fn
-                    {domain, _, _} -> domain
-                    domain when is_binary(domain) -> domain
-                    _ -> nil
-                  end)
-                  |> Enum.reject(&is_nil/1)
-
-                _ ->
-                  []
-              end
+              Kudzu.Silo.list()
+              |> Enum.map(fn {domain, _, _} -> domain end)
+              |> Enum.reject(&(&1 == nil))
 
             result = Kudzu.Brain.Distiller.distill(text, silo_domains)
 

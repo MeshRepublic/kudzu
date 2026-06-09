@@ -870,14 +870,11 @@ defmodule Kudzu.Storage do
       is_binary(Map.get(hint, :query)) ->
         Map.get(hint, :query)
 
-      is_map(hint) ->
+      true ->
         subj = Map.get(hint, "subject") || Map.get(hint, :subject)
         rel = Map.get(hint, "relation") || Map.get(hint, :relation)
         obj = Map.get(hint, "object") || Map.get(hint, :object)
         if subj && rel && obj, do: "#{subj} #{rel} #{obj}", else: nil
-
-      true ->
-        nil
     end
   end
 

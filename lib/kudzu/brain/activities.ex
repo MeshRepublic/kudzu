@@ -476,18 +476,9 @@ defmodule Kudzu.Brain.Activities do
 
   defp get_silo_domains_for_activity do
     try do
-      case Kudzu.Silo.list() do
-        domains when is_list(domains) ->
-          Enum.map(domains, fn
-            {domain, _, _} -> domain
-            domain when is_binary(domain) -> domain
-            _ -> nil
-          end)
-          |> Enum.reject(&is_nil/1)
-
-        _ ->
-          []
-      end
+      Kudzu.Silo.list()
+      |> Enum.map(fn {domain, _, _} -> domain end)
+      |> Enum.reject(&(&1 == nil))
     catch
       _, _ -> []
     end

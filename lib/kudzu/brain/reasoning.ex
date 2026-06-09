@@ -72,18 +72,9 @@ defmodule Kudzu.Brain.Reasoning do
   def distill_claude_response(state, response_text) do
     try do
       silo_domains =
-        case Kudzu.Silo.list() do
-          domains when is_list(domains) ->
-            Enum.map(domains, fn
-              {domain, _, _} -> domain
-              domain when is_binary(domain) -> domain
-              _ -> nil
-            end)
-            |> Enum.reject(&is_nil/1)
-
-          _ ->
-            []
-        end
+        Kudzu.Silo.list()
+        |> Enum.map(fn {domain, _, _} -> domain end)
+        |> Enum.reject(&(&1 == nil))
 
       available_actions =
         if function_exported?(Reflexes, :known_actions, 0) do

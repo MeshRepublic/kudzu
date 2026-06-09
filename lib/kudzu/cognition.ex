@@ -292,8 +292,6 @@ defmodule Kudzu.Cognition do
     end)
   end
 
-  defp safe_to_atom(_), do: :unknown
-
   defp parse_single_action(response) do
     response
     |> String.split("\n", trim: true)

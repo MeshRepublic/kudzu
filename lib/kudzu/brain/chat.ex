@@ -216,8 +216,6 @@ defmodule Kudzu.Brain.Chat do
     top_score =
       case recall_results do
         [%{similarity: score} | _] -> score
-        # fallback format
-        [{_purpose, score} | _] -> score
         _ -> 0.0
       end
 
@@ -363,8 +361,6 @@ defmodule Kudzu.Brain.Chat do
     top_score =
       case recall_results do
         [%{similarity: score} | _] -> score
-        # fallback format
-        [{_purpose, score} | _] -> score
         _ -> 0.0
       end
 
