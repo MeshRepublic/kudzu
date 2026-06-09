@@ -67,15 +67,13 @@ defmodule Kudzu.Brain.LearningGoal do
     completed =
       goal.topics
       |> Enum.filter(fn {_, s} -> s == :complete end)
-      |> Enum.map(fn {t, _} -> "  [x] #{t}" end)
-      |> Enum.join("\n")
+      |> Enum.map_join("\n", fn {t, _} -> "  [x] #{t}" end)
 
     upcoming =
       goal.topics
       |> Enum.drop(goal.current_index)
       |> Enum.take(5)
-      |> Enum.map(fn {t, _} -> "  [ ] #{t}" end)
-      |> Enum.join("\n")
+      |> Enum.map_join("\n", fn {t, _} -> "  [ ] #{t}" end)
 
     header = "Learning: #{goal.topic} (#{done}/#{total} topics, #{pct}%)"
     failed_line = if failed > 0, do: "\nFailed: #{failed}", else: ""

@@ -88,6 +88,10 @@ defmodule Kudzu.Brain.Reasoning do
       available_actions =
         if function_exported?(Reflexes, :known_actions, 0) do
           try do
+            # apply/3 used here because the function is dynamically gated by
+            # function_exported?/3 above; a direct call would emit a compile-time
+            # warning when Reflexes.known_actions/0 is removed.
+            # credo:disable-for-next-line Credo.Check.Refactor.Apply
             apply(Reflexes, :known_actions, [])
           catch
             _, _ -> []
@@ -224,10 +228,9 @@ defmodule Kudzu.Brain.Reasoning do
         system_prompt = PromptBuilder.build(state)
 
         anomaly_desc =
-          Enum.map(anomalies, fn a ->
+          Enum.map_join(anomalies, "; ", fn a ->
             "#{a.check}: #{a.reason}"
           end)
-          |> Enum.join("; ")
 
         message =
           "Anomalies detected that I couldn't handle with reflexes or silo inference:\n" <>

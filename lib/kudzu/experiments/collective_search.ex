@@ -6,7 +6,7 @@ defmodule Kudzu.Experiments.CollectiveSearch do
   a collective task, and observes emergent coordination behavior.
   """
 
-  alias Kudzu.{Hologram, Application}
+  alias Kudzu.{Application, Hologram}
 
   @doc """
   Run the collective search experiment.
@@ -42,13 +42,13 @@ defmodule Kudzu.Experiments.CollectiveSearch do
     # Check Ollama availability
     IO.puts("\nChecking Ollama...")
 
-    unless Kudzu.Cognition.available?() do
+    if Kudzu.Cognition.available?() do
+      IO.puts("Ollama available")
+      do_run(num_holograms, connections, model, target, knowledge)
+    else
       IO.puts("ERROR: Ollama not available at localhost:11434")
       IO.puts("Start Ollama with: ollama serve")
       {:error, :ollama_unavailable}
-    else
-      IO.puts("Ollama available")
-      do_run(num_holograms, connections, model, target, knowledge)
     end
   end
 
@@ -156,10 +156,7 @@ defmodule Kudzu.Experiments.CollectiveSearch do
   def test_cognition(model \\ "llama3.2:3b") do
     IO.puts("\n=== Testing Hologram Cognition ===")
 
-    unless Kudzu.Cognition.available?() do
-      IO.puts("ERROR: Ollama not available")
-      {:error, :ollama_unavailable}
-    else
+    if Kudzu.Cognition.available?() do
       {:ok, h} =
         Application.spawn_hologram(
           purpose: :test,
@@ -187,6 +184,9 @@ defmodule Kudzu.Experiments.CollectiveSearch do
           IO.puts("Error: #{inspect(reason)}")
           {:error, reason}
       end
+    else
+      IO.puts("ERROR: Ollama not available")
+      {:error, :ollama_unavailable}
     end
   end
 

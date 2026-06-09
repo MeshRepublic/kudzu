@@ -49,8 +49,9 @@ defmodule Kudzu.Brain.Tools.Web do
     end
 
     @impl true
-    # credo:disable-for-next-line Credo.Check.Design.AliasUsage — parent module,
-    # aliasing it inside a nested defmodule of the same parent is awkward.
+    # aliasing parent Kudzu.Brain.Tools.Web inside a nested defmodule of the
+    # same parent would be awkward — call by full name instead.
+    # credo:disable-for-next-line Credo.Check.Design.AliasUsage
     def execute(params), do: Kudzu.Brain.Tools.Web.execute("web_search", params)
   end
 
@@ -83,8 +84,9 @@ defmodule Kudzu.Brain.Tools.Web do
     end
 
     @impl true
-    # credo:disable-for-next-line Credo.Check.Design.AliasUsage — parent module,
-    # aliasing it inside a nested defmodule of the same parent is awkward.
+    # aliasing parent Kudzu.Brain.Tools.Web inside a nested defmodule of the
+    # same parent would be awkward — call by full name instead.
+    # credo:disable-for-next-line Credo.Check.Design.AliasUsage
     def execute(params), do: Kudzu.Brain.Tools.Web.execute("web_read", params)
   end
 
@@ -133,12 +135,8 @@ defmodule Kudzu.Brain.Tools.Web do
   end
 
   def execute("web_read", %{"url" => url}) do
-    cond do
-      not (String.starts_with?(url, "http://") or String.starts_with?(url, "https://")) ->
-        {:error, "URL must start with http:// or https://"}
-
-      true ->
-        ensure_httpc_started()
+    if String.starts_with?(url, "http://") or String.starts_with?(url, "https://") do
+      ensure_httpc_started()
 
         case fetch_url(url) do
           {:ok, body} ->
@@ -151,6 +149,8 @@ defmodule Kudzu.Brain.Tools.Web do
           {:error, reason} ->
             {:error, "web_read failed: #{reason}"}
         end
+    else
+      {:error, "URL must start with http:// or https://"}
     end
   rescue
     e -> {:error, "web_read crashed: #{Exception.message(e)}"}

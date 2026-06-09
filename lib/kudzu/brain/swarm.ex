@@ -426,7 +426,7 @@ defmodule Kudzu.Brain.Swarm do
     findings_text =
       findings
       |> Enum.sort_by(& &1.timestamp)
-      |> Enum.map(fn f ->
+      |> Enum.map_join("\n\n", fn f ->
         data = f.data
 
         content =
@@ -440,7 +440,6 @@ defmodule Kudzu.Brain.Swarm do
 
         "[Specialist #{f.specialist_index}: #{f.sub_question}]\n#{content}"
       end)
-      |> Enum.join("\n\n")
       |> String.slice(0, 6000)
 
     prompt =

@@ -266,8 +266,9 @@ defmodule Kudzu.Brain.Curiosity do
         domain_lower = String.downcase(domain)
         Map.get(@domain_keywords, domain_lower)
       end)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.reject(fn kw -> String.contains?(query_lower, String.downcase(kw)) end)
+      |> Enum.reject(fn kw ->
+        is_nil(kw) or String.contains?(query_lower, String.downcase(kw))
+      end)
       # Only add the single most relevant keyword to keep queries focused
       |> Enum.take(1)
 

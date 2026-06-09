@@ -138,10 +138,7 @@ defmodule KudzuWeb.BrainChatController do
     auth_config = Application.get_env(:kudzu, :api_auth, [])
     enabled = Keyword.get(auth_config, :enabled, false)
 
-    if not enabled do
-      # Auth disabled — allow all requests
-      :ok
-    else
+    if enabled do
       api_keys = Keyword.get(auth_config, :api_keys, [])
 
       case get_req_header(conn, "authorization") do
@@ -151,6 +148,9 @@ defmodule KudzuWeb.BrainChatController do
         _ ->
           {:error, "Authorization header required"}
       end
+    else
+      # Auth disabled — allow all requests
+      :ok
     end
   end
 end

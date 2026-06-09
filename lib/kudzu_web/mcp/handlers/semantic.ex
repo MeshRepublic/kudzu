@@ -6,9 +6,9 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
   Co-occurrence data from the HRR encoder improves results over time.
   """
 
+  alias Kudzu.{Application, Hologram, HRR}
   alias Kudzu.Consolidation
   alias Kudzu.HRR.{Encoder, EncoderState, Tokenizer}
-  alias Kudzu.{Application, HRR, Hologram}
 
   def handle("kudzu_semantic_recall", params) do
     query = params["query"] || ""

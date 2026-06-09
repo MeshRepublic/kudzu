@@ -88,8 +88,7 @@ defmodule Kudzu.Cognition.PromptBuilder do
     desire_list =
       desires
       |> Enum.with_index(1)
-      |> Enum.map(fn {d, i} -> "  #{i}. #{d}" end)
-      |> Enum.join("\n")
+      |> Enum.map_join("\n", fn {d, i} -> "  #{i}. #{d}" end)
 
     """
     == ACTIVE DESIRES ==
@@ -106,8 +105,7 @@ defmodule Kudzu.Cognition.PromptBuilder do
       |> Map.values()
       |> Enum.sort_by(& &1.timestamp, {:desc, Kudzu.VectorClock})
       |> Enum.take(@max_traces)
-      |> Enum.map(&format_trace/1)
-      |> Enum.join("\n")
+      |> Enum.map_join("\n", &format_trace/1)
 
     """
     == RECENT TRACES (your navigational memory) ==
@@ -119,9 +117,7 @@ defmodule Kudzu.Cognition.PromptBuilder do
 
   defp format_trace(trace) do
     hints =
-      trace.reconstruction_hint
-      |> Enum.map(fn {k, v} -> "#{k}=#{inspect(v)}" end)
-      |> Enum.join(", ")
+      Enum.map_join(trace.reconstruction_hint, ", ", fn {k, v} -> "#{k}=#{inspect(v)}" end)
 
     path_str = Enum.join(trace.path, " -> ")
 
@@ -133,7 +129,7 @@ defmodule Kudzu.Cognition.PromptBuilder do
       peers
       |> Enum.sort_by(fn {_, score} -> score end, :desc)
       |> Enum.take(@max_peers)
-      |> Enum.map(fn {id, score} ->
+      |> Enum.map_join("\n", fn {id, score} ->
         proximity =
           cond do
             score > 0.8 -> "very close"
@@ -144,7 +140,6 @@ defmodule Kudzu.Cognition.PromptBuilder do
 
         "  #{id}: #{proximity} (#{Float.round(score, 2)})"
       end)
-      |> Enum.join("\n")
 
     """
     == PEER AWARENESS ==
@@ -156,8 +151,7 @@ defmodule Kudzu.Cognition.PromptBuilder do
   defp peers_section(_), do: "== PEERS ==\nNo peers known yet.\n"
 
   defp peer_states_section(peer_states) do
-    peer_states
-    |> Enum.map(fn ps ->
+    Enum.map_join(peer_states, "\n", fn ps ->
       """
       Peer #{ps.id}:
         Purpose: #{ps.purpose}
@@ -165,7 +159,6 @@ defmodule Kudzu.Cognition.PromptBuilder do
         Desires: #{inspect(ps.desires || [])}
       """
     end)
-    |> Enum.join("\n")
   end
 
   defp stimulus_section(stimulus) when is_binary(stimulus) do
@@ -180,9 +173,9 @@ defmodule Kudzu.Cognition.PromptBuilder do
 
   defp stimulus_section(%{type: type} = stimulus) do
     details =
-      Map.drop(stimulus, [:type])
-      |> Enum.map(fn {k, v} -> "  #{k}: #{inspect(v)}" end)
-      |> Enum.join("\n")
+      stimulus
+      |> Map.drop([:type])
+      |> Enum.map_join("\n", fn {k, v} -> "  #{k}: #{inspect(v)}" end)
 
     """
     == STIMULUS ==

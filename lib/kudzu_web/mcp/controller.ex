@@ -4,16 +4,16 @@ defmodule KudzuWeb.MCP.Controller do
   alias KudzuWeb.MCP.{Protocol, Tools}
 
   alias KudzuWeb.MCP.Handlers.{
-    System,
-    Hologram,
-    Trace,
     Agent,
-    Constitution,
-    Cluster,
-    Node,
     Beamlet,
-    Semantic,
     Brain,
+    Cluster,
+    Constitution,
+    Hologram,
+    Node,
+    Semantic,
+    System,
+    Trace,
     Web
   }
 

@@ -9,6 +9,11 @@ defmodule Kudzu.Beamlet.Base do
   - Request queuing and rate limiting
   """
 
+  # __using__ inlines the default behaviour implementation (init, callbacks,
+  # health-check tick) into the using module. The quote block intentionally
+  # spans 200+ lines because splitting it would require multiple smaller quote
+  # blocks with unquote_splicing seams that hurt readability more than help.
+  # credo:disable-for-next-line Credo.Check.Refactor.LongQuoteBlocks
   defmacro __using__(opts) do
     capabilities = Keyword.get(opts, :capabilities, [])
 

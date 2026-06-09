@@ -33,13 +33,12 @@ defmodule Kudzu.Brain.Vectors.SiloReview do
       {:error, :no_existing_knowledge}
     else
       summary =
-        Enum.map(relevant, fn {domain, hint, score} ->
+        Enum.map_join(relevant, "\n", fn {domain, hint, score} ->
           s = get_field(hint, :subject)
           r = get_field(hint, :relation)
           o = get_field(hint, :object)
           "- [#{domain}] #{s} #{r} #{o} (score: #{Float.round(score, 2)})"
         end)
-        |> Enum.join("\n")
 
       {:ok,
        %{

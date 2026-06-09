@@ -49,8 +49,7 @@ defmodule Kudzu.Brain.Chat do
 
         response =
           actions
-          |> Enum.map(&inspect/1)
-          |> Enum.join("; ")
+          |> Enum.map_join("; ", &inspect/1)
 
         {response, 1, [], 0.0, state}
 
@@ -87,8 +86,7 @@ defmodule Kudzu.Brain.Chat do
 
         response =
           actions
-          |> Enum.map(&inspect/1)
-          |> Enum.join("; ")
+          |> Enum.map_join("; ", &inspect/1)
 
         send(stream_to, {:chunk, response})
         {response, 1, [], 0.0, state}
@@ -476,7 +474,7 @@ defmodule Kudzu.Brain.Chat do
     snippets =
       recall_results
       |> Enum.take(5)
-      |> Enum.map(fn
+      |> Enum.map_join("\n", fn
         %{similarity: sim, record: record} when is_map(record) ->
           hint = record.reconstruction_hint || %{}
 
@@ -530,8 +528,7 @@ defmodule Kudzu.Brain.Chat do
         recall_summary =
           context.recall_results
           |> Enum.take(5)
-          |> Enum.map(fn {purpose, sim} -> "#{purpose} (#{Float.round(sim, 3)})" end)
-          |> Enum.join(", ")
+          |> Enum.map_join(", ", fn {purpose, sim} -> "#{purpose} (#{Float.round(sim, 3)})" end)
 
         parts ++ ["\n\n[Memory recall found related purposes: #{recall_summary}]"]
       else

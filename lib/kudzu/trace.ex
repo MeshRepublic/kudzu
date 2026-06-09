@@ -280,8 +280,7 @@ defmodule Kudzu.Trace do
     hint_str =
       reconstruction_hint
       |> Enum.sort_by(fn {k, _v} -> to_string(k) end)
-      |> Enum.map(fn {k, v} -> "#{k}:#{inspect(v)}" end)
-      |> Enum.join("|")
+      |> Enum.map_join("|", fn {k, v} -> "#{k}:#{inspect(v)}" end)
 
     content = "#{origin}|#{purpose_str}|#{hint_str}"
 

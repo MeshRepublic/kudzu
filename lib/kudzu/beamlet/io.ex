@@ -99,21 +99,22 @@ defmodule Kudzu.Beamlet.IO do
   def handle_request(%{op: :http_get, url: url} = req, from_id) do
     Logger.debug("IO Beamlet: http_get #{url} for #{from_id}")
 
-    with :ok <- validate_url(url) do
-      headers = Map.get(req, :headers, [])
-      timeout = Map.get(req, :timeout, 30_000)
+    case validate_url(url) do
+      :ok ->
+        headers = Map.get(req, :headers, [])
+        timeout = Map.get(req, :timeout, 30_000)
 
-      url_charlist = to_charlist(url)
-      http_headers = Enum.map(headers, fn {k, v} -> {to_charlist(k), to_charlist(v)} end)
+        url_charlist = to_charlist(url)
+        http_headers = Enum.map(headers, fn {k, v} -> {to_charlist(k), to_charlist(v)} end)
 
-      case Kudzu.HTTP.request(:get, {url_charlist, http_headers}, [{:timeout, timeout}]) do
-        {:ok, {{_, status, _}, resp_headers, body}} ->
-          {:ok, %{status: status, headers: resp_headers, body: to_string(body)}}
+        case Kudzu.HTTP.request(:get, {url_charlist, http_headers}, [{:timeout, timeout}]) do
+          {:ok, {{_, status, _}, resp_headers, body}} ->
+            {:ok, %{status: status, headers: resp_headers, body: to_string(body)}}
 
-        {:error, reason} ->
-          {:error, {:http_error, reason}}
-      end
-    else
+          {:error, reason} ->
+            {:error, {:http_error, reason}}
+        end
+
       {:error, reason} ->
         Logger.warning("IO Beamlet: blocked http_get to #{url}: #{inspect(reason)}")
         {:error, reason}
@@ -123,24 +124,25 @@ defmodule Kudzu.Beamlet.IO do
   def handle_request(%{op: :http_post, url: url, body: body} = req, from_id) do
     Logger.debug("IO Beamlet: http_post #{url} for #{from_id}")
 
-    with :ok <- validate_url(url) do
-      content_type = Map.get(req, :content_type, "application/json")
-      headers = Map.get(req, :headers, [])
-      timeout = Map.get(req, :timeout, 30_000)
+    case validate_url(url) do
+      :ok ->
+        content_type = Map.get(req, :content_type, "application/json")
+        headers = Map.get(req, :headers, [])
+        timeout = Map.get(req, :timeout, 30_000)
 
-      url_charlist = to_charlist(url)
-      http_headers = Enum.map(headers, fn {k, v} -> {to_charlist(k), to_charlist(v)} end)
+        url_charlist = to_charlist(url)
+        http_headers = Enum.map(headers, fn {k, v} -> {to_charlist(k), to_charlist(v)} end)
 
-      request = {url_charlist, http_headers, to_charlist(content_type), body}
+        request = {url_charlist, http_headers, to_charlist(content_type), body}
 
-      case Kudzu.HTTP.request(:post, request, [{:timeout, timeout}]) do
-        {:ok, {{_, status, _}, resp_headers, resp_body}} ->
-          {:ok, %{status: status, headers: resp_headers, body: to_string(resp_body)}}
+        case Kudzu.HTTP.request(:post, request, [{:timeout, timeout}]) do
+          {:ok, {{_, status, _}, resp_headers, resp_body}} ->
+            {:ok, %{status: status, headers: resp_headers, body: to_string(resp_body)}}
 
-        {:error, reason} ->
-          {:error, {:http_error, reason}}
-      end
-    else
+          {:error, reason} ->
+            {:error, {:http_error, reason}}
+        end
+
       {:error, reason} ->
         Logger.warning("IO Beamlet: blocked http_post to #{url}: #{inspect(reason)}")
         {:error, reason}

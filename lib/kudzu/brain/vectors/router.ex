@@ -9,11 +9,11 @@ defmodule Kudzu.Brain.Vectors.Router do
   require Logger
 
   alias Kudzu.Brain.Vectors.{
-    OllamaTeacher,
-    WebLearnerVector,
-    SystemIntrospector,
     LocalDocReader,
-    SiloReview
+    OllamaTeacher,
+    SiloReview,
+    SystemIntrospector,
+    WebLearnerVector
   }
 
   @vectors [

@@ -152,8 +152,7 @@ defmodule Kudzu.Brain.PromptBuilder do
   defp format_desires(desires) do
     desires
     |> Enum.with_index(1)
-    |> Enum.map(fn {d, i} -> "#{i}. #{d}" end)
-    |> Enum.join("\n")
+    |> Enum.map_join("\n", fn {d, i} -> "#{i}. #{d}" end)
   end
 
   defp format_recent_traces(brain_state, session_id, model_id) do
@@ -240,8 +239,7 @@ defmodule Kudzu.Brain.PromptBuilder do
         "(no silos yet)"
 
       silos ->
-        Enum.map(silos, fn {domain, _pid, _id} -> "- #{domain}" end)
-        |> Enum.join("\n")
+        Enum.map_join(silos, "\n", fn {domain, _pid, _id} -> "- #{domain}" end)
     end
   end
 end

@@ -145,8 +145,9 @@ defmodule Kudzu.Brain.Vectors.LocalDocReader do
     topic
     |> String.split(~r/[\s,;:]+/, trim: true)
     |> Enum.map(&String.downcase/1)
-    |> Enum.reject(fn w -> byte_size(w) < 3 end)
-    |> Enum.reject(fn w -> w in ~w(the and for how what why about learn explain) end)
+    |> Enum.reject(fn w ->
+      byte_size(w) < 3 or w in ~w(the and for how what why about learn explain)
+    end)
   end
 
   # ── File Reading ────────────────────────────────────────────────

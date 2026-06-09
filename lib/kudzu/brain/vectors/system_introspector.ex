@@ -75,10 +75,9 @@ defmodule Kudzu.Brain.Vectors.SystemIntrospector do
       content =
         results
         |> Enum.reverse()
-        |> Enum.map(fn {label, output} ->
+        |> Enum.map_join("\n\n---\n\n", fn {label, output} ->
           "## #{label}\n\n#{String.slice(output, 0, 3000)}"
         end)
-        |> Enum.join("\n\n---\n\n")
 
       {:ok,
        %{
