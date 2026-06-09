@@ -110,6 +110,29 @@ defmodule Kudzu.StorageTest do
     end
   end
 
+  describe "cold tier durability across Storage restart" do
+    test "trace survives Storage GenServer restart and is readable from cold" do
+      trace = build_trace("durability_round_trip")
+      :ok = Storage.store(trace, "test_hologram")
+      :ok = Storage.demote_to_cold(trace.id)
+      # Sanity: it is reachable now.
+      assert {:cold, %TraceRecord{id: id1}} = Storage.retrieve(trace.id)
+      assert id1 == trace.id
+
+      # Stop the Storage GenServer (the supervisor will not restart it
+      # because we wait for the new PID after starting it ourselves).
+      Supervisor.terminate_child(Kudzu.Supervisor, Kudzu.Storage)
+      assert is_nil(Process.whereis(Kudzu.Storage))
+      # Start a fresh Storage GenServer — its init/1 re-opens the warm
+      # DETS file under the per-test :data_root and re-checks Mnesia.
+      {:ok, _} = Supervisor.restart_child(Kudzu.Supervisor, Kudzu.Storage)
+
+      # The same trace must now be retrievable from cold, post-restart.
+      assert {:cold, %TraceRecord{id: id2}} = Storage.retrieve(trace.id)
+      assert id2 == trace.id
+    end
+  end
+
   # --- Helpers ---
 
   defp warm_dets_file do
