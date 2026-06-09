@@ -1,7 +1,7 @@
 defmodule KudzuWeb.MCP.Handlers.Trace do
   @moduledoc "MCP handlers for trace tools."
 
-  alias Kudzu.{Hologram, Application}
+  alias Kudzu.{Application, Hologram}
 
   def handle("kudzu_list_traces", params) do
     purpose_filter = params["purpose"]

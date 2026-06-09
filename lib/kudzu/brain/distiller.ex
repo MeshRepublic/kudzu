@@ -228,24 +228,23 @@ defmodule Kudzu.Brain.Distiller do
       |> String.downcase()
       |> String.replace(~r/[^\w\s]/, "")
       |> String.split(~r/\s+/, trim: true)
-      |> Enum.reject(fn term -> term in @stop_words end)
-      |> Enum.reject(fn term -> String.length(term) < 3 end)
+      |> Enum.reject(fn term -> term in @stop_words or String.length(term) < 3 end)
       |> Enum.frequencies()
       |> Enum.map(fn {term, _count} -> term end)
 
     silo_set = MapSet.new(silo_domains |> Enum.map(&String.downcase/1))
 
     terms
-    |> Enum.reject(fn term -> MapSet.member?(silo_set, term) end)
     |> Enum.reject(fn term ->
-      try do
-        results = Kudzu.Brain.InferenceEngine.cross_query(term)
-        Enum.any?(results, fn {_domain, _hint, score} -> score > 0.5 end)
-      rescue
-        _ -> false
-      catch
-        :exit, _ -> false
-      end
+      MapSet.member?(silo_set, term) or
+        try do
+          results = Kudzu.Brain.InferenceEngine.cross_query(term)
+          Enum.any?(results, fn {_domain, _hint, score} -> score > 0.5 end)
+        rescue
+          _ -> false
+        catch
+          :exit, _ -> false
+        end
     end)
   end
 

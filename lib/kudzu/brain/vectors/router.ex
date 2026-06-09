@@ -34,13 +34,13 @@ defmodule Kudzu.Brain.Vectors.Router do
   def learn(topic, opts \\ []) do
     ranked =
       rank_vectors(topic)
-      |> Enum.filter(fn {_mod, score} -> score >= @relevance_threshold end)
-      |> Enum.filter(fn {mod, _score} ->
-        try do
-          mod.available?()
-        rescue
-          _ -> false
-        end
+      |> Enum.filter(fn {mod, score} ->
+        score >= @relevance_threshold and
+          try do
+            mod.available?()
+          rescue
+            _ -> false
+          end
       end)
 
     case try_vectors(ranked, topic, opts) do

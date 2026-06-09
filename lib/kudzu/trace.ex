@@ -26,7 +26,7 @@ defmodule Kudzu.Trace do
   - Archival timing
   """
 
-  alias Kudzu.{VectorClock, Salience}
+  alias Kudzu.{Salience, VectorClock}
 
   @type t :: %__MODULE__{
           id: String.t(),

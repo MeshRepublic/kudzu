@@ -6,7 +6,7 @@ defmodule Kudzu.Experiments.ConstitutionCompare do
   and observes behavioral differences when given the same tasks.
   """
 
-  alias Kudzu.{Hologram, Application, Constitution}
+  alias Kudzu.{Application, Constitution, Hologram}
 
   @doc """
   Run the constitutional comparison experiment.

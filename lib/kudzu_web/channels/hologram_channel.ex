@@ -23,7 +23,7 @@ defmodule KudzuWeb.HologramChannel do
   use Phoenix.Channel
   require Logger
 
-  alias Kudzu.{Hologram, Application}
+  alias Kudzu.{Application, Hologram}
 
   @impl true
   def join("hologram:new", params, socket) do

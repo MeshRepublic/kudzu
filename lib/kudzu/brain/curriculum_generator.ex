@@ -86,7 +86,7 @@ defmodule Kudzu.Brain.CurriculumGenerator do
           |> Enum.map(&String.trim/1)
           |> Enum.reject(&(&1 == ""))
 
-        if length(items) > 0, do: {:ok, items}, else: {:error, :empty}
+        if items == [], do: {:error, :empty}, else: {:ok, items}
 
       {:ok, _} ->
         {:error, :not_a_list}
@@ -103,7 +103,7 @@ defmodule Kudzu.Brain.CurriculumGenerator do
                   |> Enum.map(&String.trim/1)
                   |> Enum.reject(&(&1 == ""))
 
-                if length(items) > 0, do: {:ok, items}, else: {:error, :empty}
+                if items == [], do: {:error, :empty}, else: {:ok, items}
 
               _ ->
                 {:error, :json_parse_failed}

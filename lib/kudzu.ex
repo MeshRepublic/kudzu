@@ -41,7 +41,7 @@ defmodule Kudzu do
   trace-following, not retrieval from storage.
   """
 
-  alias Kudzu.{Application, Hologram, Trace, Storage}
+  alias Kudzu.{Application, Hologram, Storage, Trace}
 
   # Hologram management
   defdelegate spawn_hologram(opts \\ []), to: Application

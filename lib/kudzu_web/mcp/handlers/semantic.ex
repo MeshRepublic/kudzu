@@ -6,7 +6,7 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
   Co-occurrence data from the HRR encoder improves results over time.
   """
 
-  alias Kudzu.{Hologram, Application, HRR}
+  alias Kudzu.{Application, HRR, Hologram}
   alias Kudzu.HRR.{Encoder, EncoderState, Tokenizer}
   alias Kudzu.Consolidation
 

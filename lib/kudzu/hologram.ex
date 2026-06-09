@@ -22,7 +22,7 @@ defmodule Kudzu.Hologram do
   use GenServer
   require Logger
 
-  alias Kudzu.{Trace, VectorClock, Protocol, Cognition, Constitution}
+  alias Kudzu.{Cognition, Constitution, Protocol, Trace, VectorClock}
   alias Kudzu.Beamlet.Client, as: Beamlet
 
   @proximity_decay_rate 0.95

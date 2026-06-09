@@ -192,7 +192,7 @@ defmodule Kudzu.Node do
   Check if connected to mesh.
   """
   def mesh_connected? do
-    length(Node.list()) > 0
+    Node.list() != []
   end
 
   @doc """

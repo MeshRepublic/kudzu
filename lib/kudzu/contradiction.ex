@@ -5,7 +5,7 @@ defmodule Kudzu.Contradiction do
   negation indicators that suggest conflicting information.
   """
 
-  alias Kudzu.{Storage, Embedding}
+  alias Kudzu.{Embedding, Storage}
   require Logger
 
   @similarity_threshold 0.7

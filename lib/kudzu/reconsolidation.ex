@@ -27,7 +27,7 @@ defmodule Kudzu.Reconsolidation do
   5. Trace is re-stored with modifications
   """
 
-  alias Kudzu.{Trace, Salience, Storage}
+  alias Kudzu.{Salience, Storage, Trace}
 
   require Logger
 

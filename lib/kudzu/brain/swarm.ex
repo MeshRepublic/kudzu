@@ -17,7 +17,7 @@ defmodule Kudzu.Brain.Swarm do
 
   require Logger
 
-  alias Kudzu.{Hologram, Application}
+  alias Kudzu.{Application, Hologram}
   alias Kudzu.Hologram.Runner
 
   @default_specialists 3

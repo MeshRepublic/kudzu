@@ -535,14 +535,14 @@ defmodule Kudzu.Constitution.KudzuEvolve do
     suggestions = []
 
     suggestions =
-      if length(opportunities.redundant_traces) > 0 do
+      if opportunities.redundant_traces != [] do
         ["Experiment with trace consolidation" | suggestions]
       else
         suggestions
       end
 
     suggestions =
-      if length(opportunities.underutilized_peers) > 0 do
+      if opportunities.underutilized_peers != [] do
         ["Experiment with peer engagement strategies" | suggestions]
       else
         suggestions

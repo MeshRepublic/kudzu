@@ -129,7 +129,7 @@ defmodule Kudzu.Brain.Thought do
         chain ++ [%{concept: concept, similarity: score, source: domain}]
       end)
 
-    if depth < max_depth and length(activations) > 0 do
+    if depth < max_depth and activations != [] do
       {top_concept, _score, _domain} = hd(activations)
 
       sub_result =
@@ -169,11 +169,12 @@ defmodule Kudzu.Brain.Thought do
         end)
         |> Enum.filter(&(&1 > 0))
 
-      if length(scores) == 0 do
+      if scores == [] do
         0.0
       else
-        avg = Enum.sum(scores) / length(scores)
-        length_bonus = min(length(scores) / 5.0, 0.2)
+        score_count = length(scores)
+        avg = Enum.sum(scores) / score_count
+        length_bonus = min(score_count / 5.0, 0.2)
         min(avg + length_bonus, 1.0)
       end
     end

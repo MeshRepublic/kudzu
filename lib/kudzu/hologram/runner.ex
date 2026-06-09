@@ -16,7 +16,7 @@ defmodule Kudzu.Hologram.Runner do
   use GenServer
   require Logger
 
-  alias Kudzu.{Hologram, Constitution}
+  alias Kudzu.{Constitution, Hologram}
   alias Kudzu.Brain.Vectors.Router, as: VectorRouter
 
   @default_cycle_interval 60_000
@@ -266,7 +266,7 @@ defmodule Kudzu.Hologram.Runner do
         try do
           result = Kudzu.Brain.Thought.run(to_string(topic), timeout: 10_000)
 
-          if result != nil and length(result.chain) > 0 do
+          if result != nil and result.chain != [] do
             finding = %{
               type: "inference",
               topic: to_string(topic),

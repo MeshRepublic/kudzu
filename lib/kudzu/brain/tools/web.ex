@@ -246,7 +246,7 @@ defmodule Kudzu.Brain.Tools.Web do
 
     snippets = Regex.scan(~r/<a[^>]*class="result__snippet"[^>]*>(.*?)<\/a>/s, html)
 
-    if length(links) > 0 do
+    if links != [] do
       links
       |> Enum.take(10)
       |> Enum.with_index()

@@ -1,7 +1,7 @@
 defmodule KudzuWeb.TraceController do
   use Phoenix.Controller
 
-  alias Kudzu.{Hologram, Distributed}
+  alias Kudzu.{Distributed, Hologram}
 
   @doc """
   List traces across all local holograms.

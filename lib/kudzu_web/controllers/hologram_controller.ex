@@ -2,7 +2,7 @@ defmodule KudzuWeb.HologramController do
   use Phoenix.Controller
   require Logger
 
-  alias Kudzu.{Application, Hologram, Constitution}
+  alias Kudzu.{Application, Constitution, Hologram}
 
   @doc """
   List all holograms.

@@ -10,7 +10,7 @@ defmodule Kudzu.Protocol do
   Designed for future network transport with encode/decode functions.
   """
 
-  alias Kudzu.{VectorClock, Trace}
+  alias Kudzu.{Trace, VectorClock}
 
   @type message_type ::
           :ping

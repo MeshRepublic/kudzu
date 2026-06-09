@@ -32,7 +32,7 @@ defmodule Kudzu.Consolidation do
   use GenServer
   require Logger
 
-  alias Kudzu.{Storage, HRR}
+  alias Kudzu.{HRR, Storage}
   alias Kudzu.HRR.{Encoder, EncoderState, Tokenizer}
 
   # 10 minutes

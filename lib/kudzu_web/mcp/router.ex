@@ -8,7 +8,7 @@ defmodule KudzuWeb.MCP.Router do
   """
   use Plug.Router
 
-  alias KudzuWeb.MCP.{Protocol, Controller, Session}
+  alias KudzuWeb.MCP.{Controller, Protocol, Session}
 
   plug(:match)
   plug(:dispatch)

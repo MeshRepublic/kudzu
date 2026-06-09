@@ -46,7 +46,7 @@ defmodule Kudzu.Agent do
   - Access collective knowledge
   """
 
-  alias Kudzu.{Hologram, Node, Application}
+  alias Kudzu.{Application, Hologram, Node}
 
   @type agent :: pid()
   @type trace_id :: String.t()

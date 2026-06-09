@@ -15,7 +15,7 @@ defmodule Kudzu.HRR.Encoder do
   blends in learned associations.
   """
 
-  alias Kudzu.{HRR, Trace, Salience}
+  alias Kudzu.{HRR, Salience, Trace}
   alias Kudzu.HRR.{EncoderState, Tokenizer}
 
   @type codebook :: %{atom() => HRR.vector()}

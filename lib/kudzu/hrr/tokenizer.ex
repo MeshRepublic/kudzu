@@ -247,8 +247,7 @@ defmodule Kudzu.HRR.Tokenizer do
     |> String.replace(~r/([a-z])([A-Z])/, "\\1 \\2")
     |> String.replace("_", " ")
     |> String.split(~r/\s+/, trim: true)
-    |> Enum.reject(&stopword?/1)
-    |> Enum.reject(&(String.length(&1) < @min_token_length))
+    |> Enum.reject(&(stopword?(&1) or String.length(&1) < @min_token_length))
     |> Enum.uniq()
   end
 

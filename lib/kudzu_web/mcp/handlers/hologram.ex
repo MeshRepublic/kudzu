@@ -1,7 +1,7 @@
 defmodule KudzuWeb.MCP.Handlers.Hologram do
   @moduledoc "MCP handlers for hologram tools."
 
-  alias Kudzu.{Application, Hologram, Constitution}
+  alias Kudzu.{Application, Constitution, Hologram}
 
   @allowed_purposes ~w(api_spawned research assistant coordinator worker analyzer claude_memory claude_assistant claude_research claude_learning claude_project explorer thinker researcher librarian optimizer specialist)a
   @allowed_constitutions ~w(mesh_republic cautious open kudzu_evolve)a
