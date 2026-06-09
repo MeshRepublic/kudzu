@@ -537,18 +537,32 @@ defmodule Kudzu.Brain.Distiller do
     end)
   end
 
-  defp normalize_term(term) do
-    safe = case :unicode.characters_to_binary(to_string(term)) do
-      {:error, valid, _} -> valid
-      {:incomplete, valid, _} -> valid
-      binary when is_binary(binary) -> binary
-    end
+  @doc false
+  @spec normalize_term(term()) :: String.t()
+  def normalize_term(term) do
+    safe =
+      case :unicode.characters_to_binary(to_string(term)) do
+        {:error, valid, _} -> valid
+        {:incomplete, valid, _} -> valid
+        binary when is_binary(binary) -> binary
+      end
 
     safe
     |> String.trim()
     |> String.downcase()
+    # collapse internal whitespace to underscore
     |> String.replace(~r/\s+/, "_")
-    |> String.replace(~r/[^\w_]/, "")
+    # keep technical characters: letters, digits, underscore, dot, hyphen,
+    # slash, at, colon. Drop everything else (e.g. quotes, parens, commas,
+    # semicolons, question marks, exclamation, brackets, backticks, ...).
+    |> String.replace(~r{[^a-z0-9_.\-/@:]}, "")
+    # strip leading/trailing stand-alone sentence punctuation that may
+    # have survived (a sole trailing period, comma, semicolon, colon,
+    # bang, or question mark). We do NOT strip leading slashes because
+    # those carry path semantics (e.g. "/etc/systemd/system"). We do NOT
+    # strip leading dots because numeric tokens like ".5" can be valid.
+    |> String.replace(~r/[.,;:!?]+$/, "")
+    |> String.replace(~r/^[,;!?]+/, "")
   end
 
   defp find_matching_action(subject, object, _relation, available_actions) do
