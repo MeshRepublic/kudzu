@@ -27,3 +27,10 @@ Thumbs.db
 
 # Crash dumps
 erl_crash.dump
+
+# Backup files
+*.backup
+*.backup-*
+
+# Redis dump
+dump.rdb
