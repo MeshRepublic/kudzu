@@ -1,10 +1,6 @@
 defmodule Kudzu.Brain.ThoughtTest do
   use ExUnit.Case, async: false
 
-  # setup creates a Silo, which fails on HologramRegistry timeout when the
-  # production node holds the DETS file. Excluded by default.
-  @moduletag :external
-
   alias Kudzu.Brain.Thought
 
   setup do

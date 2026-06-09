@@ -1,10 +1,6 @@
 defmodule KudzuWeb.MCP.IntegrationTest do
   use ExUnit.Case, async: false
 
-  # MCP lifecycle test spawns holograms via HologramRegistry —
-  # locked when the production node holds the DETS file. Excluded by default.
-  @moduletag :external
-
   alias KudzuWeb.MCP.Controller
 
   test "full MCP lifecycle: initialize, list tools, call tool" do

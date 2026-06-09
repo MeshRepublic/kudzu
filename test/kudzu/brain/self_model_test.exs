@@ -1,10 +1,6 @@
 defmodule Kudzu.Brain.SelfModelTest do
   use ExUnit.Case, async: false
 
-  # SelfModel.init spawns a Silo hologram via HologramRegistry — locked when
-  # the production node is up. Excluded by default.
-  @moduletag :external
-
   alias Kudzu.Brain.SelfModel
   alias Kudzu.Silo
 

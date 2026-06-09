@@ -1,10 +1,6 @@
 defmodule Kudzu.Brain.InferenceEngineTest do
   use ExUnit.Case, async: false
 
-  # setup_all creates a Silo, which fails on HologramRegistry timeout when
-  # the production node is up. Excluded by default.
-  @moduletag :external
-
   alias Kudzu.Brain.InferenceEngine
   alias Kudzu.Silo
 

@@ -5,15 +5,6 @@ defmodule Kudzu.HologramTest do
 
   @moduletag timeout: 300_000  # 5 minutes for large tests
 
-  # Tests spawn holograms via Application.spawn_hologram, which calls into
-  # HologramRegistry — a GenServer that opens the production DETS file at
-  # /home/eel/kudzu_data/dets/hologram_registry.dets (hardcoded in
-  # @dets_file). When the production kudzu node is running, that DETS is
-  # locked and registry calls time out. Excluded by default until the
-  # storage layer accepts a runtime-configurable data root (planned for
-  # Phase 3 of the hardening work).
-  @moduletag :external
-
   describe "basic hologram operations" do
     test "spawns and records traces" do
       {:ok, h} = Application.spawn_hologram(purpose: :test)
