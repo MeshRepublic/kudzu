@@ -191,11 +191,16 @@ iex -S mix
 
 ### Authentication
 
-Authentication is disabled by default for development. In production, set these environment variables:
+`KUDZU_API_KEY` is **mandatory**. The service refuses to start without it — there is no hardcoded fallback. Set it to a comma-separated list of allowed bearer tokens before launching:
+
+```bash
+export KUDZU_API_KEY="key1,key2,key3"
+```
+
+In production, also set:
 
 ```bash
 export SECRET_KEY_BASE=$(mix phx.gen.secret)
-export KUDZU_API_KEYS="key1,key2,key3"
 export KUDZU_PORT=4000
 export KUDZU_CORS_ORIGINS="https://your-app.com"
 ```

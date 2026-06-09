@@ -1,13 +1,25 @@
 import Config
 
-# API authentication - read KUDZU_API_KEY at runtime
-kudzu_api_key = System.get_env("KUDZU_API_KEY")
+# API authentication — KUDZU_API_KEY is mandatory.
+# The app refuses to start without it. There is no fallback.
+# Format: comma-separated list of allowed bearer tokens.
+kudzu_api_key =
+  System.get_env("KUDZU_API_KEY") ||
+    raise """
+    KUDZU_API_KEY environment variable is required.
 
-if kudzu_api_key && kudzu_api_key != "" do
-  config :kudzu, :api_auth,
-    enabled: true,
-    api_keys: String.split(kudzu_api_key, ",", trim: true)
+    Set it to a comma-separated list of allowed bearer tokens before starting kudzu.
+    Example:
+        export KUDZU_API_KEY="prod-key-1,prod-key-2"
+    """
+
+if kudzu_api_key == "" do
+  raise "KUDZU_API_KEY is set but empty. Provide at least one non-empty bearer token."
 end
+
+config :kudzu, :api_auth,
+  enabled: true,
+  api_keys: String.split(kudzu_api_key, ",", trim: true)
 
 # Worker node configuration — point Ollama to titan, disable web endpoint
 if System.get_env("KUDZU_ROLE") == "worker" do

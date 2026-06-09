@@ -34,11 +34,13 @@ config :kudzu, KudzuWeb.MCP.Endpoint,
   secret_key_base: "generate-a-secret-key-with-mix-phx-gen-secret",
   pubsub_server: Kudzu.PubSub
 
-# API authentication (disabled by default for development)
-# Enable and set API keys for production
+# API authentication
+# IMPORTANT: api_keys is populated at runtime from KUDZU_API_KEY in config/runtime.exs.
+# The compile-time default below is `nil` so the app refuses to start if runtime.exs
+# fails to set it. NEVER add a hardcoded fallback key here.
 config :kudzu, :api_auth,
   enabled: true,
-  api_keys: String.split(System.get_env("KUDZU_API_KEY") || "dev-kudzu-key-2026", ",", trim: true)
+  api_keys: nil
 
 # CORS allowed origins (use specific origins in production)
 config :kudzu, :cors_origins, ["*"]
@@ -71,15 +73,11 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
-  # Production requires these environment variables:
+  # Production requires these environment variables (enforced in config/runtime.exs):
   # - SECRET_KEY_BASE: generate with `mix phx.gen.secret`
-  # - KUDZU_API_KEYS: comma-separated API keys
+  # - KUDZU_API_KEY: comma-separated API keys
   config :kudzu, KudzuWeb.MCP.Endpoint,
     secret_key_base: System.get_env("SECRET_KEY_BASE")
-
-  config :kudzu, :api_auth,
-    enabled: true,
-    api_keys: String.split(System.get_env("KUDZU_API_KEYS") || "", ",", trim: true)
 
   config :kudzu, :cors_origins,
     String.split(System.get_env("KUDZU_CORS_ORIGINS") || "", ",", trim: true)
