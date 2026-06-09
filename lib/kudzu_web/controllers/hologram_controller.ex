@@ -352,7 +352,7 @@ defmodule KudzuWeb.HologramController do
       origin: trace.origin,
       purpose: trace.purpose,
       path: trace.path,
-      reconstruction_hint: trace.reconstruction_hint,
+      reconstruction_hint: sanitize_utf8(trace.reconstruction_hint),
       timestamp: Kudzu.VectorClock.to_map(trace.timestamp)
     }
   end
@@ -362,9 +362,51 @@ defmodule KudzuWeb.HologramController do
       origin: trace[:origin] || trace["origin"],
       purpose: trace[:purpose] || trace["purpose"],
       path: trace[:path] || trace["path"] || [],
-      reconstruction_hint: trace[:reconstruction_hint] || trace["reconstruction_hint"] || %{}
+      reconstruction_hint:
+        sanitize_utf8(trace[:reconstruction_hint] || trace["reconstruction_hint"] || %{})
     }
   end
+
+  @doc false
+  # Sanitize potentially-malformed UTF-8 in trace content so Jason can
+  # encode the whole response. The live web_knowledge silo contains at
+  # least one trace where a curly apostrophe (UTF-8 sequence 0xE2 0x80 0x99)
+  # was sliced mid-codepoint by an upstream truncation, leaving a dangling
+  # 0xE2 byte that Jason.encode!/1 rejects with `invalid byte 0xE2 in ...`.
+  # That single bad byte was 500'ing GET /api/v1/holograms/:id/traces for
+  # any limit>10 against that silo. Replacing invalid byte sequences with
+  # the Unicode REPLACEMENT CHARACTER (U+FFFD, "�") makes the content
+  # readable and surfaces the corruption visibly.
+  #
+  # Exposed (with @doc false) so test/kudzu_web/controllers/hologram_controller_test.exs
+  # can target it directly without spinning up the Phoenix endpoint.
+  def sanitize_utf8(binary) when is_binary(binary) do
+    case :unicode.characters_to_binary(binary, :utf8, :utf8) do
+      result when is_binary(result) -> result
+      {:error, good, _bad_rest} -> good <> "�"
+      {:incomplete, good, _bad_rest} -> good <> "�"
+    end
+  end
+
+  def sanitize_utf8(map) when is_map(map) and not is_struct(map) do
+    Map.new(map, fn {k, v} -> {sanitize_key(k), sanitize_utf8(v)} end)
+  end
+
+  def sanitize_utf8(list) when is_list(list) do
+    Enum.map(list, &sanitize_utf8/1)
+  end
+
+  def sanitize_utf8(tuple) when is_tuple(tuple) do
+    tuple
+    |> Tuple.to_list()
+    |> Enum.map(&sanitize_utf8/1)
+    |> List.to_tuple()
+  end
+
+  def sanitize_utf8(other), do: other
+
+  defp sanitize_key(k) when is_binary(k), do: sanitize_utf8(k)
+  defp sanitize_key(k), do: k
 
   defp filter_by_purpose(traces, nil), do: traces
   defp filter_by_purpose(traces, purpose) do
