@@ -154,24 +154,37 @@ defmodule Kudzu.Brain.Distiller do
     end
   end
 
-  # Coerce Claude's wider relation vocabulary into the Distiller whitelist
-  # so downstream review/scoring/probing is consistent across extractors.
-  defp normalize_claude_triple({subject, relation, object}) do
+  # Normalize Claude triples WITHOUT a relation whitelist. The 5-pages
+  # experiment (`docs/superpowers/reviews/2026-06-09-5pages-experiment.md`)
+  # showed the old 10-relation whitelist coerced 84.5%% of Claude's
+  # natural relations to `relates_to`, destroying the signal Claude
+  # produced. The prompt now does the constraining; this pass just
+  # normalizes the relation string (lowercase, trimmed,
+  # whitespace -> underscore) and drops empty relations.
+  @doc false
+  @spec normalize_claude_triple(term()) ::
+          {String.t(), String.t(), String.t()} | nil
+  def normalize_claude_triple({subject, relation, object}) do
     s = subject |> to_string() |> normalize_term()
     o = object |> to_string() |> normalize_term()
-    r = coerce_relation(to_string(relation))
+    r = normalize_relation(to_string(relation))
 
-    if String.length(s) > 1 and String.length(o) > 1 do
-      {s, r, o}
+    cond do
+      r == "" -> nil
+      String.length(s) > 1 and String.length(o) > 1 -> {s, r, o}
+      true -> nil
     end
   end
 
-  defp normalize_claude_triple(_), do: nil
+  def normalize_claude_triple(_), do: nil
 
-  @whitelisted_relations ~w(caused_by causes requires uses is_a contains relates_to produces provides because)
-  defp coerce_relation(rel) when is_binary(rel) do
-    rel = String.downcase(String.trim(rel))
-    if rel in @whitelisted_relations, do: rel, else: "relates_to"
+  @doc false
+  @spec normalize_relation(String.t()) :: String.t()
+  def normalize_relation(rel) when is_binary(rel) do
+    rel
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace(~r/\s+/, "_")
   end
 
   @doc """
