@@ -1,6 +1,10 @@
 defmodule Kudzu.Brain.ThinkingIntegrationTest do
   use ExUnit.Case, async: false
 
+  # Brain init requires Ollama; excluded by default.
+  # Run with `mix test --include external`.
+  @moduletag :external
+
   alias Kudzu.Brain
   alias Kudzu.Brain.WorkingMemory
 

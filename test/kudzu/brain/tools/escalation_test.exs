@@ -1,6 +1,10 @@
 defmodule Kudzu.Brain.Tools.EscalationTest do
   use ExUnit.Case, async: false
 
+  # Requires Brain GenServer to have an initialized hologram (which depends on
+  # Ollama at startup); excluded by default. Run with `mix test --include external`.
+  @moduletag :external
+
   alias Kudzu.Brain.Tool
   alias Kudzu.Brain.Tools.Escalation
 

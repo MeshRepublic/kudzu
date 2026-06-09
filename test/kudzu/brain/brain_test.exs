@@ -1,6 +1,12 @@
 defmodule Kudzu.BrainTest do
   use ExUnit.Case, async: false
 
+  # Brain init requires Ollama; the status assertion below depends on the
+  # Brain being in the :sleeping initial state, which only holds when the
+  # supervision tree starts cleanly. Excluded by default.
+  # Run with `mix test --include external`.
+  @moduletag :external
+
   alias Kudzu.Brain
 
   test "brain starts and has sleeping status" do

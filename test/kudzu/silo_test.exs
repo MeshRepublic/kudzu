@@ -1,6 +1,10 @@
 defmodule Kudzu.SiloTest do
   use ExUnit.Case, async: false
 
+  # Silos spawn hologram processes via HologramRegistry — locked when the
+  # production node holds the DETS file. Excluded by default.
+  @moduletag :external
+
   alias Kudzu.Silo
 
   @test_domain "test_silo_#{:rand.uniform(999_999)}"

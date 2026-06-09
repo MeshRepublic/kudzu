@@ -6,6 +6,10 @@ defmodule Kudzu.Brain.ChatTest do
   """
   use ExUnit.Case, async: false
 
+  # Brain init requires Ollama; excluded by default.
+  # Run with `mix test --include external`.
+  @moduletag :external
+
   alias Kudzu.Brain
 
   # Brain takes up to 5s to init hologram — wait for it

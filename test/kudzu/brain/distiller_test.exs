@@ -1,6 +1,10 @@
 defmodule Kudzu.Brain.DistillerTest do
   use ExUnit.Case, async: true
 
+  # Distiller.extract_chains/1 calls Ollama under the hood. Requires a running
+  # Ollama instance; excluded by default. Run with `mix test --include external`.
+  @moduletag :external
+
   alias Kudzu.Brain.Distiller
 
   test "extract_chains/1 extracts causal relationships from text" do

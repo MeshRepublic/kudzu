@@ -3,6 +3,10 @@ defmodule KudzuWeb.MCP.HandlersTest do
 
   alias KudzuWeb.MCP.Handlers.{System, Hologram, Trace}
 
+  # The "hologram create and get" test spawns a hologram via HologramRegistry —
+  # locked when the production node is up. Excluded by default. The other tests
+  # in this module use plain handler functions and pass without isolation.
+
   test "system health returns status ok" do
     {:ok, result} = System.handle("kudzu_health", %{})
     assert result.status == "ok"
@@ -13,6 +17,7 @@ defmodule KudzuWeb.MCP.HandlersTest do
     assert is_list(result.holograms)
   end
 
+  @tag :external
   test "hologram create and get" do
     {:ok, created} = Hologram.handle("kudzu_create_hologram", %{"purpose" => "test_mcp"})
     assert created.id

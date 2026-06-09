@@ -1,6 +1,11 @@
 defmodule Kudzu.BeamletTest do
   use ExUnit.Case, async: false
 
+  # Some tests in this module spawn holograms, which depend on
+  # HologramRegistry (locked when the production node is up). Excluded by
+  # default — see hologram_test.exs for the full explanation.
+  @moduletag :external
+
   alias Kudzu.{Hologram, Application}
   alias Kudzu.Beamlet.{Supervisor, IO, Client}
 
