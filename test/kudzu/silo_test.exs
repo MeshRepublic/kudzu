@@ -93,6 +93,43 @@ defmodule Kudzu.SiloTest do
     end
   end
 
+  describe "HRR vector persistence (D.5)" do
+    test "store_relationship persists the bind(S, bind(R, O)) vector in the hint" do
+      {:ok, _pid} = Silo.create(@test_domain)
+
+      {:ok, trace} =
+        Silo.store_relationship(@test_domain, {"alpha", "is_a", "beta"})
+
+      hint = trace.reconstruction_hint
+      stored_vector = Map.get(hint, :vector, Map.get(hint, "vector"))
+
+      assert is_list(stored_vector)
+      assert length(stored_vector) > 0
+      assert Enum.all?(stored_vector, &is_number/1)
+
+      # Vector should match a fresh Relationship.encode of the same triple.
+      expected = Kudzu.Silo.Relationship.encode({"alpha", "is_a", "beta"})
+      assert length(stored_vector) == length(expected)
+    end
+
+    test "probe uses stored vector as secondary signal without demoting subject matches" do
+      {:ok, _pid} = Silo.create(@test_domain)
+
+      Silo.store_relationship(@test_domain, {"alpha", "is_a", "beta"})
+      Silo.store_relationship(@test_domain, {"gamma", "is_a", "delta"})
+
+      results = Silo.probe(@test_domain, "alpha")
+      # Subject match for "alpha" must rank first; the bound-vector signal
+      # can only raise scores (via max/2), not flip ordering away from
+      # exact subject hits.
+      assert length(results) == 2
+      {top_hint, top_sim} = hd(results)
+      subj = Map.get(top_hint, :subject, Map.get(top_hint, "subject"))
+      assert subj == "alpha"
+      assert top_sim >= 0.99
+    end
+  end
+
   describe "brain_knowledge silo (Tier-3 Claude distillation destination)" do
     # The Brain GenServer is started by the application supervisor at boot
     # (see lib/kudzu/application.ex). Its :init_hologram handler creates the

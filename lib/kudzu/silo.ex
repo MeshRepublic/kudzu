@@ -90,21 +90,26 @@ defmodule Kudzu.Silo do
   @doc """
   Store a relationship triple in an expertise silo.
 
-  The triple {subject, relation, object} is HRR-encoded and stored as a
-  trace with purpose :discovery and reconstruction hints for retrieval.
+  The triple {subject, relation, object} is HRR-encoded as
+  `bind(S, bind(R, O))` and the resulting vector is persisted alongside
+  the structured hint under the `:vector` key. Pre-D.5 writes bound the
+  vector to `_vector` and discarded it — `probe/2` now reads the stored
+  vector and uses it as a secondary similarity signal so the semantic
+  encoding finally informs retrieval.
   """
   @spec store_relationship(String.t(), {String.t(), String.t(), String.t()}) ::
           {:ok, term()} | {:error, term()}
   def store_relationship(domain, {subject, relation, object} = triple) do
     case find(domain) do
       {:ok, pid} ->
-        _vector = Relationship.encode(triple)
+        vector = Relationship.encode(triple)
 
         Kudzu.Hologram.record_trace(pid, :discovery, %{
           type: "relationship",
           subject: to_string(subject),
           relation: to_string(relation),
-          object: to_string(object)
+          object: to_string(object),
+          vector: vector
         })
 
       {:error, :not_found} ->
@@ -115,8 +120,20 @@ defmodule Kudzu.Silo do
   @doc """
   Probe a silo for relationships matching a concept.
 
-  Compares the query concept vector against each stored relationship's
-  subject concept vector. Returns results sorted by similarity, descending.
+  Scoring combines two HRR signals:
+
+  1. Subject-concept similarity — `cosine_sim(concept_vector(query),
+     concept_vector(subject))`. This is the primary signal and matches
+     pre-D.5 behavior: probing for an exact stored subject yields ~1.0.
+  2. Bound-triple similarity — when the trace has a persisted `:vector`
+     (post-D.5), `cosine_sim(concept_vector(query), stored_vector)` is
+     also computed. The final score is the max of the two — the stored
+     vector can only *raise* a triple's rank, never lower it, which
+     preserves subject-match priority while letting the bound encoding
+     surface subtler associations the subject string alone misses.
+
+  Returns `[{hint_map, similarity_float}, ...]` sorted by similarity
+  descending.
   """
   @spec probe(String.t(), String.t()) :: [{map(), float()}]
   def probe(domain, query) do
@@ -133,10 +150,7 @@ defmodule Kudzu.Silo do
         end)
         |> Enum.map(fn trace ->
           hint = trace.reconstruction_hint
-          subject = Map.get(hint, :subject, Map.get(hint, "subject", ""))
-          subject_vec = Relationship.concept_vector(subject)
-          sim = HRR.similarity(query_vec, subject_vec)
-          {hint, sim}
+          {hint, score_hint(hint, query_vec)}
         end)
         |> Enum.sort_by(fn {_hint, sim} -> sim end, :desc)
 
@@ -144,6 +158,30 @@ defmodule Kudzu.Silo do
         []
     end
   end
+
+  # Combine subject-concept similarity (primary, preserves test contract)
+  # with bound-triple-vector similarity (secondary, from the post-D.5
+  # persisted vector). The max means the stored vector can promote a
+  # triple but never demote one.
+  defp score_hint(hint, query_vec) do
+    subject = Map.get(hint, :subject, Map.get(hint, "subject", ""))
+    subject_vec = Relationship.concept_vector(to_string(subject))
+    subject_sim = safe_similarity(query_vec, subject_vec)
+
+    case Map.get(hint, :vector, Map.get(hint, "vector")) do
+      stored when is_list(stored) and stored != [] ->
+        max(subject_sim, safe_similarity(query_vec, stored))
+
+      _ ->
+        subject_sim
+    end
+  end
+
+  defp safe_similarity(a, b) when is_list(a) and is_list(b) and length(a) == length(b) do
+    HRR.similarity(a, b)
+  end
+
+  defp safe_similarity(_, _), do: 0.0
 
   @doc """
   Semantic search within a silo using Ollama embeddings.
