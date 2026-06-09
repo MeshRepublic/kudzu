@@ -43,7 +43,7 @@ defmodule Kudzu.Constitution.Cautious do
 
   @impl true
   def permitted?(action, state) do
-    {action_type, params} = normalize_action(action)
+    {action_type, _params} = normalize_action(action)
 
     cond do
       # Auto-permitted actions

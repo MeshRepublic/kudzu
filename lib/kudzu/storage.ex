@@ -28,7 +28,6 @@ defmodule Kudzu.Storage do
 
   @hot_table :kudzu_traces_hot
   @warm_file ~c"/home/eel/kudzu_data/dets/traces_warm.dets"
-  @cold_table :kudzu_traces_cold
 
   # Embedding storage (separate from traces for performance)
   @embedding_table :kudzu_embeddings
@@ -37,7 +36,6 @@ defmodule Kudzu.Storage do
 
   # Aging thresholds
   @hot_to_warm_seconds 3600        # 1 hour without access → warm
-  @warm_to_cold_seconds 86400 * 7  # 7 days without access → cold
 
   # Storage limits
   @max_hot_entries 50_000
@@ -344,12 +342,6 @@ defmodule Kudzu.Storage do
   end
 
   @impl true
-  def handle_cast({:store_embedding, trace_id, vector}, state) do
-    :ets.insert(@embedding_table, {trace_id, vector})
-    :dets.insert(@embedding_file, {trace_id, vector})
-    {:noreply, state}
-  end
-
   def handle_call({:search_by_embedding, query_vector, opts}, _from, state) do
     limit = Keyword.get(opts, :limit, 10)
     threshold = Keyword.get(opts, :threshold, 0.3)
@@ -392,6 +384,13 @@ defmodule Kudzu.Storage do
     |> Enum.take(limit)
 
     {:reply, all, state}
+  end
+
+  @impl true
+  def handle_cast({:store_embedding, trace_id, vector}, state) do
+    :ets.insert(@embedding_table, {trace_id, vector})
+    :dets.insert(@embedding_file, {trace_id, vector})
+    {:noreply, state}
   end
 
   @impl true
@@ -633,23 +632,6 @@ defmodule Kudzu.Storage do
 
     if count > 0 do
       Logger.info("[Storage] Loaded #{count} embeddings from DETS")
-    end
-  end
-
-  defp maybe_async_embed(trace) do
-    text = extract_text_content(trace)
-    if text && String.length(text) > 10 do
-      trace_id = trace.id
-      Task.start(fn ->
-        # Brief delay to avoid flooding Ollama during bulk operations
-        Process.sleep(2000 + :rand.uniform(3000))
-        case Kudzu.Embedding.embed(text, timeout: 15_000) do
-          {:ok, vector} ->
-            store_embedding(trace_id, vector)
-          {:error, _reason} ->
-            :ok  # Silent fail — embedding will happen during backfill
-        end
-      end)
     end
   end
 

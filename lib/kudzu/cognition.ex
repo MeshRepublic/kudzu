@@ -21,7 +21,6 @@ defmodule Kudzu.Cognition do
   This enables distributed setups where different agents use different LLM instances.
   """
 
-  alias Kudzu.{Trace, VectorClock}
   alias Kudzu.Cognition.PromptBuilder
 
   @default_ollama_url "http://localhost:11434"
@@ -184,7 +183,7 @@ defmodule Kudzu.Cognition do
     {Enum.reverse(actions), Enum.reverse(traces)}
   end
 
-  defp parse_action_line(line, state) do
+  defp parse_action_line(line, _state) do
     cond do
       # RECORD_TRACE:purpose:hint_key=hint_value
       String.starts_with?(line, "RECORD_TRACE:") ->
@@ -269,10 +268,8 @@ defmodule Kudzu.Cognition do
     analyze_efficiency record_lesson record_experiment
   )a
 
-  @doc """
-  Safely convert a string to an atom using an allowlist.
-  Returns :unknown for unrecognized strings instead of creating new atoms.
-  """
+  # Safely convert a string to an atom using an allowlist.
+  # Returns :unknown for unrecognized strings instead of creating new atoms.
   defp safe_to_atom(str) when is_binary(str) do
     normalized = str |> String.trim() |> String.downcase()
 

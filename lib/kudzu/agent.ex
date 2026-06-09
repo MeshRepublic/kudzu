@@ -256,7 +256,7 @@ defmodule Kudzu.Agent do
   Share a trace with peer agents.
   """
   @spec share(agent(), map(), atom()) :: :ok
-  def share(agent, trace, target_purpose) do
+  def share(agent, trace, _target_purpose) do
     # Find agents with matching purpose and share
     peers = Hologram.get_peers(agent)
 

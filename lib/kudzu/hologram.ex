@@ -573,42 +573,6 @@ defmodule Kudzu.Hologram do
     end
   end
 
-  defp set_constitution_impl(constitution, state) do
-    # Hot-swap constitution and re-constrain desires
-    new_desires = Constitution.constrain(constitution, state.desires, state)
-
-    # Record constitutional change as trace
-    clock = VectorClock.increment(state.clock, state.id)
-    trace = Trace.new_with_clock(
-      state.id,
-      :constitution_change,
-      clock,
-      [state.id],
-      %{from: state.constitution, to: constitution}
-    )
-
-    :telemetry.execute(
-      [:kudzu, :hologram, :constitution_changed],
-      %{},
-      %{id: state.id, from: state.constitution, to: constitution}
-    )
-
-    new_state = %{state |
-      constitution: constitution,
-      desires: new_desires,
-      traces: Map.put(state.traces, trace.id, trace),
-      clock: clock
-    }
-
-    {:reply, :ok, new_state}
-  end
-
-  defp production_env? do
-    # Check if running in production environment
-    Application.get_env(:kudzu, :env, :dev) == :prod or
-      System.get_env("MIX_ENV") == "prod"
-  end
-
   @impl true
   def handle_call({:check_permission, action}, _from, state) do
     decision = Constitution.permitted?(state.constitution, action, state)
@@ -742,6 +706,11 @@ defmodule Kudzu.Hologram do
   end
 
   @impl true
+  def handle_cast(:discover_beamlets, state) do
+    {:noreply, do_discover_beamlets(state)}
+  end
+
+  @impl true
   def handle_info({:cognition_result, actions, traces, stimulus}, state) do
     new_state = execute_actions(actions, state)
     new_state = record_cognition_traces(traces, new_state)
@@ -795,11 +764,6 @@ defmodule Kudzu.Hologram do
   end
 
   @impl true
-  def handle_cast(:discover_beamlets, state) do
-    {:noreply, do_discover_beamlets(state)}
-  end
-
-  @impl true
   def terminate(reason, state) do
     # Persist current state to registry on graceful shutdown
     # (not on explicit delete — controller handles deregister)
@@ -830,6 +794,42 @@ defmodule Kudzu.Hologram do
   end
 
   # Private functions
+
+  defp set_constitution_impl(constitution, state) do
+    # Hot-swap constitution and re-constrain desires
+    new_desires = Constitution.constrain(constitution, state.desires, state)
+
+    # Record constitutional change as trace
+    clock = VectorClock.increment(state.clock, state.id)
+    trace = Trace.new_with_clock(
+      state.id,
+      :constitution_change,
+      clock,
+      [state.id],
+      %{from: state.constitution, to: constitution}
+    )
+
+    :telemetry.execute(
+      [:kudzu, :hologram, :constitution_changed],
+      %{},
+      %{id: state.id, from: state.constitution, to: constitution}
+    )
+
+    new_state = %{state |
+      constitution: constitution,
+      desires: new_desires,
+      traces: Map.put(state.traces, trace.id, trace),
+      clock: clock
+    }
+
+    {:reply, :ok, new_state}
+  end
+
+  defp production_env? do
+    # Check if running in production environment
+    Application.get_env(:kudzu, :env, :dev) == :prod or
+      System.get_env("MIX_ENV") == "prod"
+  end
 
   defp execute_actions(actions, state) do
     Enum.reduce(actions, state, fn action, acc_state ->
@@ -862,7 +862,7 @@ defmodule Kudzu.Hologram do
     end
   end
 
-  defp audit_action(action, decision, state) do
+  defp audit_action(_action, decision, state) do
     action_trace = %{
       id: "action-" <> (:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)),
       purpose: :action_audit,

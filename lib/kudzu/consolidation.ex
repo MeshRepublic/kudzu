@@ -97,9 +97,8 @@ defmodule Kudzu.Consolidation do
 
   @doc """
   Semantic query: encode a natural language query and probe memory.
-  """
-  @doc """
-  Search traces by semantic similarity using Ollama embeddings.
+
+  Searches traces by semantic similarity using Ollama embeddings.
   Returns list of %{trace_id, similarity, record} maps with actual content.
   Falls back to HRR-based search if embeddings are unavailable.
 

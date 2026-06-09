@@ -14,7 +14,7 @@ defmodule Kudzu.Beamlet.Scheduler do
   require Logger
 
   @impl Kudzu.Beamlet.Behaviour
-  def handle_request(%{op: :schedule_work, work: work, priority: priority}, from_id) do
+  def handle_request(%{op: :schedule_work, work: _work, priority: priority}, from_id) do
     Logger.debug("Scheduler: work from #{from_id} priority #{priority}")
 
     # In a real implementation, this would manage a priority queue
@@ -38,7 +38,7 @@ defmodule Kudzu.Beamlet.Scheduler do
     }}
   end
 
-  def handle_request(%{op: :get_priority_hint, task_type: task_type}, from_id) do
+  def handle_request(%{op: :get_priority_hint, task_type: task_type}, _from_id) do
     # Provide priority hints based on task type and system load
     hint = case task_type do
       :cognition -> :normal  # LLM calls are slow anyway
@@ -86,7 +86,7 @@ defmodule Kudzu.Beamlet.Scheduler do
     end
   end
 
-  def handle_request(%{op: :rate_limit_check, key: key, limit: limit, window_ms: window}, _from_id) do
+  def handle_request(%{op: :rate_limit_check, key: _key, limit: limit, window_ms: window}, _from_id) do
     # Simple rate limiting check
     # In production, would use ETS or Redis for shared state
     now = System.system_time(:millisecond)

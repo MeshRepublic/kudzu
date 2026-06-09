@@ -9,7 +9,7 @@ defmodule Kudzu.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       # Enable all schedulers for 128 core usage
-      elixirc_options: [warnings_as_errors: false]
+      elixirc_options: [warnings_as_errors: true]
     ]
   end
 

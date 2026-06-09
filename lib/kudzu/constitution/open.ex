@@ -27,7 +27,7 @@ defmodule Kudzu.Constitution.Open do
   end
 
   @impl true
-  def permitted?(action, state) do
+  def permitted?(_action, _state) do
     if Application.get_env(:kudzu, :env) == :prod do
       {:deny, "Open constitution is not available in production"}
     else

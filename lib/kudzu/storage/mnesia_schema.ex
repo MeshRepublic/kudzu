@@ -28,8 +28,6 @@ defmodule Kudzu.Storage.MnesiaSchema do
   require Logger
 
   @trace_table :kudzu_cold_traces
-  @hologram_index :kudzu_cold_hologram_idx
-  @purpose_index :kudzu_cold_purpose_idx
 
   # Trace record attributes
   @trace_attributes [

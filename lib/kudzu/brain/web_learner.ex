@@ -12,7 +12,6 @@ defmodule Kudzu.Brain.WebLearner do
   alias Kudzu.Brain.Tools.Web.{WebSearch, WebRead}
   alias Kudzu.Brain.Distiller
 
-  @max_search_results 5
   @max_read_pages 3
   @max_chains_per_page 20
   @ollama_url "http://localhost:11434"

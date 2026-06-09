@@ -217,7 +217,7 @@ defmodule Kudzu.Constitution.KudzuEvolve do
   end
 
   @impl true
-  def validate_trace(trace, state) do
+  def validate_trace(trace, _state) do
     cond do
       # Must have origin for learning attribution
       is_nil(trace[:origin]) ->

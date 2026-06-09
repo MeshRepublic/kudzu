@@ -131,7 +131,7 @@ defmodule Kudzu.Beamlet.Supervisor do
       current_count < target_count ->
         # Spawn more
         to_spawn = target_count - current_count
-        for i <- 1..to_spawn do
+        for _i <- 1..to_spawn do
           spawn_beamlet(module, [id: "#{capability}-#{System.unique_integer([:positive])}"])
         end
         {:ok, :scaled_up, to_spawn}

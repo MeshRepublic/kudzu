@@ -263,7 +263,7 @@ defmodule Kudzu.Constitution.MeshRepublic do
     |> Kernel.++(desires)
   end
 
-  defp applicable_principles(trace, decision) do
+  defp applicable_principles(_trace, decision) do
     case decision do
       :permitted ->
         ["transparency"]
