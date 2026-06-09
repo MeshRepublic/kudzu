@@ -54,6 +54,8 @@ defmodule Kudzu.Application do
     # After supervisor tree is fully started, reconstruct persisted holograms
     case result do
       {:ok, _pid} ->
+        install_signal_handler()
+
         Task.start(fn ->
           # Small delay to ensure all services are ready
           Process.sleep(1000)
@@ -64,10 +66,32 @@ defmodule Kudzu.Application do
             e -> Logger.warning("[Application] Hologram reconstruction failed: #{inspect(e)}")
           end
         end)
-      _ -> :ok
+
+      _ ->
+        :ok
     end
 
     result
+  end
+
+  # Catch systemd SIGTERM (and SIGINT/SIGQUIT) and translate them into a graceful
+  # System.stop/1 instead of letting -noshell mode drop them on the floor.
+  # See lib/kudzu/signal_handler.ex for the gen_event handler body.
+  defp install_signal_handler do
+    # NOTE: :os.set_signal/2 only accepts a fixed set of signal names; :sigint is not
+    # in OTP's allowlist, and :sigquit is owned by Elixir's System.SignalHandler for
+    # interactive test-runner debugging. systemd uses SIGTERM, so that is sufficient.
+    :ok = :os.set_signal(:sigterm, :handle)
+
+    case :gen_event.add_handler(:erl_signal_server, Kudzu.SignalHandler, []) do
+      :ok ->
+        Logger.info("[Application] Signal handler installed (SIGTERM → graceful shutdown)")
+
+      {:error, reason} ->
+        Logger.warning("[Application] Signal handler install failed: #{inspect(reason)}")
+    end
+  rescue
+    e -> Logger.warning("[Application] Signal handler setup error: #{inspect(e)}")
   end
 
   @doc """
