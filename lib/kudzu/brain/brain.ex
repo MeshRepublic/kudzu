@@ -42,18 +42,18 @@ defmodule Kudzu.Brain do
   use GenServer
   require Logger
 
-  alias Kudzu.Brain.Budget
-  alias Kudzu.Brain.Reflexes
-  alias Kudzu.Brain.InferenceEngine
-  alias Kudzu.Brain.PromptBuilder
-  alias Kudzu.Brain.WorkingMemory
-  alias Kudzu.Brain.Thought
-  alias Kudzu.Brain.Curiosity
-  alias Kudzu.Brain.Distiller
-  alias Kudzu.Brain.WebLearner
-  alias Kudzu.Brain.Vectors.Router, as: VectorRouter
-  alias Kudzu.Brain.CurriculumGenerator
   alias Kudzu.Brain.ActivityIndicator
+  alias Kudzu.Brain.Budget
+  alias Kudzu.Brain.Curiosity
+  alias Kudzu.Brain.CurriculumGenerator
+  alias Kudzu.Brain.Distiller
+  alias Kudzu.Brain.PromptBuilder
+  alias Kudzu.Brain.Reasoning
+  alias Kudzu.Brain.Reflexes
+  alias Kudzu.Brain.Thought
+  alias Kudzu.Brain.Vectors.Router, as: VectorRouter
+  alias Kudzu.Brain.WebLearner
+  alias Kudzu.Brain.WorkingMemory
 
   @initial_desires [
     "Maintain Kudzu system health and recover from failures",
@@ -99,6 +99,9 @@ defmodule Kudzu.Brain do
     researched_topics: MapSet.new(),
     learning_goals: []
   ]
+
+  @typedoc "Internal Brain GenServer state."
+  @type t :: %__MODULE__{}
 
   # ── Client API ──────────────────────────────────────────────────────
 
@@ -491,196 +494,6 @@ defmodule Kudzu.Brain do
     {:noreply, state}
   end
 
-  # ── Three-Tier Reasoning Pipeline (Autonomous Wake Cycle) ──────────
-
-  defp reason(state, anomalies) do
-    tagged = Enum.map(anomalies, &{:anomaly, &1})
-
-    # Tier 1: Reflexes — pattern → action, zero cost
-    case Reflexes.check(tagged) do
-      {:act, actions} ->
-        Logger.info("[Brain] Tier 1: executing #{length(actions)} reflex actions")
-        Enum.each(actions, &Reflexes.execute_action/1)
-
-        record_trace(state, :decision, %{
-          tier: "reflex",
-          actions: Enum.map(actions, &inspect/1)
-        })
-
-        state
-
-      {:escalate, alerts} ->
-        record_trace(state, :observation, %{
-          alert: true,
-          severity: alert_severity(alerts),
-          alerts: Enum.map(alerts, &ensure_map/1)
-        })
-
-        Logger.warning("[Brain] Escalation: #{inspect(alerts)}")
-        # After escalation, try Tier 2/3 for resolution
-        maybe_tier2_3(state, anomalies)
-
-      :pass ->
-        Logger.debug("[Brain] Reflexes passed — no pattern match")
-        # Reflexes didn't match — try Tier 2 silo inference, then Tier 3 Claude
-        maybe_tier2_3(state, anomalies)
-    end
-  end
-
-  defp maybe_tier2_3(state, anomalies) do
-    # Tier 2: Silo inference — check if any expertise silo has relevant knowledge
-    silo_results = try_silo_inference(anomalies)
-
-    case silo_results do
-      {:found, findings} ->
-        Logger.info("[Brain] Tier 2: silo inference found #{length(findings)} relevant facts")
-
-        record_trace(state, :thought, %{
-          tier: "silo_inference",
-          findings: findings
-        })
-
-        state
-
-      :no_match ->
-        # Tier 3: Claude API — novel situation, needs LLM reasoning
-        maybe_call_claude(state, anomalies)
-    end
-  end
-
-  defp try_silo_inference(anomalies) do
-    # Extract key terms from anomalies and probe silos
-    terms =
-      anomalies
-      |> Enum.flat_map(fn anomaly ->
-        reason = to_string(Map.get(anomaly, :reason, ""))
-        check = to_string(Map.get(anomaly, :check, ""))
-        [check | String.split(reason)]
-      end)
-      |> Enum.uniq()
-
-    results =
-      Enum.flat_map(terms, fn term ->
-        InferenceEngine.cross_query(term)
-      end)
-
-    high_confidence =
-      Enum.filter(results, fn {_domain, _hint, score} ->
-        InferenceEngine.confidence(score) in [:high, :moderate]
-      end)
-
-    if high_confidence != [] do
-      findings =
-        Enum.map(high_confidence, fn {domain, hint, score} ->
-          %{
-            domain: domain,
-            hint: ensure_map(hint),
-            score: score,
-            confidence: InferenceEngine.confidence(score)
-          }
-        end)
-
-      {:found, Enum.take(findings, 10)}
-    else
-      :no_match
-    end
-  end
-
-  defp maybe_call_claude(state, anomalies) do
-    api_key = state.config[:api_key] || state.config["api_key"]
-    budget_limit = state.config[:budget_limit_monthly] || state.config["budget_limit_monthly"] || 100.0
-
-    cond do
-      is_nil(api_key) or api_key == "" ->
-        Logger.debug("[Brain] No API key configured, skipping Tier 3")
-        state
-
-      not Budget.within_budget?(state.budget, budget_limit) ->
-        Logger.warning("[Brain] Monthly budget exceeded ($#{state.budget.estimated_cost_usd}), skipping Tier 3")
-        state
-
-      true ->
-        system_prompt = PromptBuilder.build(state)
-
-        anomaly_desc =
-          Enum.map(anomalies, fn a ->
-            "#{a.check}: #{a.reason}"
-          end)
-          |> Enum.join("; ")
-
-        message =
-          "Anomalies detected that I couldn't handle with reflexes or silo inference:\n" <>
-            anomaly_desc <>
-            "\n\nWhat should I do?"
-
-        tools =
-          Kudzu.Brain.Tools.Introspection.to_claude_format() ++
-            Kudzu.Brain.Tools.Host.to_claude_format() ++
-            Kudzu.Brain.Tools.Escalation.to_claude_format() ++
-            Kudzu.Brain.Tools.Web.to_claude_format()
-
-        executor = fn name, params ->
-          case Kudzu.Brain.Tools.Introspection.execute(name, params) do
-            {:error, "unknown tool: " <> _} ->
-              case Kudzu.Brain.Tools.Host.execute(name, params) do
-                {:error, "unknown host tool: " <> _} ->
-                  case Kudzu.Brain.Tools.Escalation.execute(name, params) do
-                    {:error, "unknown escalation tool: " <> _} ->
-                      Kudzu.Brain.Tools.Web.execute(name, params)
-
-                    result ->
-                      result
-                  end
-
-                result ->
-                  result
-              end
-
-            result ->
-              result
-          end
-        end
-
-        case Kudzu.Brain.Claude.reason(
-               api_key,
-               system_prompt,
-               message,
-               tools,
-               executor,
-               max_turns: state.config[:max_turns] || 10,
-               model: state.config[:model] || "claude-sonnet-4-20250514"
-             ) do
-          {:ok, response_text, usage} ->
-            Logger.info(
-              "[Brain] Tier 3 (#{usage.input_tokens}+#{usage.output_tokens} tokens): " <>
-                String.slice(response_text, 0, 200)
-            )
-
-            record_trace(state, :thought, %{
-              tier: "claude",
-              response: String.slice(response_text, 0, 500),
-              usage: usage
-            })
-
-            budget = Budget.record_usage(state.budget, usage)
-            new_state = %{state | budget: budget}
-
-            # Distill knowledge from Claude's response
-            distill_claude_response(new_state, response_text)
-
-          {:error, reason} ->
-            Logger.error("[Brain] Claude API error: #{inspect(reason)}")
-
-            record_trace(state, :observation, %{
-              error: "claude_api_failure",
-              reason: inspect(reason)
-            })
-
-            state
-        end
-    end
-  end
-
   # ── Chat Reasoning Pipeline ─────────────────────────────────────────
 
   defp chat_reason(state, message, _opts) do
@@ -996,7 +809,7 @@ defmodule Kudzu.Brain do
 
           # Distill knowledge from Claude's response
           new_state = if tier == 3 and response_text != "" do
-            distill_claude_response(new_state, response_text)
+            Reasoning.distill_claude_response(new_state, response_text)
           else
             new_state
           end
@@ -1128,66 +941,6 @@ defmodule Kudzu.Brain do
     end
 
     "Based on my reasoning:\n\n#{chain_text}\n\nConfidence: #{Float.round(result.confidence * 1.0, 2)}"
-  end
-
-  defp distill_claude_response(state, response_text) do
-    try do
-      silo_domains = case Kudzu.Silo.list() do
-        domains when is_list(domains) ->
-          Enum.map(domains, fn
-            {domain, _, _} -> domain
-            domain when is_binary(domain) -> domain
-            _ -> nil
-          end) |> Enum.reject(&is_nil/1)
-        _ -> []
-      end
-
-      available_actions =
-        if function_exported?(Reflexes, :known_actions, 0) do
-          try do
-            apply(Reflexes, :known_actions, [])
-          catch
-            _, _ -> []
-          end
-        else
-          []
-        end
-
-      context = %{available_actions: available_actions}
-      result = Distiller.distill(response_text, silo_domains, context)
-
-      # Store extracted chains in silos
-      state = if result.chains != [] do
-        Logger.info("[Brain] Distiller extracted #{length(result.chains)} relationships from Claude response")
-        Enum.each(result.chains, fn {subject, relation, object} ->
-          try do
-            Kudzu.Silo.store_relationship("brain_knowledge", {subject, relation, object})
-          catch
-            _, _ -> :ok
-          end
-        end)
-        state
-      else
-        state
-      end
-
-      # Log knowledge gaps for curiosity
-      if result.knowledge_gaps != [] do
-        wm = state.working_memory
-        wm = if wm do
-          Enum.reduce(Enum.take(result.knowledge_gaps, 3), wm, fn gap, acc ->
-            WorkingMemory.add_question(acc, "What is #{gap}?")
-          end)
-        else
-          wm
-        end
-        %{state | working_memory: wm}
-      else
-        state
-      end
-    catch
-      _, _ -> state
-    end
   end
 
   defp chat_with_claude(state, message) do
@@ -1483,7 +1236,11 @@ defmodule Kudzu.Brain do
 
   # ── Trace Recording ─────────────────────────────────────────────────
 
-  defp record_trace(state, purpose, data) do
+  @doc false
+  # Internal helper for sub-modules (Reasoning, Chat, Activities, …) that
+  # need to record a trace through the Brain's hologram. Best-effort:
+  # silently swallows errors so a hologram outage cannot crash the Brain.
+  def record_trace(state, purpose, data) do
     if state.hologram_pid do
       try do
         Kudzu.Hologram.record_trace(state.hologram_pid, purpose, data)
@@ -1618,14 +1375,12 @@ defmodule Kudzu.Brain do
 
   # ── Helpers ─────────────────────────────────────────────────────────
 
-  # Extract severity from the first alert in the list, defaulting to :unknown
-  defp alert_severity([%{severity: sev} | _]), do: sev
-  defp alert_severity(_), do: :unknown
-
-  # Ensure a value is a plain map (not a struct) for trace serialization
-  defp ensure_map(%_{} = struct), do: Map.from_struct(struct)
-  defp ensure_map(map) when is_map(map), do: map
-  defp ensure_map(other), do: %{value: inspect(other)}
+  @doc false
+  # Ensure a value is a plain map (not a struct) for trace serialization.
+  # Internal helper used by sub-modules building trace payloads.
+  def ensure_map(%_{} = struct), do: Map.from_struct(struct)
+  def ensure_map(map) when is_map(map), do: map
+  def ensure_map(other), do: %{value: inspect(other)}
 
   # ── Pre-Check Gate ──────────────────────────────────────────────────
 
@@ -1778,7 +1533,7 @@ defmodule Kudzu.Brain do
 
       {:wake, anomalies} ->
         Logger.info("[Brain] Health check: #{length(anomalies)} anomalies")
-        reason(state, anomalies)
+        Reasoning.reason(state, anomalies)
     end
   end
 
