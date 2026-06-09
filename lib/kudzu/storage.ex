@@ -41,6 +41,12 @@ defmodule Kudzu.Storage do
   # Aging thresholds
   @hot_to_warm_seconds 3600        # 1 hour without access → warm
 
+  # Default warm→cold threshold (7 days). Operators can override at runtime
+  # via the :kudzu, :warm_to_cold_seconds application env to e.g. gate the
+  # first archival sweep on a long-running node where the warm tier has
+  # accumulated tens of thousands of un-aged traces.
+  @default_warm_to_cold_seconds 60 * 60 * 24 * 7
+
   # Storage limits
   @max_hot_entries 50_000
   @max_warm_bytes 500_000_000       # 500MB
@@ -505,10 +511,51 @@ defmodule Kudzu.Storage do
         end
       end, 0, @hot_table)
 
-    demoted_to_cold = 0
+    demoted_to_cold = demote_warm_to_cold(now)
 
     Logger.debug("Aging cycle: #{demoted_to_warm} to warm, #{demoted_to_cold} to cold")
     {demoted_to_warm, demoted_to_cold}
+  end
+
+  # Walk the warm DETS tier and demote stale, low-importance traces into the
+  # Mnesia cold tier. A trace is eligible when its last_accessed is older
+  # than the configured warm→cold threshold and its importance is not
+  # :critical. Returns the number of traces actually moved.
+  defp demote_warm_to_cold(now) do
+    threshold_seconds =
+      Application.get_env(:kudzu, :warm_to_cold_seconds, @default_warm_to_cold_seconds)
+
+    cutoff = DateTime.add(now, -threshold_seconds)
+
+    stale_records =
+      :dets.foldl(
+        fn {_id, record}, acc ->
+          if record.importance != :critical and
+               match?(%DateTime{}, record.last_accessed) and
+               DateTime.compare(record.last_accessed, cutoff) == :lt do
+            [record | acc]
+          else
+            acc
+          end
+        end,
+        [],
+        warm_file()
+      )
+
+    Enum.reduce(stale_records, 0, fn record, acc ->
+      case write_cold(record) do
+        :ok ->
+          :dets.delete(warm_file(), record.id)
+          # Hot may still hold the trace from initial store/1 (which writes
+          # to both tiers); evict it so retrieve/1 hits the cold path.
+          :ets.delete(@hot_table, record.id)
+          acc + 1
+
+        {:error, reason} ->
+          Logger.warning("[Storage] warm→cold demotion failed for #{record.id}: #{inspect(reason)}")
+          acc
+      end
+    end)
   end
 
   defp salience_age_factor(record) do

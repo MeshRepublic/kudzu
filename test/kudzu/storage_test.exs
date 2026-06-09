@@ -51,6 +51,37 @@ defmodule Kudzu.StorageTest do
     end
   end
 
+  describe "age_traces — warm→cold archival" do
+    test "stale, non-critical warm traces are demoted into the cold tier" do
+      trace = build_trace("warm_to_cold_via_aging")
+      :ok = Storage.store(trace, "test_hologram")
+
+      # Backdate the warm-tier record beyond the warm→cold threshold so
+      # the aging cycle picks it up. Bypass the GenServer and patch DETS
+      # directly so the test stays time-independent.
+      backdate_warm_record!(trace.id, -60 * 60 * 24 * 30)
+
+      %{to_cold: to_cold} = Storage.age_traces()
+      assert to_cold >= 1
+
+      assert [] = :dets.lookup(warm_dets_file(), trace.id)
+      assert {:cold, %TraceRecord{id: id}} = Storage.retrieve(trace.id)
+      assert id == trace.id
+    end
+
+    test "critical-importance traces are not demoted by aging" do
+      trace = build_trace("warm_to_cold_skip_critical")
+      :ok = Storage.store(trace, "test_hologram", :critical)
+
+      backdate_warm_record!(trace.id, -60 * 60 * 24 * 30)
+
+      Storage.age_traces()
+
+      # Still in warm; nothing got moved.
+      assert [_one] = :dets.lookup(warm_dets_file(), trace.id)
+    end
+  end
+
   describe "cold-tier table alignment" do
     test "Storage reads from the same Mnesia table MnesiaSchema writes" do
       # MnesiaSchema writes to :kudzu_cold_traces. Storage's @cold_table
@@ -80,6 +111,26 @@ defmodule Kudzu.StorageTest do
   end
 
   # --- Helpers ---
+
+  defp warm_dets_file do
+    String.to_charlist(Path.join([
+      Application.fetch_env!(:kudzu, :data_root),
+      "dets",
+      "traces_warm.dets"
+    ]))
+  end
+
+  defp backdate_warm_record!(trace_id, delta_seconds) do
+    case :dets.lookup(warm_dets_file(), trace_id) do
+      [{^trace_id, record}] ->
+        backdated = %{record | last_accessed: DateTime.add(DateTime.utc_now(), delta_seconds, :second)}
+        :dets.insert(warm_dets_file(), {trace_id, backdated})
+        :ok
+
+      [] ->
+        flunk("expected trace #{trace_id} in warm DETS")
+    end
+  end
 
   defp build_trace(suffix) do
     %Kudzu.Trace{

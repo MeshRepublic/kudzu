@@ -406,6 +406,10 @@ defmodule Kudzu.Consolidation do
     |> Map.new()
   end
 
+  # Move warm-tier traces that have been idle for over 168 hours (7 days)
+  # and accessed fewer than 5 times into the Mnesia cold tier. Returns the
+  # number of traces actually archived (transaction succeeded + warm DETS
+  # delete). Critical importance is never archived.
   defp archive_stale_traces(traces) do
     now = DateTime.utc_now()
 
@@ -420,7 +424,30 @@ defmodule Kudzu.Consolidation do
       end
     end)
 
-    length(candidates)
+    Enum.reduce(candidates, 0, fn trace, archived ->
+      case trace do
+        %{id: id} when is_binary(id) ->
+          case Storage.demote_to_cold(id) do
+            :ok ->
+              archived + 1
+
+            :not_found ->
+              # Trace had already been removed (e.g. evicted by warm-tier
+              # capacity pressure) — not an error, just nothing to do.
+              archived
+
+            {:error, reason} ->
+              Logger.warning(
+                "[Consolidation] Failed to archive trace #{id}: #{inspect(reason)}"
+              )
+
+              archived
+          end
+
+        _ ->
+          archived
+      end
+    end)
   end
 
   defp update_trace_salience(traces) do
