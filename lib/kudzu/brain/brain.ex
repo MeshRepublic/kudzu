@@ -45,8 +45,8 @@ defmodule Kudzu.Brain do
   alias Kudzu.Brain.ActivityIndicator
   alias Kudzu.Brain.Budget
   alias Kudzu.Brain.Curiosity
-  alias Kudzu.Brain.CurriculumGenerator
   alias Kudzu.Brain.Distiller
+  alias Kudzu.Brain.Learning
   alias Kudzu.Brain.PromptBuilder
   alias Kudzu.Brain.Reasoning
   alias Kudzu.Brain.Reflexes
@@ -308,9 +308,9 @@ defmodule Kudzu.Brain do
         new_state = %{state | hologram_pid: pid, hologram_id: id}
         new_state = %{new_state | working_memory: WorkingMemory.new()}
         # Restore persisted learning goals
-        goals = restore_learning_goals(pid)
+        goals = Learning.restore_learning_goals(pid)
         new_state = %{new_state | learning_goals: goals}
-        topics = restore_researched_topics(pid)
+        topics = Learning.restore_researched_topics(pid)
         new_state = %{new_state | researched_topics: topics}
         if goals != [] do
           active = Enum.find(goals, &(&1.status == :active))
@@ -452,7 +452,7 @@ defmodule Kudzu.Brain do
       end
     end
 
-    persist_learning_goals(state, goals)
+    Learning.persist_learning_goals(state, goals)
     {:noreply, %{state | learning_goals: goals}}
   end
 
@@ -528,10 +528,10 @@ defmodule Kudzu.Brain do
   defp handle_directive_or_escalate(state, message) do
     case parse_directive(message) do
       {:learn, topic} ->
-        start_learning_goal(state, topic)
+        Learning.start_learning_goal(state, topic)
 
       :progress ->
-        report_learning_progress(state)
+        Learning.report_learning_progress(state)
 
       :not_directive ->
         chat_escalate(state, message)
@@ -541,12 +541,12 @@ defmodule Kudzu.Brain do
   defp handle_directive_or_escalate_stream(state, message, stream_to) do
     case parse_directive(message) do
       {:learn, topic} ->
-        {response, tier, tool_calls, cost, state} = start_learning_goal(state, topic)
+        {response, tier, tool_calls, cost, state} = Learning.start_learning_goal(state, topic)
         send(stream_to, {:chunk, response})
         {response, tier, tool_calls, cost, state}
 
       :progress ->
-        {response, tier, tool_calls, cost, state} = report_learning_progress(state)
+        {response, tier, tool_calls, cost, state} = Learning.report_learning_progress(state)
         send(stream_to, {:chunk, response})
         {response, tier, tool_calls, cost, state}
 
@@ -573,105 +573,6 @@ defmodule Kudzu.Brain do
 
       true ->
         :not_directive
-    end
-  end
-
-  defp report_learning_progress(state) do
-    alias Kudzu.Brain.LearningGoal
-
-    case state.learning_goals do
-      [] ->
-        {"No active learning goals. Say 'Learn <topic>' to start one.", :reflex, [], 0.0, state}
-
-      goals ->
-        active = Enum.find(goals, &(&1.status == :active))
-        queued = Enum.filter(goals, &(&1.status == :queued))
-        completed = Enum.filter(goals, &(&1.status == :complete))
-
-        parts = []
-
-        parts = if active do
-          [LearningGoal.progress_report(active) | parts]
-        else
-          ["No active learning goal." | parts]
-        end
-
-        parts = if queued != [] do
-          queued_list = Enum.map_join(queued, "\n", &("  - #{&1.topic}"))
-          ["Queued:\n#{queued_list}" | parts]
-        else
-          parts
-        end
-
-        parts = if completed != [] do
-          done_list = Enum.map_join(completed, "\n", &("  - #{&1.topic} (#{&1.completed_count} topics)"))
-          ["Completed goals:\n#{done_list}" | parts]
-        else
-          parts
-        end
-
-        response = parts |> Enum.reverse() |> Enum.join("\n\n")
-        {response, :reflex, [], 0.0, state}
-    end
-  end
-
-  defp start_learning_goal(state, topic) do
-    alias Kudzu.Brain.LearningGoal
-
-    normalized = String.downcase(topic)
-    existing = Enum.find(state.learning_goals, fn g ->
-      g.status in [:active, :queued] and String.downcase(g.topic) == normalized
-    end)
-
-    if existing do
-      {"Already learning '#{topic}'. Say 'progress' to check status.", :reflex, [], 0.0, state}
-    else
-      Logger.info("[Brain] Generating curriculum for: #{topic}")
-      ActivityIndicator.start_activity(:curriculum, "generating curriculum: #{String.slice(topic, 0, 40)}")
-
-      result = generate_curriculum(state, topic)
-      ActivityIndicator.stop_activity(:curriculum)
-
-      case result do
-        {:ok, items, cost} ->
-          goal = LearningGoal.new(topic, items)
-
-          goal = if Enum.any?(state.learning_goals, &(&1.status == :active)) do
-            %{goal | status: :queued}
-          else
-            goal
-          end
-
-          goals = state.learning_goals ++ [goal]
-          state = %{state | learning_goals: goals}
-
-          persist_learning_goals(state, goals)
-
-          record_trace(state, :memory, %{
-            source: "learning_goal_created",
-            topic: topic,
-            curriculum_size: length(items),
-            status: goal.status,
-            goal_id: goal.id
-          })
-
-          status_word = if goal.status == :active, do: "Started", else: "Queued"
-          response = "#{status_word} learning '#{topic}' — #{length(items)} topics to cover.\n\n" <>
-            "First 5 topics:\n" <>
-            (items |> Enum.take(5) |> Enum.map_join("\n", &("  - #{&1}")))
-
-          {response, :reflex, [], cost, state}
-
-        {:error, reason} ->
-          {"Failed to generate curriculum: #{inspect(reason)}", :reflex, [], 0.0, state}
-      end
-    end
-  end
-
-  defp generate_curriculum(_state, topic) do
-    case CurriculumGenerator.generate(topic) do
-      {:ok, items} -> {:ok, items, 0.0}
-      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -1247,129 +1148,6 @@ defmodule Kudzu.Brain do
       rescue
         _ -> :ok
       end
-    end
-  end
-
-  # ── Learning Goal Persistence ──────────────────────────────────────
-
-  defp persist_learning_goals(state, goals) do
-    if state.hologram_pid do
-      serialized = Enum.map(goals, fn g ->
-        %{
-          id: g.id,
-          topic: g.topic,
-          status: to_string(g.status),
-          created_at: DateTime.to_iso8601(g.created_at),
-          topics: Enum.map(g.topics, fn {t, s} -> %{topic: t, status: to_string(s)} end),
-          current_index: g.current_index,
-          completed_count: g.completed_count,
-          failed_count: g.failed_count
-        }
-      end)
-
-      try do
-        Kudzu.Hologram.record_trace(state.hologram_pid, :session_context, %{
-          source: "learning_goals_state",
-          goals: serialized,
-          researched_topics: MapSet.to_list(state.researched_topics)
-        })
-      rescue
-        _ -> :ok
-      end
-    end
-  end
-
-  defp restore_learning_goals(hologram_pid) do
-    alias Kudzu.Brain.LearningGoal
-
-    # Find the most recent learning_goals_state trace
-    traces = try do
-      Kudzu.Hologram.recall(hologram_pid, :session_context)
-    catch
-      _, _ -> []
-    end
-
-    goal_trace = traces
-    |> Enum.filter(fn t ->
-      hint = Map.get(t, :reconstruction_hint, %{})
-      source = Map.get(hint, :source, Map.get(hint, "source", nil))
-      source == "learning_goals_state"
-    end)
-    |> List.last()  # most recent (traces are typically in chronological order)
-
-    case goal_trace do
-      %{reconstruction_hint: %{goals: serialized}} when is_list(serialized) ->
-        deserialize_goals(serialized)
-
-      %{reconstruction_hint: %{"goals" => serialized}} when is_list(serialized) ->
-        deserialize_goals(serialized)
-
-      _ ->
-        []
-    end
-  end
-
-  defp deserialize_goals(serialized) do
-    alias Kudzu.Brain.LearningGoal
-
-    Enum.map(serialized, fn g ->
-      topics = (g["topics"] || g[:topics] || [])
-      |> Enum.map(fn t ->
-        topic = t["topic"] || t[:topic] || ""
-        status = case t["status"] || t[:status] do
-          "complete" -> :complete
-          "failed" -> :failed
-          _ -> :pending
-        end
-        {topic, status}
-      end)
-
-      %LearningGoal{
-        id: g["id"] || g[:id],
-        topic: g["topic"] || g[:topic],
-        status: case g["status"] || g[:status] do
-          "active" -> :active
-          "queued" -> :queued
-          "complete" -> :complete
-          _ -> :active
-        end,
-        created_at: case DateTime.from_iso8601(to_string(g["created_at"] || g[:created_at] || "")) do
-          {:ok, dt, _} -> dt
-          _ -> DateTime.utc_now()
-        end,
-        topics: topics,
-        current_index: g["current_index"] || g[:current_index] || 0,
-        completed_count: g["completed_count"] || g[:completed_count] || 0,
-        failed_count: g["failed_count"] || g[:failed_count] || 0
-      }
-    end)
-  end
-
-  defp restore_researched_topics(hologram_pid) do
-    traces = try do
-      Kudzu.Hologram.recall(hologram_pid, :session_context)
-    catch
-      _, _ -> []
-    end
-
-    goal_trace = traces
-    |> Enum.filter(fn t ->
-      hint = Map.get(t, :reconstruction_hint, %{})
-      source = Map.get(hint, :source, Map.get(hint, "source", nil))
-      source == "learning_goals_state"
-    end)
-    |> List.last()
-
-    case goal_trace do
-      %{reconstruction_hint: hint} ->
-        topics_list = Map.get(hint, :researched_topics, Map.get(hint, "researched_topics", []))
-        case topics_list do
-          list when is_list(list) -> MapSet.new(list)
-          _ -> MapSet.new()
-        end
-
-      _ ->
-        MapSet.new()
     end
   end
 
