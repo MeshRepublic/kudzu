@@ -45,11 +45,25 @@ defmodule Kudzu.Silo.Extractor do
 
   # === Claude-Assisted Extraction (costs tokens) ===
 
+  # Prompt relaxed in tandem with the DP.1 whitelist removal. Claude is now
+  # free to use any concise verb / short noun-phrase relation that fits the
+  # domain. The example list is illustrative, not exhaustive — domains like
+  # Kubernetes or PostgreSQL will want their own natural verbs (`schedules`,
+  # `replicates`, `vacuums`, ...) and the old whitelist was actively
+  # destroying that signal.
   @extraction_prompt """
   Extract subject-relation-object triples from the following text.
   Return ONLY a JSON array of triples, each as [subject, relation, object].
-  Use lowercase, concise terms. Common relations: is, causes, requires, uses,
-  provides, contains, enables, prevents, relates_to, part_of, has_property.
+
+  Guidelines:
+  - Use lowercase, concise terms.
+  - Choose specific, natural relations that fit the source. Verbs and short
+    noun phrases preferred (`controls`, `causes`, `requires`, `listens_on`,
+    `has_default`, `runs_on`, `equals`, `cannot_be`, ...). Do not force
+    everything into a generic `relates_to` — be precise.
+  - Preserve technical detail in subjects and objects: version numbers
+    (`2.8.3`), paths (`/etc/systemd/system`), host:port (`0.0.0.0:8080`),
+    instance names (`user@1000.service`) should stay intact.
 
   Example input: "The holographic principle states that information in a volume
   can be encoded on its boundary surface."
