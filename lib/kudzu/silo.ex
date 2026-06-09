@@ -18,7 +18,7 @@ defmodule Kudzu.Silo do
   Create or find an expertise silo for the given domain.
   Returns {:ok, pid} of the backing hologram.
   """
-  @spec create(String.t()) :: {:ok, pid()}
+  @spec create(String.t()) :: {:ok, pid()} | {:error, term()}
   def create(domain) do
     purpose = "#{@purpose_prefix}#{domain}"
 

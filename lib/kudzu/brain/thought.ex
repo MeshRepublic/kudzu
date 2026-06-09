@@ -18,6 +18,16 @@ defmodule Kudzu.Brain.Thought do
 
   defmodule Result do
     @moduledoc "The result of a thought process."
+    @type t :: %__MODULE__{
+            id: String.t() | nil,
+            input: String.t() | nil,
+            depth: non_neg_integer() | nil,
+            chain: [map()],
+            activations: [{String.t(), float(), atom()}],
+            confidence: float(),
+            resolution: atom() | nil,
+            sub_results: [t()]
+          }
     defstruct [
       :id,
       :input,

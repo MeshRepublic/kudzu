@@ -220,7 +220,7 @@ defmodule Kudzu.Agent do
   Stimulate the agent with a prompt and get a response.
   Requires cognition to be enabled.
   """
-  @spec stimulate(agent(), String.t()) :: {:ok, map()} | {:error, term()}
+  @spec stimulate(agent(), String.t()) :: {:ok, String.t(), [term()]} | {:error, term()}
   def stimulate(agent, prompt) do
     Hologram.stimulate(agent, prompt)
   end
@@ -275,7 +275,7 @@ defmodule Kudzu.Agent do
   @doc """
   Query a specific peer for memories.
   """
-  @spec query_peer(agent(), String.t(), atom()) :: [map()]
+  @spec query_peer(agent(), String.t(), atom()) :: {:ok, [Kudzu.Trace.t()]} | {:error, term()}
   def query_peer(agent, peer_id, purpose) do
     Hologram.query_peer(agent, peer_id, purpose, 3)
   end
@@ -305,17 +305,12 @@ defmodule Kudzu.Agent do
   # ============================================================================
 
   defp record_trace(agent, purpose, data) do
-    case Hologram.record_trace(agent, purpose, data) do
-      {:ok, trace} ->
-        # Also persist to tiered storage
-        hologram_id = Hologram.get_id(agent)
-        importance = Map.get(data, :importance, :normal)
-        Node.store(trace, hologram_id, importance: importance)
-        {:ok, trace.id}
-
-      error ->
-        error
-    end
+    {:ok, trace} = Hologram.record_trace(agent, purpose, data)
+    # Also persist to tiered storage
+    hologram_id = Hologram.get_id(agent)
+    importance = Map.get(data, :importance, :normal)
+    Node.store(trace, hologram_id, importance: importance)
+    {:ok, trace.id}
   end
 
   defp maybe_include_mesh(local_results, purpose, opts) do
