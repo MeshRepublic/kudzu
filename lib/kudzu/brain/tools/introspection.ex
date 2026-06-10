@@ -217,13 +217,23 @@ defmodule Kudzu.Brain.Tools.Introspection do
       results =
         Kudzu.Consolidation.semantic_query(query, 0.0)
         |> Enum.take(limit)
-        |> Enum.map(fn {purpose, similarity} ->
-          %{purpose: purpose, similarity: Float.round(similarity, 4)}
-        end)
+        |> Enum.map(&format_result/1)
 
       {:ok, %{query: query, results: results, count: length(results)}}
     rescue
       e -> {:error, "semantic_recall crashed: #{Exception.message(e)}"}
+    end
+
+    # Normalise the two shapes Consolidation.semantic_query/2 can return:
+    # 1. Embedding path → %{trace_id, similarity, record: %TraceRecord{purpose}}
+    # 2. HRR fallback path → {purpose, similarity} tuple
+    # Both get squashed to %{purpose, similarity} for callers.
+    defp format_result(%{record: %{purpose: purpose}, similarity: similarity}) do
+      %{purpose: purpose, similarity: Float.round(similarity * 1.0, 4)}
+    end
+
+    defp format_result({purpose, similarity}) do
+      %{purpose: purpose, similarity: Float.round(similarity * 1.0, 4)}
     end
   end
 

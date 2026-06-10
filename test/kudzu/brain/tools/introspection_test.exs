@@ -63,13 +63,6 @@ defmodule Kudzu.Brain.Tools.IntrospectionTest do
     assert Map.has_key?(result, :encoder)
   end
 
-  # FIXME: Real bug — Introspection.execute("semantic_recall", ...) raises
-  # "no function clause matching in anonymous fn/1 in
-  # Kudzu.Brain.Tools.Introspection.SemanticRecall.execute/1". The direct
-  # SemanticRecall.execute/1 path (see further-down tests) also takes string
-  # keys, so the dispatcher wrapper or rescue block has a bug. Tagged :external
-  # to keep the suite green until the dispatcher is fixed.
-  @tag :external
   test "execute dispatches semantic_recall by name" do
     assert {:ok, result} = Introspection.execute("semantic_recall", %{"query" => "health"})
     assert is_map(result)
@@ -128,12 +121,6 @@ defmodule Kudzu.Brain.Tools.IntrospectionTest do
     end
   end
 
-  # ── SemanticRecall parameters ────────────────────────────────────
-
-  # FIXME: Same bug as the dispatcher test above — SemanticRecall.execute/1
-  # raises "no function clause matching in anonymous fn/1" on string-keyed
-  # input. Tagged :external until the underlying clause is fixed.
-  @tag :external
   test "semantic_recall respects limit parameter" do
     assert {:ok, result} = SemanticRecall.execute(%{"query" => "test", "limit" => 2})
     assert length(result.results) <= 2
