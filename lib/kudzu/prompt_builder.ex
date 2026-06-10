@@ -91,6 +91,7 @@ defmodule Kudzu.PromptBuilder do
       :purpose,
       :desires,
       :traces,
+      :traces_status,
       :peers,
       :cycle_count,
       :status,
@@ -106,6 +107,7 @@ defmodule Kudzu.PromptBuilder do
             purpose: String.t() | atom() | nil,
             desires: [String.t()],
             traces: [map()],
+            traces_status: :ready | :no_hologram,
             peers: %{String.t() => float()},
             cycle_count: non_neg_integer() | nil,
             status: atom() | nil,
@@ -147,11 +149,14 @@ defmodule Kudzu.PromptBuilder do
     session_id = Keyword.get(opts, :session_id) || default_session_id(state, hologram_id)
     model_id = Keyword.get(opts, :model_id) || default_model(state, default_model_basis)
 
+    {traces, traces_status} = collect_traces(state, format)
+
     %Context{
       hologram_id: hologram_id,
       purpose: Map.get(state, :purpose),
       desires: Map.get(state, :desires) || [],
-      traces: collect_traces(state, format),
+      traces: traces,
+      traces_status: traces_status,
       peers: Map.get(state, :peers) || %{},
       cycle_count: Map.get(state, :cycle_count),
       status: Map.get(state, :status),
@@ -190,23 +195,29 @@ defmodule Kudzu.PromptBuilder do
   end
 
   # Brain: traces live on the linked hologram; we fetch them via
-  # :sys.get_state and sort by `:timestamp` desc. Hologram state: traces
-  # are inline; we sort by VectorClock-aware order.
+  # :sys.get_state and sort by `:timestamp` desc. When `hologram_pid`
+  # is nil the Brain has been constructed but not yet linked to its
+  # hologram; we tag that case separately so the prose renderer can
+  # show "(hologram not ready)" instead of the empty-trace fallback.
+  # Hologram state: traces are inline; we sort by VectorClock-aware order.
   defp collect_traces(%{__struct__: Kudzu.Brain, hologram_pid: pid}, _format)
        when is_pid(pid) do
     try do
       state = :sys.get_state(pid)
 
-      state.traces
-      |> Map.values()
-      |> Enum.sort_by(& &1.timestamp, :desc)
-      |> Enum.take(@max_brain_traces)
+      traces =
+        state.traces
+        |> Map.values()
+        |> Enum.sort_by(& &1.timestamp, :desc)
+        |> Enum.take(@max_brain_traces)
+
+      {traces, :ready}
     rescue
-      _ -> []
+      _ -> {[], :ready}
     end
   end
 
-  defp collect_traces(%{__struct__: Kudzu.Brain}, _format), do: []
+  defp collect_traces(%{__struct__: Kudzu.Brain}, _format), do: {[], :no_hologram}
 
   defp collect_traces(%{traces: traces}, format)
        when is_map(traces) and map_size(traces) > 0 do
@@ -225,13 +236,16 @@ defmodule Kudzu.PromptBuilder do
         _ -> @max_cognition_traces
       end
 
-    traces
-    |> Map.values()
-    |> Enum.sort_by(& &1.timestamp, sorter)
-    |> Enum.take(take)
+    traces =
+      traces
+      |> Map.values()
+      |> Enum.sort_by(& &1.timestamp, sorter)
+      |> Enum.take(take)
+
+    {traces, :ready}
   end
 
-  defp collect_traces(_, _), do: []
+  defp collect_traces(_, _), do: {[], :ready}
 
   # ── Claude formats (prose) ────────────────────────────────────────
 
@@ -499,6 +513,7 @@ defmodule Kudzu.PromptBuilder do
 
   # Claude/prose: "- [purpose] <120-char content slice>" for new,
   # "- [purpose] [reference: trace <id>, see prior context]" for seen.
+  defp render_traces_prose(%Context{traces_status: :no_hologram}), do: "(hologram not ready)"
   defp render_traces_prose(%Context{traces: []}), do: "(no traces yet)"
 
   defp render_traces_prose(ctx) do

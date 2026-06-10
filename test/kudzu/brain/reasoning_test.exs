@@ -1,8 +1,8 @@
 defmodule Kudzu.Brain.ReasoningTest do
   use ExUnit.Case, async: false
 
-  alias Kudzu.Brain.PromptBuilder
   alias Kudzu.Brain.Reasoning
+  alias Kudzu.PromptBuilder
   alias Kudzu.Silo
 
   test "prompt builder generates system prompt with desires" do
@@ -15,7 +15,7 @@ defmodule Kudzu.Brain.ReasoningTest do
       config: %{}
     }
 
-    prompt = PromptBuilder.build(state)
+    prompt = PromptBuilder.build(state, nil, format: :claude_reasoning)
     assert prompt =~ "Kudzu Brain"
     assert prompt =~ "desire one"
     assert prompt =~ "desire two"
@@ -33,7 +33,7 @@ defmodule Kudzu.Brain.ReasoningTest do
       config: %{}
     }
 
-    prompt = PromptBuilder.build(state)
+    prompt = PromptBuilder.build(state, nil, format: :claude_reasoning)
     assert prompt =~ "hologram not ready"
   end
 
@@ -47,7 +47,7 @@ defmodule Kudzu.Brain.ReasoningTest do
       config: %{}
     }
 
-    prompt = PromptBuilder.build(state)
+    prompt = PromptBuilder.build(state, nil, format: :claude_reasoning)
     assert prompt =~ "no desires set"
   end
 
@@ -61,7 +61,7 @@ defmodule Kudzu.Brain.ReasoningTest do
       config: %{}
     }
 
-    prompt = PromptBuilder.build(state)
+    prompt = PromptBuilder.build(state, nil, format: :claude_reasoning)
     assert prompt =~ "## Your Architecture"
     assert prompt =~ "## Your Desires"
     assert prompt =~ "## Recent Memory"
@@ -91,7 +91,7 @@ defmodule Kudzu.Brain.ReasoningTest do
       config: %{}
     }
 
-    prompt = PromptBuilder.build(state)
+    prompt = PromptBuilder.build(state, nil, format: :claude_reasoning)
     # Silos section should either list existing silos or say "no silos yet"
     # In test environment, there may be leftover test silos from other tests
     silos = Kudzu.Silo.list()

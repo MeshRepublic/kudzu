@@ -14,9 +14,9 @@ defmodule Kudzu.Brain.Reasoning do
   alias Kudzu.Brain.Budget
   alias Kudzu.Brain.Distiller
   alias Kudzu.Brain.InferenceEngine
-  alias Kudzu.Brain.PromptBuilder
   alias Kudzu.Brain.Reflexes
   alias Kudzu.Brain.WorkingMemory
+  alias Kudzu.PromptBuilder
 
   @doc """
   Run the three-tier reasoning pipeline against a list of anomaly maps.
@@ -218,7 +218,7 @@ defmodule Kudzu.Brain.Reasoning do
         state
 
       true ->
-        system_prompt = PromptBuilder.build(state)
+        system_prompt = PromptBuilder.build(state, nil, format: :claude_reasoning)
 
         anomaly_desc =
           Enum.map_join(anomalies, "; ", fn a ->
