@@ -146,7 +146,11 @@ defmodule Kudzu.PromptBuilder do
   # them inline.
   defp normalize(state, message, format, opts) do
     {hologram_id, default_model_basis} = ids(state)
-    session_id = Keyword.get(opts, :session_id) || default_session_id(state, hologram_id)
+
+    session_id =
+      Keyword.get(opts, :session_id) ||
+        default_session_id(state, hologram_id, default_model_basis)
+
     model_id = Keyword.get(opts, :model_id) || default_model(state, default_model_basis)
 
     {traces, traces_status} = collect_traces(state, format)
@@ -174,15 +178,17 @@ defmodule Kudzu.PromptBuilder do
   defp ids(%{id: id}) when is_binary(id), do: {id, :ollama}
   defp ids(_), do: {nil, :ollama}
 
-  defp default_session_id(state, hologram_id) do
+  defp default_session_id(state, hologram_id, basis) do
     case Map.get(state, :current_session) do
       session when is_binary(session) and session != "" -> session
-      _ -> session_id_for(hologram_id)
+      _ -> session_id_for(hologram_id, basis)
     end
   end
 
-  defp session_id_for(nil), do: "brain:nohologram"
-  defp session_id_for(id) when is_binary(id), do: "brain:" <> id
+  defp session_id_for(nil, :claude), do: "brain:nohologram"
+  defp session_id_for(nil, :ollama), do: "hologram:nohologram"
+  defp session_id_for(id, :claude) when is_binary(id), do: "brain:" <> id
+  defp session_id_for(id, :ollama) when is_binary(id), do: "hologram:" <> id
 
   defp default_model(state, :claude) do
     get_in(state, [Access.key(:config, %{}), :model]) ||

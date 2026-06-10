@@ -21,7 +21,7 @@ defmodule Kudzu.Cognition do
   This enables distributed setups where different agents use different LLM instances.
   """
 
-  alias Kudzu.Cognition.PromptBuilder
+  alias Kudzu.PromptBuilder
 
   @default_ollama_url "http://localhost:11434"
   @default_model "mistral:latest"
@@ -63,7 +63,7 @@ defmodule Kudzu.Cognition do
     temperature = Keyword.get(opts, :temperature, 0.7)
     ollama_url = get_ollama_url(opts, state)
 
-    prompt = PromptBuilder.build(state, stimulus)
+    prompt = PromptBuilder.build(state, stimulus, format: :ollama_full, model_id: model)
 
     case call_ollama(ollama_url, model, prompt, temperature) do
       {:ok, response} ->
@@ -84,7 +84,7 @@ defmodule Kudzu.Cognition do
     model = Keyword.get(opts, :model, @default_model)
     ollama_url = get_ollama_url(opts, state)
 
-    prompt = PromptBuilder.build_quick(state, stimulus)
+    prompt = PromptBuilder.build(state, stimulus, format: :ollama_quick, model_id: model)
 
     case call_ollama(ollama_url, model, prompt, 0.3) do
       {:ok, response} ->
