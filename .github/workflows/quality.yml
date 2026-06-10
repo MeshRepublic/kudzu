@@ -1,0 +1,106 @@
+name: quality + tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  MIX_ENV: test
+  # CI needs a key set because config/runtime.exs raises without one.
+  # Value is harmless — no production secrets in CI.
+  KUDZU_API_KEY: ci-test-key
+  # Pin Nx to the binary backend; EXLA requires NIFs we don't ship in CI.
+  NX_DEFAULT_BACKEND: binary
+
+jobs:
+  quality:
+    name: mix quality (format + credo + dialyzer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Erlang and Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.0"
+          elixir-version: "1.17.3"
+
+      - name: Restore deps cache
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-otp27-elixir1.17-deps-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-otp27-elixir1.17-deps-
+
+      - name: Restore _build cache
+        uses: actions/cache@v4
+        with:
+          path: _build
+          key: ${{ runner.os }}-otp27-elixir1.17-build-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-otp27-elixir1.17-build-${{ env.MIX_ENV }}-
+
+      # PLT is expensive (~10 min cold build). Cache it on mix.lock hash so it
+      # only rebuilds when deps change.
+      - name: Restore Dialyzer PLT cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build/test/dialyxir_*.plt
+            _build/test/dialyxir_*.plt.hash
+          key: ${{ runner.os }}-otp27-elixir1.17-plt-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-otp27-elixir1.17-plt-
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Compile (warnings_as_errors enforced via mix.exs)
+        run: mix compile
+
+      - name: Build PLT (if not cached)
+        run: mix dialyzer --plt
+
+      - name: Run mix quality
+        run: mix quality
+
+  test:
+    name: mix test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Erlang and Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.0"
+          elixir-version: "1.17.3"
+
+      - name: Restore deps cache
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-otp27-elixir1.17-deps-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-otp27-elixir1.17-deps-
+
+      - name: Restore _build cache
+        uses: actions/cache@v4
+        with:
+          path: _build
+          key: ${{ runner.os }}-otp27-elixir1.17-build-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-otp27-elixir1.17-build-${{ env.MIX_ENV }}-
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Run tests (excludes :external by default)
+        run: mix test --warnings-as-errors
