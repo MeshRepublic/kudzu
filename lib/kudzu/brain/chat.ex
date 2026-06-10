@@ -16,7 +16,6 @@ defmodule Kudzu.Brain.Chat do
   alias Kudzu.Brain
   alias Kudzu.Brain.Budget
   alias Kudzu.Brain.Learning
-  alias Kudzu.Brain.PromptBuilder
   alias Kudzu.Brain.Reasoning
   alias Kudzu.Brain.Reflexes
   alias Kudzu.Brain.Thought
@@ -26,6 +25,7 @@ defmodule Kudzu.Brain.Chat do
   alias Kudzu.Brain.Tools.Web, as: WebTools
   alias Kudzu.Brain.WebLearner
   alias Kudzu.Brain.WorkingMemory
+  alias Kudzu.PromptBuilder
 
   @doc """
   Run the synchronous chat pipeline against a user message.
@@ -614,7 +614,7 @@ defmodule Kudzu.Brain.Chat do
          state}
 
       true ->
-        system_prompt = PromptBuilder.build_chat(state)
+        system_prompt = PromptBuilder.build(state, nil, format: :claude_chat)
 
         tools =
           Introspection.to_claude_format() ++
@@ -722,7 +722,7 @@ defmodule Kudzu.Brain.Chat do
         {error_msg, 3, [], 0.0, state}
 
       true ->
-        system_prompt = PromptBuilder.build_chat(state)
+        system_prompt = PromptBuilder.build(state, nil, format: :claude_chat)
 
         tools =
           Introspection.to_claude_format() ++
