@@ -247,7 +247,7 @@ defmodule Kudzu.Brain do
 
   @impl true
   def handle_cast(:wake_now, state) do
-    send(self(), :wake_cycle)
+    send(self(), :activity_cycle)
     {:noreply, state}
   end
 
@@ -348,12 +348,6 @@ defmodule Kudzu.Brain do
         Process.send_after(self(), :init_hologram, @retry_delay)
         {:noreply, state}
     end
-  end
-
-  # Backward compatibility: :wake_cycle forwards to :activity_cycle
-  def handle_info(:wake_cycle, state) do
-    send(self(), :activity_cycle)
-    {:noreply, state}
   end
 
   def handle_info(:activity_cycle, %{hologram_id: nil} = state) do
