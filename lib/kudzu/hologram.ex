@@ -471,6 +471,21 @@ defmodule Kudzu.Hologram do
 
   @impl true
   def handle_call({:delete_trace, trace_id}, _from, state) do
+    # Best-effort durable deletion. Failure in Storage.delete is logged
+    # but does not block the in-memory clear; the alternative would let
+    # local state diverge from the holograms intent if cold tier hiccups.
+    case Kudzu.Storage.delete(trace_id) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        require Logger
+
+        Logger.warning(
+          "[Hologram #{state.id}] Storage.delete(#{trace_id}) returned error: #{inspect(reason)}"
+        )
+    end
+
     new_state = %{state | traces: Map.delete(state.traces, trace_id)}
     {:reply, :ok, new_state}
   end

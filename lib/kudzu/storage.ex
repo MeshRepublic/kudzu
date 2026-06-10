@@ -141,6 +141,19 @@ defmodule Kudzu.Storage do
     GenServer.call(__MODULE__, {:demote_to_cold, trace_id}, 30_000)
   end
 
+  @doc """
+  Delete a trace from every persistence tier (hot ETS, warm DETS, cold Mnesia)
+  and its embedding from both ETS + DETS embedding tables.
+
+  Returns `:ok` even if the trace was absent from some tiers — deletion is
+  idempotent. Returns `{:error, reason}` only if the Mnesia cold-tier
+  transaction aborts.
+  """
+  @spec delete(String.t()) :: :ok | {:error, term()}
+  def delete(trace_id) do
+    GenServer.call(__MODULE__, {:delete, trace_id}, 30_000)
+  end
+
   @doc "Get storage statistics"
   def stats do
     GenServer.call(__MODULE__, :stats)
@@ -351,6 +364,22 @@ defmodule Kudzu.Storage do
       end
 
     {:reply, result, state}
+  end
+
+  def handle_call({:delete, trace_id}, _from, state) do
+    # Walk every tier. Each :delete is a no-op if the key is not present.
+    :ets.delete(@hot_table, trace_id)
+    :ets.delete(@embedding_table, trace_id)
+    :dets.delete(warm_file(), trace_id)
+    :dets.delete(embedding_file(), trace_id)
+
+    cold_result = delete_cold(trace_id)
+
+    # Observability: broadcast deletion so PubSub subscribers (e.g. UI, Brain)
+    # can react without polling.
+    Phoenix.PubSub.broadcast(Kudzu.PubSub, "traces:delete", {:trace_deleted, trace_id})
+
+    {:reply, cold_result, state}
   end
 
   @impl true
@@ -764,6 +793,19 @@ defmodule Kudzu.Storage do
   # Write a TraceRecord to the Mnesia cold tier. Returns :ok on success
   # or {:error, reason} if the transaction aborts or Mnesia is unavailable.
   # Used by demote_to_cold and by Kudzu.Consolidation.archive_stale_traces.
+  # Idempotent cold-tier deletion. :mnesia.delete is a no-op on missing keys.
+  # Returns {:error, reason} only if the transaction itself aborts.
+  defp delete_cold(trace_id) do
+    try do
+      case :mnesia.transaction(fn -> :mnesia.delete({@cold_table, trace_id}) end) do
+        {:atomic, :ok} -> :ok
+        {:aborted, reason} -> {:error, reason}
+      end
+    rescue
+      e -> {:error, e}
+    end
+  end
+
   defp write_cold(%TraceRecord{} = record) do
     try do
       result =

@@ -52,6 +52,37 @@ defmodule Kudzu.StorageTest do
     end
   end
 
+  describe "delete/1 — durable removal from all tiers" do
+    test "removes a trace from hot ETS, warm DETS, and the embedding tables" do
+      trace = build_trace("delete_round_trip_a")
+      :ok = Storage.store(trace, "test_hologram")
+
+      # Confirm baseline: trace is retrievable.
+      assert {tier, %TraceRecord{}} = Storage.retrieve(trace.id)
+      assert tier in [:hot, :warm]
+
+      assert :ok = Storage.delete(trace.id)
+
+      # All tiers must report not found.
+      assert :not_found = Storage.retrieve(trace.id)
+    end
+
+    test "is idempotent — deleting a missing trace returns :ok" do
+      assert :ok = Storage.delete("trace_that_was_never_stored_#{:rand.uniform(999_999)}")
+    end
+
+    test "broadcasts {:trace_deleted, id} on the traces:delete topic" do
+      trace = build_trace("delete_broadcasts_a")
+      :ok = Storage.store(trace, "test_hologram")
+      :ok = Phoenix.PubSub.subscribe(Kudzu.PubSub, "traces:delete")
+
+      :ok = Storage.delete(trace.id)
+
+      assert_receive {:trace_deleted, trace_id}, 1_000
+      assert trace_id == trace.id
+    end
+  end
+
   describe "age_traces — warm→cold archival" do
     test "stale, non-critical warm traces are demoted into the cold tier" do
       trace = build_trace("warm_to_cold_via_aging")
