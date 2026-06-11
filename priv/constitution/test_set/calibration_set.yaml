@@ -1,0 +1,129 @@
+# Calibration set for the Constitution.Distilled framework.
+#
+# Each entry is a hand-labeled proposal. Expected fields:
+#   - proposal: short text statement
+#   - expected_judgment: advances | retards | ambiguous
+#   - expected_principle: from the §5.1 set
+#   - expected_citation: paper-level (decision #13)
+#
+# NOTE: no expected_confidence_range field (decision #14). Calibration
+# uses Brier score against expected_judgment.
+
+# --- Clear-positive proposals (should resolve via Stage 3) ---
+
+- proposal: "Citizens may freely publish criticism of elected officials."
+  expected_judgment: advances
+  expected_principle: free_speech
+  expected_citation: "First Amendment"
+
+- proposal: "Government may not search homes without a warrant supported by probable cause."
+  expected_judgment: advances
+  expected_principle: freedom_from_unreasonable_search
+  expected_citation: "Fourth Amendment"
+
+- proposal: "Accused persons have the right to a jury trial."
+  expected_judgment: advances
+  expected_principle: due_process
+  expected_citation: "Sixth Amendment"
+
+- proposal: "Citizens may peacefully assemble to petition the government for redress of grievances."
+  expected_judgment: advances
+  expected_principle: free_assembly
+  expected_citation: "First Amendment"
+
+- proposal: "Federal authority is limited to the powers enumerated in the Constitution."
+  expected_judgment: advances
+  expected_principle: limited_government
+  expected_citation: "Tenth Amendment"
+
+- proposal: "Private property may not be taken without just compensation."
+  expected_judgment: advances
+  expected_principle: property_in_labor
+  expected_citation: "Fifth Amendment"
+
+- proposal: "Individuals may keep arms for self-defense."
+  expected_judgment: advances
+  expected_principle: bodily_autonomy
+  expected_citation: "Second Amendment"
+
+# --- Clear-negative proposals (should resolve via Stage 1) ---
+
+- proposal: "Criminalize publication of articles critical of the sitting president."
+  expected_judgment: retards
+  expected_principle: free_speech
+  expected_citation: "First Amendment + Sedition Act anti-precedent"
+
+- proposal: "Authorize warrantless mass collection of citizen phone records."
+  expected_judgment: retards
+  expected_principle: freedom_from_unreasonable_search
+  expected_citation: "Fourth Amendment + USA PATRIOT Act §215 anti-precedent"
+
+- proposal: "Detain citizens indefinitely without trial on suspicion of foreign association."
+  expected_judgment: retards
+  expected_principle: due_process
+  expected_citation: "Fifth Amendment + NDAA §1021 anti-precedent"
+
+- proposal: "Compel surrender of privately held precious metals at fixed below-market prices."
+  expected_judgment: retards
+  expected_principle: property_in_labor
+  expected_citation: "Fifth Amendment + Executive Order 6102 anti-precedent"
+
+- proposal: "Force relocation of citizens based on ancestry without individualized hearings."
+  expected_judgment: retards
+  expected_principle: due_process
+  expected_citation: "Fifth Amendment + Executive Order 9066 anti-precedent"
+
+- proposal: "Criminalize membership in political parties advocating unpopular ideas."
+  expected_judgment: retards
+  expected_principle: free_assembly
+  expected_citation: "First Amendment + Smith Act anti-precedent"
+
+- proposal: "Compel citizens to undergo medical procedures as a condition of employment."
+  expected_judgment: retards
+  expected_principle: bodily_autonomy
+  expected_citation: "Ninth Amendment + bodily autonomy §5.1.2"
+
+- proposal: "Require government licenses for ordinary speech in public forums."
+  expected_judgment: retards
+  expected_principle: free_speech
+  expected_citation: "First Amendment"
+
+# --- Ambiguous proposals (should resolve via Stage 4/5) ---
+
+- proposal: "Levy a 1% annual tax on real estate value to fund municipal services."
+  expected_judgment: ambiguous
+  expected_principle: property_in_labor
+
+- proposal: "Impose import duties to fund federal operations."
+  expected_judgment: advances
+  expected_principle: limited_government
+  expected_citation: "Article I §8 clause 1"
+
+- proposal: "Restrict the sale of dangerous chemicals to licensed buyers."
+  expected_judgment: ambiguous
+  expected_principle: non_aggression
+
+- proposal: "Subsidize agricultural production with federal grants."
+  expected_judgment: ambiguous
+  expected_principle: property_in_labor
+
+- proposal: "Require licenses to operate motor vehicles on public roads."
+  expected_judgment: ambiguous
+  expected_principle: limited_government
+
+# --- Off-corpus / non-constitutional ---
+
+- proposal: "Designate the bald eagle as the official national bird."
+  expected_judgment: advances
+  expected_principle: self_governance
+  expected_citation: "no constitutional touchpoint"
+
+- proposal: "Establish a state-issued postal service."
+  expected_judgment: advances
+  expected_principle: limited_government
+  expected_citation: "Article I §8 clause 7"
+
+- proposal: "Set Wednesday as the official federal mid-week holiday for cultural exchange."
+  expected_judgment: advances
+  expected_principle: self_governance
+  expected_citation: "no constitutional touchpoint"
