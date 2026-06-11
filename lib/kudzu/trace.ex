@@ -28,6 +28,14 @@ defmodule Kudzu.Trace do
 
   alias Kudzu.{Salience, VectorClock}
 
+  @type origin_type ::
+          :external
+          | :self_conversation
+          | :peer_attestation
+          | :distilled
+          | :tyranny_artifact
+          | :contested
+
   @type t :: %__MODULE__{
           id: String.t(),
           origin: String.t(),
@@ -36,7 +44,8 @@ defmodule Kudzu.Trace do
           path: [String.t()],
           reconstruction_hint: map(),
           salience: Salience.t() | nil,
-          content_hash: String.t() | nil
+          content_hash: String.t() | nil,
+          origin_type: origin_type()
         }
 
   @enforce_keys [:id, :origin, :timestamp, :purpose]
@@ -48,7 +57,8 @@ defmodule Kudzu.Trace do
     :salience,
     :content_hash,
     path: [],
-    reconstruction_hint: %{}
+    reconstruction_hint: %{},
+    origin_type: :external
   ]
 
   @doc """
@@ -63,11 +73,15 @@ defmodule Kudzu.Trace do
   ## Options
     - :content_addressable - if true, ID is SHA-256 hash of content (default: true)
     - :importance - salience importance level (:critical, :high, :normal, :low, :trivial)
+    - :origin_type - provenance classification (default: :external). One of
+      :external | :self_conversation | :peer_attestation | :distilled |
+      :tyranny_artifact | :contested
   """
   @spec new(String.t(), atom() | String.t(), [String.t()] | nil, map(), keyword()) :: t()
   def new(origin, purpose, path \\ nil, reconstruction_hint \\ %{}, opts \\ []) do
     content_addressable = Keyword.get(opts, :content_addressable, true)
     importance = Keyword.get(opts, :importance, :normal)
+    origin_type = Keyword.get(opts, :origin_type, :external)
 
     # Generate content hash
     content_hash = compute_content_hash(origin, purpose, reconstruction_hint)
@@ -91,7 +105,8 @@ defmodule Kudzu.Trace do
       path: path || [origin],
       reconstruction_hint: reconstruction_hint,
       salience: salience,
-      content_hash: content_hash
+      content_hash: content_hash,
+      origin_type: origin_type
     }
   end
 
@@ -109,6 +124,7 @@ defmodule Kudzu.Trace do
   def new_with_clock(origin, purpose, clock, path \\ nil, reconstruction_hint \\ %{}, opts \\ []) do
     content_addressable = Keyword.get(opts, :content_addressable, true)
     importance = Keyword.get(opts, :importance, :normal)
+    origin_type = Keyword.get(opts, :origin_type, :external)
 
     content_hash = compute_content_hash(origin, purpose, reconstruction_hint)
 
@@ -129,7 +145,8 @@ defmodule Kudzu.Trace do
       path: path || [origin],
       reconstruction_hint: reconstruction_hint,
       salience: salience,
-      content_hash: content_hash
+      content_hash: content_hash,
+      origin_type: origin_type
     }
   end
 

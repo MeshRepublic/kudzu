@@ -93,4 +93,25 @@ defmodule Kudzu.TraceTest do
       assert trace.reconstruction_hint == %{key1: "value1", key2: "value2"}
     end
   end
+
+  describe "origin_type" do
+    test "defaults to :external for backward compatibility" do
+      t = Kudzu.Trace.new("hologram_1", :discovery)
+      assert t.origin_type == :external
+    end
+
+    test "accepts the documented origin_type values" do
+      for ot <- [
+            :external,
+            :self_conversation,
+            :peer_attestation,
+            :distilled,
+            :tyranny_artifact,
+            :contested
+          ] do
+        t = Kudzu.Trace.new("hologram_1", :discovery, nil, %{}, origin_type: ot)
+        assert t.origin_type == ot
+      end
+    end
+  end
 end
