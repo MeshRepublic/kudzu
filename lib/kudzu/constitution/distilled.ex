@@ -196,8 +196,15 @@ defmodule Kudzu.Constitution.Distilled do
 
   @default_tau_r 0.75
   @default_tau_a 1.0
+  @default_tau_c 0.65
   @default_rejection_silo "rejection:us_constitution_mesh"
   @default_expertise_silo "expertise:us_constitution_mesh"
+
+  # Stage 3 positive-match threshold. Above this similarity in the
+  # expertise silo, a proposal is treated as having clear positive
+  # evidence and short-circuits to :permitted. The calibration sweep in
+  # Phase 5 may retune this.
+  @stage3_positive_threshold 0.7
 
   @doc """
   Stage 1 — fast rejection check.
@@ -217,7 +224,7 @@ defmodule Kudzu.Constitution.Distilled do
     silo = Map.get(config, :rejection_silo, @default_rejection_silo)
     tau_r = Map.get(config, :tau_r, @default_tau_r)
 
-    case best_rejection_match(proposal_vector, silo, tau_r) do
+    case best_silo_match(proposal_vector, silo) do
       nil ->
         :no_match
 
@@ -254,7 +261,7 @@ defmodule Kudzu.Constitution.Distilled do
     if acc_scalar > tau_a do
       combined = Kudzu.HRR.bundle([proposal_vector, acc_v])
 
-      case best_rejection_match(combined, silo, tau_r) do
+      case best_silo_match(combined, silo) do
         {sim, _hint} when sim > tau_r ->
           stack =
             principle
@@ -278,22 +285,39 @@ defmodule Kudzu.Constitution.Distilled do
   @spec default_expertise_silo() :: String.t()
   def default_expertise_silo, do: @default_expertise_silo
 
-  @spec best_rejection_match(Kudzu.HRR.vector(), String.t(), float()) ::
-          nil | {float(), map()}
-  defp best_rejection_match(vector, silo_domain, _tau_r) do
-    case Kudzu.Silo.list_traces(silo_domain) do
-      [] ->
-        nil
-
-      traces ->
-        traces
-        |> Enum.map(&score_trace(&1, vector))
-        |> Enum.reject(&is_nil/1)
-        |> case do
-          [] -> nil
-          scored -> Enum.max_by(scored, fn {sim, _hint} -> sim end)
-        end
+  # Score every trace in `silo_domain` against `vector` and return the
+  # highest-scoring `{similarity, hint}` pair, or `nil` if the silo is
+  # empty or no trace has a stored vector. The same scan-and-score
+  # primitive backs Stage 1 (rejection), Stage 2 (accumulation), and
+  # Stage 3 (expertise) — they differ only in which silo they consult
+  # and how they interpret the result. (The third arity `tau` argument
+  # is intentionally absent: thresholding is the caller's concern; this
+  # helper just reports the max similarity.)
+  @spec best_silo_match(Kudzu.HRR.vector(), String.t()) :: nil | {float(), map()}
+  defp best_silo_match(vector, silo_domain) do
+    case silo_scored_traces(silo_domain, vector) do
+      [] -> nil
+      scored -> Enum.max_by(scored, fn {sim, _hint} -> sim end)
     end
+  end
+
+  # Stage 3 alias — same semantics as `best_silo_match/2`, but the
+  # callsite reads more naturally with the silo's role baked in.
+  @spec best_expertise_match(Kudzu.HRR.vector(), String.t(), float()) ::
+          nil | {float(), map()}
+  defp best_expertise_match(vector, silo_domain, _threshold),
+    do: best_silo_match(vector, silo_domain)
+
+  # Shared scan: list traces in the silo, score each against `vector`,
+  # drop traces without a stored `:vector`. Used by `best_silo_match/2`
+  # (which picks the max) and `nearest_triples/3` (which sorts and
+  # takes the top N). Returns `[{similarity, hint}]`.
+  @spec silo_scored_traces(String.t(), Kudzu.HRR.vector()) :: [{float(), map()}]
+  defp silo_scored_traces(silo_domain, vector) do
+    silo_domain
+    |> Kudzu.Silo.list_traces()
+    |> Enum.map(&score_trace(&1, vector))
+    |> Enum.reject(&is_nil/1)
   end
 
   @spec score_trace(Kudzu.Trace.t(), Kudzu.HRR.vector()) :: nil | {float(), map()}
@@ -324,22 +348,35 @@ defmodule Kudzu.Constitution.Distilled do
     end
   end
 
-  # ---------- existing tier-1 permitted?/2 (Task 17 will extend) ----------
+  # ---------- permitted?/2 — 5-stage dispatcher + legacy fallback ----------
 
   @doc """
-  Soft permission check based on distilled rules.
+  Constitutional permission check.
 
-  - `:permitted` if the action has no rule-relevant subject, or if its
-    `params[:subject]` matches a subject the distilled silo has evidence
-    for.
-  - `{:denied, :no_evidence}` if the action's subject is unknown and the
-    distilled rules are present.
-  - `:permitted` if `state` carries no distilled rules at all (fail open
-    — the framework is advisory, not enforcing, in this first tier).
+  Two action shapes are supported:
+
+  1. `{:propose, %{vector: v, principle: p, ...}}` — the 5-stage
+     pipeline (Stage 1 rejection → Stage 2 accumulation → Stage 3
+     positive walk → Stage 4 AI Judge → Stage 5 escalation). See the
+     `stage1_rejection_check/2`, `stage2_accumulation_check/3`, and
+     private `stage3_positive_rule_walk/5` / `stage4_ai_judge/5` /
+     `stage5_escalate/6` helpers for stage-by-stage behavior.
+
+  2. `{any_atom, %{subject: string}}` (legacy) — soft permission based
+     on the distilled struct's subject index, kept for backward
+     compatibility with the tier-1 advisory behavior. Unknown subjects
+     return `{:denied, :no_evidence}` only when state carries a
+     `%Distilled{}` value; otherwise the call fails open with
+     `:permitted`.
   """
   @impl true
   @spec permitted?(Kudzu.Constitution.Behaviour.action(), map()) ::
-          :permitted | {:denied, :no_evidence}
+          Kudzu.Constitution.Behaviour.decision()
+  def permitted?({:propose, %{vector: v, principle: p} = params}, state) do
+    config = Map.get(state, :config, %{})
+    five_stage_evaluation(v, p, params, config, state)
+  end
+
   def permitted?(action, state) do
     case Map.get(state, :distilled) do
       nil ->
@@ -351,6 +388,177 @@ defmodule Kudzu.Constitution.Distilled do
           subject when is_binary(subject) -> evaluate_subject(subject, rules)
         end
     end
+  end
+
+  # ---------- 5-stage pipeline ----------
+
+  @spec five_stage_evaluation(
+          Kudzu.HRR.vector(),
+          String.t(),
+          map(),
+          stage_config(),
+          map()
+        ) :: Kudzu.Constitution.Behaviour.decision()
+  defp five_stage_evaluation(vector, principle, params, config, state) do
+    case stage1_rejection_check(vector, config) do
+      {:denied, _, _, _} = result ->
+        result
+
+      :no_match ->
+        case stage2_accumulation_check(vector, principle, config) do
+          {:denied_by_accumulation, _, _} = result ->
+            result
+
+          :no_match ->
+            stage3_positive_rule_walk(vector, principle, params, config, state)
+        end
+    end
+  end
+
+  @spec stage3_positive_rule_walk(
+          Kudzu.HRR.vector(),
+          String.t(),
+          map(),
+          stage_config(),
+          map()
+        ) :: Kudzu.Constitution.Behaviour.decision()
+  defp stage3_positive_rule_walk(vector, principle, params, config, state) do
+    expertise_silo = Map.get(config, :expertise_silo, @default_expertise_silo)
+
+    case best_expertise_match(vector, expertise_silo, @stage3_positive_threshold) do
+      {sim, _hint} when sim > @stage3_positive_threshold ->
+        # Strong positive evidence and (per Stages 1+2) no nearby
+        # rejection cluster — permit.
+        :permitted
+
+      _ ->
+        # Insufficient positive evidence — fall through to Stage 4.
+        stage4_ai_judge(vector, principle, params, config, state)
+    end
+  end
+
+  @spec stage4_ai_judge(
+          Kudzu.HRR.vector(),
+          String.t(),
+          map(),
+          stage_config(),
+          map()
+        ) :: Kudzu.Constitution.Behaviour.decision()
+  defp stage4_ai_judge(vector, principle, params, config, _state) do
+    case ai_judge_call(vector, principle, params, config) do
+      {:ok, {:advances, confidence, judge_principle, _reasoning, _ev}}
+      when confidence >= 0.8 ->
+        warn_on_principle_mismatch(principle, judge_principle, :advances)
+        :permitted
+
+      {:ok, {:retards, confidence, judge_principle, reasoning, evidence}}
+      when confidence >= 0.8 ->
+        warn_on_principle_mismatch(principle, judge_principle, :retards)
+        tau_c = Map.get(config, :tau_c, @default_tau_c)
+
+        if Kudzu.Constitution.AIJudge.evidence_grounded_denial?(evidence, tau_c) do
+          citation = rejection_citation(evidence)
+          {:denied, citation, principle, "AI Judge: " <> reasoning}
+        else
+          # Decision #10: model opinion alone cannot terminate; downgrade.
+          stage5_escalate(
+            vector,
+            principle,
+            params,
+            0.8,
+            "AI Judge :retards but no rejection-silo grounding",
+            []
+          )
+        end
+
+      {:ok, {_verdict, confidence, judge_principle, reasoning, evidence}} ->
+        warn_on_principle_mismatch(principle, judge_principle, :ambiguous)
+        weight = 1.0 - confidence
+        stage5_escalate(vector, principle, params, weight, reasoning, evidence)
+
+      {:error, _reason} ->
+        # AI Judge unavailable — escalate at maximum weight per fail-safe.
+        stage5_escalate(vector, principle, params, 1.0, "AI Judge unavailable", [])
+    end
+  end
+
+  @spec stage5_escalate(
+          Kudzu.HRR.vector(),
+          String.t(),
+          map(),
+          float(),
+          String.t(),
+          [map()]
+        ) :: Kudzu.Constitution.Behaviour.decision()
+  defp stage5_escalate(vector, principle, _params, weight, reasoning, evidence) do
+    {:permitted_with_weight, weight, vector, principle,
+     %{reasoning: reasoning, evidence: evidence}}
+  end
+
+  @spec ai_judge_call(Kudzu.HRR.vector(), String.t(), map(), stage_config()) ::
+          {:ok, Kudzu.Constitution.AIJudge.judgment()} | {:error, term()}
+  defp ai_judge_call(vector, principle, params, config) do
+    expertise_silo = Map.get(config, :expertise_silo, @default_expertise_silo)
+    rejection_silo = Map.get(config, :rejection_silo, @default_rejection_silo)
+
+    {_acc_v, acc_scalar} =
+      Kudzu.Constitution.WeightLedger.accumulated_weight(vector, principle)
+
+    context = %{
+      proposal: Map.get(params, :proposal_text, "<no text>"),
+      principle: principle,
+      positive_triples: nearest_triples(vector, expertise_silo, 5),
+      rejection_vectors: nearest_triples(vector, rejection_silo, 5),
+      accumulated_weight: acc_scalar
+    }
+
+    Kudzu.Constitution.AIJudge.judge(context)
+  end
+
+  @spec nearest_triples(Kudzu.HRR.vector(), String.t(), pos_integer()) :: [map()]
+  defp nearest_triples(vector, silo, limit) do
+    silo
+    |> silo_scored_traces(vector)
+    |> Enum.sort_by(fn {sim, _hint} -> sim end, :desc)
+    |> Enum.take(limit)
+    |> Enum.map(fn {_sim, hint} ->
+      %{
+        subject: Map.get(hint, :subject) || Map.get(hint, "subject"),
+        relation: Map.get(hint, :relation) || Map.get(hint, "relation"),
+        object: Map.get(hint, :object) || Map.get(hint, "object"),
+        citation: Map.get(hint, :citation) || Map.get(hint, "citation"),
+        principle: Map.get(hint, :principle) || Map.get(hint, "principle")
+      }
+    end)
+  end
+
+  # Extract a citation string from the AI Judge's `cited_evidence`
+  # list. Refactored out of an inline `|> case do ... end` pipe to
+  # avoid the credo --strict `Pipe-into-case` warning.
+  @spec rejection_citation([map()]) :: String.t()
+  defp rejection_citation(evidence) do
+    case Enum.find(evidence, &(Map.get(&1, :source) == :rejection_silo)) do
+      %{ref: ref} when is_binary(ref) and ref != "" -> ref
+      _ -> "AI Judge denial"
+    end
+  end
+
+  # The spec leaves it open whether to pin the AI Judge's returned
+  # `principle` field against the principle we asked it about. We chose
+  # the lenient path: log a warning on mismatch but do not deny on that
+  # basis. A model that drifts on principle naming is still informative;
+  # treating that drift as a fatal pattern-match would obscure the more
+  # important signal (the verdict + grounding).
+  @spec warn_on_principle_mismatch(String.t(), String.t(), atom()) :: :ok
+  defp warn_on_principle_mismatch(asked, asked, _verdict), do: :ok
+
+  defp warn_on_principle_mismatch(asked, returned, verdict) do
+    Logger.warning(fn ->
+      "[Distilled] AI Judge principle mismatch: asked=#{inspect(asked)} " <>
+        "returned=#{inspect(returned)} verdict=#{inspect(verdict)}"
+    end)
+
+    :ok
   end
 
   @doc """
