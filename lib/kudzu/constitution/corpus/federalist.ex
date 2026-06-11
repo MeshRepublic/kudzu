@@ -5,6 +5,11 @@ defmodule Kudzu.Constitution.Corpus.Federalist do
   Source: `priv/constitution/text/federalist/federalist_NN.txt` (NN
   zero-padded 01–85). One file per paper.
 
+  Each chunk's `source_doc` is the corpus-level identifier
+  ("The Federalist Papers"); `section_label` is the per-paper
+  identifier ("Federalist N"); `paper_number` is the integer for
+  per-paper filtering.
+
   Missing files are logged as warnings (Tier 5 distillation tolerates a
   few missing papers; calibration requires the full set).
   """
@@ -13,6 +18,7 @@ defmodule Kudzu.Constitution.Corpus.Federalist do
 
   alias Kudzu.Constitution.Corpus.Helpers
 
+  @corpus_source_doc "The Federalist Papers"
   @source_doc_prefix "Federalist"
   @paper_numbers 1..85
 
@@ -38,11 +44,11 @@ defmodule Kudzu.Constitution.Corpus.Federalist do
 
     case File.read(file) do
       {:ok, text} ->
-        label = "#{@source_doc_prefix} #{n}"
+        section_label = "#{@source_doc_prefix} #{n}"
 
         text
         |> String.replace("\r\n", "\n")
-        |> Helpers.paragraph_chunks(label, label)
+        |> Helpers.paragraph_chunks(section_label, @corpus_source_doc)
         |> Enum.map(&Map.put(&1, :paper_number, n))
 
       {:error, :enoent} ->

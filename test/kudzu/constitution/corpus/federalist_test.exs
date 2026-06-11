@@ -28,5 +28,11 @@ defmodule Kudzu.Constitution.Corpus.FederalistTest do
       [first | _] = Federalist.stream_chunks() |> Enum.take(1)
       assert first.section_label =~ ~r/^Federalist \d+$/
     end
+
+    test "all chunks share source_doc 'The Federalist Papers'" do
+      chunks = Federalist.stream_chunks() |> Enum.take(20)
+      unique_sources = chunks |> Enum.map(& &1.source_doc) |> Enum.uniq()
+      assert unique_sources == ["The Federalist Papers"]
+    end
   end
 end
