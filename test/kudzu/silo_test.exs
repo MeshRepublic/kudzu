@@ -197,4 +197,83 @@ defmodule Kudzu.SiloTest do
       end
     end
   end
+
+  describe "store_relationship/3 with provenance" do
+    test "persists provenance metadata in the trace reconstruction_hint" do
+      domain = "test_silo_provenance_#{:rand.uniform(99_999)}"
+      {:ok, pid} = Silo.create(domain)
+      on_exit(fn -> Silo.delete(domain) end)
+
+      provenance = %{
+        origin_type: :distilled,
+        source_doc: "Federalist 10",
+        paragraph_offset: 3,
+        sovereignty_score: 0.85,
+        principle: "freedom_of_speech"
+      }
+
+      assert {:ok, trace} =
+               Silo.store_relationship(domain, {"madison", "argues_for", "factions"}, provenance)
+
+      hint = trace.reconstruction_hint
+      assert hint.origin_type == :distilled
+      assert hint.source_doc == "Federalist 10"
+      assert hint.paragraph_offset == 3
+      assert hint.sovereignty_score == 0.85
+      assert hint.principle == "freedom_of_speech"
+
+      # Triple fields still present
+      assert hint.subject == "madison"
+      assert hint.relation == "argues_for"
+      assert hint.object == "factions"
+      assert is_list(hint.vector)
+
+      # And the trace round-trips through the hologram state
+      stored_hints =
+        pid
+        |> :sys.get_state()
+        |> Map.get(:traces)
+        |> Map.values()
+        |> Enum.map(& &1.reconstruction_hint)
+        |> Enum.filter(&(Map.get(&1, :subject) == "madison"))
+
+      assert [stored] = stored_hints
+      assert stored.origin_type == :distilled
+      assert stored.source_doc == "Federalist 10"
+      assert stored.principle == "freedom_of_speech"
+    end
+
+    test "store_relationship/2 still works with no provenance (backward compatible)" do
+      domain = "test_silo_compat_#{:rand.uniform(99_999)}"
+      {:ok, _pid} = Silo.create(domain)
+      on_exit(fn -> Silo.delete(domain) end)
+
+      assert {:ok, trace} = Silo.store_relationship(domain, {"a", "rel", "b"})
+      hint = trace.reconstruction_hint
+      assert hint.subject == "a"
+      assert hint.relation == "rel"
+      assert hint.object == "b"
+      # No provenance fields should be present
+      refute Map.has_key?(hint, :origin_type)
+      refute Map.has_key?(hint, :source_doc)
+    end
+
+    test "store_relationship/3 with empty provenance behaves like /2" do
+      domain = "test_silo_empty_prov_#{:rand.uniform(99_999)}"
+      {:ok, _pid} = Silo.create(domain)
+      on_exit(fn -> Silo.delete(domain) end)
+
+      assert {:ok, trace} = Silo.store_relationship(domain, {"x", "y", "z"}, %{})
+      hint = trace.reconstruction_hint
+      assert hint.subject == "x"
+      refute Map.has_key?(hint, :origin_type)
+    end
+
+    test "store_relationship/3 on non-existent silo returns error" do
+      assert {:error, {:silo_not_found, _}} =
+               Silo.store_relationship("nonexistent_silo_xyz_3arity", {"a", "b", "c"}, %{
+                 origin_type: :distilled
+               })
+    end
+  end
 end

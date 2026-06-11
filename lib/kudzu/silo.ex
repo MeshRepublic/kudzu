@@ -97,21 +97,50 @@ defmodule Kudzu.Silo do
   vector to `_vector` and discarded it — `probe/2` now reads the stored
   vector and uses it as a secondary similarity signal so the semantic
   encoding finally informs retrieval.
+
+  Delegates to `store_relationship/3` with an empty provenance map.
   """
   @spec store_relationship(String.t(), {String.t(), String.t(), String.t()}) ::
           {:ok, term()} | {:error, term()}
-  def store_relationship(domain, {subject, relation, object} = triple) do
+  def store_relationship(domain, {_subject, _relation, _object} = triple) do
+    store_relationship(domain, triple, %{})
+  end
+
+  @doc """
+  Store a relationship triple with provenance metadata.
+
+  `provenance` is a map merged into the trace's `reconstruction_hint`.
+  Recognized keys (used by Constitution distillation): `:origin_type`,
+  `:source_doc`, `:paragraph_offset`, `:sovereignty_score`, `:principle`,
+  `:rejection_reason`, `:citation`. Any extra keys are also stored.
+
+  The base hint fields (`:type`, `:subject`, `:relation`, `:object`,
+  `:vector`) always take precedence — provenance can annotate the trace
+  but cannot overwrite its structural identity.
+  """
+  @spec store_relationship(
+          String.t(),
+          {String.t(), String.t(), String.t()},
+          map()
+        ) :: {:ok, term()} | {:error, term()}
+  def store_relationship(domain, {subject, relation, object} = triple, provenance)
+      when is_map(provenance) do
     case find(domain) do
       {:ok, pid} ->
         vector = Relationship.encode(triple)
 
-        Kudzu.Hologram.record_trace(pid, :discovery, %{
+        base = %{
           type: "relationship",
           subject: to_string(subject),
           relation: to_string(relation),
           object: to_string(object),
           vector: vector
-        })
+        }
+
+        # Provenance first so base fields win on key collisions.
+        hint = Map.merge(provenance, base)
+
+        Kudzu.Hologram.record_trace(pid, :discovery, hint)
 
       {:error, :not_found} ->
         {:error, {:silo_not_found, domain}}
