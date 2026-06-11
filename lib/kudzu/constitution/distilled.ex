@@ -618,13 +618,51 @@ defmodule Kudzu.Constitution.Distilled do
 
   @impl true
   @doc """
-  Stub. Tasks 16-18 will wire `loop_permitted?/3` into the 5-stage
-  `permitted?/2` pipeline so distilled constitutions can govern AGI
-  self-conversation. Until then, the brake is inactive.
+  AGI self-conversation brake. Reuses the same 5-stage pipeline that
+  serves citizen-facing `permitted?/2`. The AGI's next-thought vector is
+  the proposal vector; the brake decides whether the loop may continue.
+
+  Returns the same decision type as `permitted?/2`.
+  `Kudzu.Brain.SelfConverse` interprets the decision per Flow D:
+
+    * `:permitted` — continue loop
+    * `:permitted_with_weight` — continue, emit operator-review telemetry;
+      halt if weight exceeds the configured escalation threshold
+    * `:denied | :denied_by_accumulation` — halt loop, log reason
+
+  A structural ceiling fires before the pipeline: if `depth` meets or
+  exceeds `Kudzu.Brain.SelfConverse.max_depth/0`, the brake denies with
+  the synthetic `"depth ceiling"` citation. The reason field is a string
+  (`"depth_exceeded"`) for parity with `permitted?/2`'s AI Judge reasons,
+  which are also strings.
   """
   @spec loop_permitted?(map(), Kudzu.HRR.vector(), non_neg_integer()) ::
-          {:error, :not_implemented}
-  def loop_permitted?(_state, _thought_vector, _depth), do: {:error, :not_implemented}
+          Kudzu.Constitution.Behaviour.decision()
+  def loop_permitted?(state, thought_vector, depth) do
+    if depth >= Kudzu.Brain.SelfConverse.max_depth() do
+      {:denied, "depth ceiling", "structural", "depth_exceeded"}
+    else
+      # Best-effort principle inference; if missing, use a generic placeholder.
+      # Real inference (from agent state, recent traces, or hologram context)
+      # is a future enhancement — see plan Task 18 concerns.
+      principle = infer_principle_from_state(state) || "general"
+
+      params = %{
+        vector: thought_vector,
+        principle: principle,
+        proposal_text: "[AGI self-conversation turn #{depth}]"
+      }
+
+      config = Map.get(state, :config, %{})
+      five_stage_evaluation(thought_vector, principle, params, config, state)
+    end
+  end
+
+  # Placeholder: real principle inference (from agent state, recent
+  # traces, or hologram context) is a future enhancement. Returns nil so
+  # the caller falls back to the generic principle bucket.
+  @spec infer_principle_from_state(map()) :: String.t() | nil
+  defp infer_principle_from_state(_state), do: nil
 
   # ---------- private — extraction + aggregation ----------
 
