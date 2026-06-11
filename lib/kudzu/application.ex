@@ -35,6 +35,7 @@ defmodule Kudzu.Application do
       {Kudzu.HologramRegistry, []},
       {DynamicSupervisor, strategy: :one_for_one, name: Kudzu.HologramSupervisor},
       {Kudzu.Telemetry, []},
+      {Kudzu.Constitution.WeightLedger, []},
       {Kudzu.Cognition.KnownTraces, []},
       {Kudzu.Consolidation, []}
     ]
