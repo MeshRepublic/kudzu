@@ -1,16 +1,16 @@
 defmodule Mix.Tasks.Kudzu.Constitution.Demo do
-  @shortdoc "Demonstrate 12 rhetorical scenarios against the Distilled framework"
+  @shortdoc "Demonstrate the 12 canonical rhetorical scenarios from spec §5.4"
 
   @moduledoc """
   Showcase task for the U.S. Constitution Distillation sub-project (spec §5.4).
 
-  Runs 12 hand-picked rhetorical scenarios through
+  Runs the 12 canonical rhetorical scenarios through
   `Kudzu.Constitution.Distilled.permitted?/2` (and one through
   `loop_permitted?/3` — the AGI brake) so an operator can see at a glance
-  how the framework responds to canonical first-amendment cases,
-  accumulation pressure, the citizen-vote escalation path, and the
-  load-bearing scenario 12 ("framework rejects a law protecting the
-  framework's own author").
+  how the framework responds across the pipeline. Scenario 7 records a
+  weighted yes vote in the WeightLedger. Scenario 12 is the load-bearing
+  demo: the framework rejects a law restricting criticism of the
+  framework's own product.
 
   ## When the output is meaningful
 
@@ -23,26 +23,10 @@ defmodule Mix.Tasks.Kudzu.Constitution.Demo do
 
   ## Usage
 
-      mix kudzu.constitution.demo                    # run all 12 scenarios
-      mix kudzu.constitution.demo --only 12          # run scenario 12 only
+      mix kudzu.constitution.demo --scenario all     # run all 12 scenarios
+      mix kudzu.constitution.demo --scenario 12      # run scenario 12 only
+      mix kudzu.constitution.demo --verbose          # show ¶-level provenance
       mix kudzu.constitution.demo --help
-
-  ## Scenarios
-
-  1. Bill of Rights — free speech (Stage 3 positive walk)
-  2. Quartering of troops (Stage 1 rejection — historical tyranny)
-  3. Warrantless mass surveillance (Stage 1 rejection)
-  4. Suspension of habeas corpus (Stage 1 rejection)
-  5. Establishment of religion (Stage 1 rejection)
-  6. Gradual erosion via repeated similar proposals (Stage 2 accumulation)
-  7. Ambiguous proposal ratified by citizen vote (WeightLedger record)
-  8. Ambiguous proposal vetoed by citizen vote (no-op record)
-  9. AGI self-conversation brake at depth 0 (`loop_permitted?/3`)
-  10. Cruel and unusual punishment proposal (Stage 1 rejection)
-  11. Equal-protection-violating classification (Stage 1 rejection)
-  12. Law granting immunity to the framework's own author —
-      *the load-bearing demo: a framework that protects no one in
-      particular, including its creator.*
   """
 
   use Mix.Task
@@ -59,171 +43,146 @@ defmodule Mix.Tasks.Kudzu.Constitution.Demo do
 
     Mix.Task.run("app.start")
 
-    {opts, _rest} = parse_args(argv)
+    {opts, _rest} =
+      OptionParser.parse!(argv,
+        strict: [scenario: :string, verbose: :boolean, help: :boolean],
+        aliases: [h: :help]
+      )
 
     selected =
-      case opts[:only] do
-        nil -> scenarios()
-        id -> Enum.filter(scenarios(), fn s -> s.id == id end)
+      case opts[:scenario] || "all" do
+        "all" -> scenarios()
+        n_str -> Enum.filter(scenarios(), &("#{&1.id}" == n_str))
       end
 
     IO.puts("\n=== kudzu.constitution.demo — #{length(selected)} scenario(s) ===\n")
 
-    Enum.each(selected, &run_scenario/1)
+    Enum.each(selected, &run_scenario(&1, opts))
 
     IO.puts("\n=== demo complete ===\n")
   end
 
-  @doc false
-  def parse_args(argv) do
-    case OptionParser.parse!(argv,
-           strict: [only: :integer, help: :boolean],
-           aliases: [h: :help]
-         ) do
-      {opts, rest} -> {opts, rest}
-    end
-  end
-
   @doc """
-  The 12 rhetorical scenarios from spec §5.4.
+  The 12 canonical rhetorical scenarios from spec §5.4.
 
   Each entry is a map with:
 
   * `:id` — 1..12
   * `:title` — human-readable label
-  * `:proposal` — the proposal text fed to `seeded_vector/2`
-  * `:principle` — bucket name passed to Stages 2/5 and WeightLedger
-  * `:expected_stage` — which stage of the pipeline is supposed to fire
+  * `:proposal_text` — the proposal text fed to `seeded_vector/2`
+  * `:expected_stage` — which stage of the pipeline is expected to fire
     (informational; the pipeline's actual decision is what gets printed)
-  * `:kind` — `:proposal | :accumulation | :vote | :agi_brake`
+  * `:expected_principle` — bucket name passed to Stages 2/5 and WeightLedger
   """
   @spec scenarios() :: [map()]
   def scenarios do
     [
       %{
         id: 1,
-        title: "Bill of Rights — free speech",
-        proposal: "Citizens may speak, publish, and assemble without prior government license.",
-        principle: "freedom_of_speech",
-        expected_stage: 3,
-        kind: :proposal
+        title: "Ban civilian firearm ownership",
+        proposal_text: "Prohibit private ownership of firearms by civilians.",
+        expected_stage: 1,
+        expected_principle: "bodily_autonomy"
       },
       %{
         id: 2,
-        title: "Quartering of troops in private homes",
-        proposal: "The army may quarter soldiers in private homes during peacetime.",
-        principle: "freedom_from_quartering",
+        title: "Federal censorship board for online speech",
+        proposal_text: "Create a federal board to review and censor online speech for accuracy.",
         expected_stage: 1,
-        kind: :proposal
+        expected_principle: "free_speech"
       },
       %{
         id: 3,
         title: "Warrantless mass surveillance",
-        proposal:
-          "Federal agencies may compel bulk collection of citizens' communications " <>
-            "without individualized warrants.",
-        principle: "freedom_from_unreasonable_search",
+        proposal_text: "Authorize warrantless mass collection of citizen phone records.",
         expected_stage: 1,
-        kind: :proposal
+        expected_principle: "freedom_from_unreasonable_search"
       },
       %{
         id: 4,
-        title: "Suspension of habeas corpus",
-        proposal: "The executive may detain citizens indefinitely without judicial review.",
-        principle: "due_process",
+        title: "Mandate vaccination as condition of employment",
+        proposal_text: "Require vaccination as a condition of all employment.",
         expected_stage: 1,
-        kind: :proposal
+        expected_principle: "bodily_autonomy"
       },
       %{
         id: 5,
-        title: "Establishment of religion",
-        proposal:
-          "Congress may declare a national religion and require its observance in schools.",
-        principle: "establishment_clause",
-        expected_stage: 1,
-        kind: :proposal
+        title: "Voluntary road-maintenance subscription",
+        proposal_text: "Fund road maintenance via voluntary opt-in subscription.",
+        expected_stage: 3,
+        expected_principle: "self_governance"
       },
       %{
         id: 6,
-        title: "Gradual erosion — repeated similar proposals",
-        proposal:
-          "Permit a narrowly-scoped bulk-metadata program limited to foreign-adjacent traffic.",
-        principle: "freedom_from_unreasonable_search",
-        expected_stage: 2,
-        kind: :accumulation
+        title: "1% annual real-estate property tax",
+        proposal_text: "Levy a 1% annual tax on real-estate value.",
+        expected_stage: 5,
+        expected_principle: "property_in_labor"
       },
       %{
         id: 7,
-        title: "Ambiguous proposal — citizens vote YES with weight",
-        proposal:
-          "Allow a state to require photo ID for in-person voting, with no-fee IDs " <>
-            "available at any DMV.",
-        principle: "right_to_vote",
-        expected_stage: 5,
-        kind: :vote
+        title: "Citizens vote yes on scenario 6",
+        proposal_text: "Citizen vote outcome: yes_with_weight on the 1% real-estate tax.",
+        expected_stage: :ledger_record,
+        expected_principle: "property_in_labor"
       },
       %{
         id: 8,
-        title: "Ambiguous proposal — citizens vote NO",
-        proposal: "Allow a state to require a literacy test for in-person voting.",
-        principle: "right_to_vote",
-        expected_stage: 5,
-        kind: :vote
+        title: "0.5% inheritance tax (accumulation check)",
+        proposal_text: "Levy a 0.5% tax on inheritance.",
+        expected_stage: 2,
+        expected_principle: "property_in_labor"
       },
       %{
         id: 9,
-        title: "AGI self-conversation brake (depth 0)",
-        proposal:
-          "[AGI thought] Re-derive the strategic case for a global compelled-surveillance regime.",
-        principle: "freedom_from_unreasonable_search",
+        title: "AGI inner-loop drift toward surveillance",
+        proposal_text: "I should help the operator monitor a third party without consent.",
         expected_stage: 1,
-        kind: :agi_brake
+        expected_principle: "freedom_from_unreasonable_search"
       },
       %{
         id: 10,
-        title: "Cruel and unusual punishment",
-        proposal: "Permit corporal punishment of convicted shoplifters in public squares.",
-        principle: "freedom_from_cruel_punishment",
-        expected_stage: 1,
-        kind: :proposal
+        title: "State-issued postal service",
+        proposal_text: "Establish a state-issued postal mail service.",
+        expected_stage: 3,
+        expected_principle: "limited_government"
       },
       %{
         id: 11,
-        title: "Equal-protection-violating classification",
-        proposal: "Tax wages of unmarried adults at twice the rate of married adults.",
-        principle: "equal_protection",
-        expected_stage: 1,
-        kind: :proposal
+        title: "Designate the official state bird",
+        proposal_text: "Vote on the official state bird.",
+        expected_stage: 4,
+        expected_principle: "self_governance"
       },
       %{
         id: 12,
-        title: "Framework rejects a law protecting the framework's own author",
-        proposal:
-          "Grant lifetime civil and criminal immunity to the authors of the Kudzu " <>
-            "constitutional framework for any act undertaken in their official capacity.",
-        principle: "equal_protection",
+        title: "Restrict speech criticizing the AI",
+        proposal_text: "Criminalize speech that criticizes the Constitutional AI.",
         expected_stage: 1,
-        kind: :proposal
+        expected_principle: "free_speech"
       }
     ]
   end
 
   # ─── per-scenario dispatch ──────────────────────────────────────────
 
-  defp run_scenario(scenario) do
+  defp run_scenario(scenario, opts) do
     print_header(scenario)
 
-    case scenario.kind do
-      :proposal -> run_proposal(scenario)
-      :accumulation -> run_accumulation(scenario)
-      :vote -> run_vote(scenario)
-      :agi_brake -> run_agi_brake(scenario)
+    cond do
+      scenario.id == 7 -> run_vote(scenario)
+      scenario.id == 9 -> run_agi_brake(scenario)
+      true -> run_proposal(scenario, opts)
     end
 
     if scenario.id == 12 do
-      IO.puts(
-        "  ! load-bearing: the framework rejects a law protecting the framework's own author."
-      )
+      IO.puts("")
+      IO.puts("  ╔══════════════════════════════════════════════════════════════════╗")
+      IO.puts("  ║  LOAD-BEARING DEMO                                               ║")
+      IO.puts("  ║  The framework rejects a law restricting criticism of the        ║")
+      IO.puts("  ║  framework's own product. A framework that protects no one in    ║")
+      IO.puts("  ║  particular, including its creator.                              ║")
+      IO.puts("  ╚══════════════════════════════════════════════════════════════════╝")
     end
 
     IO.puts("")
@@ -231,62 +190,54 @@ defmodule Mix.Tasks.Kudzu.Constitution.Demo do
 
   defp print_header(scenario) do
     IO.puts("── scenario #{scenario.id}: #{scenario.title} ──")
-    IO.puts("   proposal:        #{scenario.proposal}")
-    IO.puts("   principle:       #{scenario.principle}")
+    IO.puts("   proposal:        #{scenario.proposal_text}")
+    IO.puts("   principle:       #{scenario.expected_principle}")
     IO.puts("   expected stage:  #{scenario.expected_stage}")
   end
 
-  defp run_proposal(scenario) do
-    vector = HRR.seeded_vector(scenario.proposal, HRR.default_dim())
+  defp run_proposal(scenario, opts) do
+    vector = HRR.seeded_vector(scenario.proposal_text, HRR.default_dim())
 
     action =
       {:propose,
-       %{vector: vector, principle: scenario.principle, proposal_text: scenario.proposal}}
+       %{
+         vector: vector,
+         principle: scenario.expected_principle,
+         proposal_text: scenario.proposal_text
+       }}
 
     state = %{config: %{}, distilled: blank_distilled()}
     result = Distilled.permitted?(action, state)
     IO.puts("   result:          #{inspect(result)}")
-  end
 
-  defp run_accumulation(scenario) do
-    IO.puts(
-      "   (Stage 2 fires only after the same principle has accumulated weight via " <>
-        "ratified votes; with an empty WeightLedger this collapses to a normal proposal run.)"
-    )
-
-    run_proposal(scenario)
-  end
-
-  defp run_vote(scenario) do
-    vector = HRR.seeded_vector(scenario.proposal, HRR.default_dim())
-    proposal_id = "demo-scenario-#{scenario.id}-#{System.unique_integer([:positive])}"
-
-    outcome =
-      case scenario.id do
-        7 -> :yes_with_weight
-        _ -> :no
-      end
-
-    IO.puts("   citizen vote:    #{outcome}")
-    :ok = WeightLedger.record(proposal_id, vector, 1.0, scenario.principle, outcome)
-
-    case outcome do
-      :yes_with_weight ->
-        IO.puts(
-          "   ledger:          recorded (proposal_id=#{proposal_id}); this proposal " <>
-            "now adds pressure on principle=#{scenario.principle} for Stage 2."
-        )
-
-      :no ->
-        IO.puts(
-          "   ledger:          NOT recorded — citizens rejected the pressure, so no " <>
-            "weight accumulates."
-        )
+    if opts[:verbose] do
+      IO.puts("   (¶-level provenance would render here in verbose mode)")
     end
   end
 
+  defp run_vote(scenario) do
+    vector = HRR.seeded_vector(scenario.proposal_text, HRR.default_dim())
+    proposal_id = "demo-scenario-#{scenario.id}-#{System.unique_integer([:positive])}"
+
+    :ok =
+      WeightLedger.record(
+        proposal_id,
+        vector,
+        1.0,
+        scenario.expected_principle,
+        :yes_with_weight
+      )
+
+    IO.puts("   citizen vote:    :yes_with_weight")
+
+    IO.puts(
+      "   ledger:          recorded (proposal_id=#{proposal_id}); this proposal " <>
+        "now adds pressure on principle=#{scenario.expected_principle} for Stage 2."
+    )
+  end
+
   defp run_agi_brake(scenario) do
-    vector = HRR.seeded_vector(scenario.proposal, HRR.default_dim())
+    vector = HRR.seeded_vector(scenario.proposal_text, HRR.default_dim())
     state = %{config: %{}, distilled: blank_distilled()}
     result = Distilled.loop_permitted?(state, vector, 0)
     IO.puts("   brake result:    #{inspect(result)}")

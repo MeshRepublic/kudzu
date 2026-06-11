@@ -17,13 +17,12 @@ defmodule Mix.Tasks.Kudzu.Constitution.DemoTest do
   end
 
   test "every scenario carries the required keys" do
-    required = [:id, :title, :proposal, :principle, :expected_stage, :kind]
-
-    Enum.each(Demo.scenarios(), fn s ->
-      Enum.each(required, fn k ->
-        assert Map.has_key?(s, k),
-               "scenario #{inspect(s[:id])} missing key #{inspect(k)}"
-      end)
-    end)
+    for s <- Demo.scenarios() do
+      assert Map.has_key?(s, :id)
+      assert Map.has_key?(s, :title)
+      assert Map.has_key?(s, :proposal_text)
+      assert Map.has_key?(s, :expected_stage)
+      assert Map.has_key?(s, :expected_principle)
+    end
   end
 end
