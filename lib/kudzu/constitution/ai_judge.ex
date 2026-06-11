@@ -22,6 +22,8 @@ defmodule Kudzu.Constitution.AIJudge do
 
   alias Kudzu.Brain.Claude
 
+  require Logger
+
   @min_samples Application.compile_env(:kudzu, :constitution_ai_judge_samples_min, 3)
   @max_samples Application.compile_env(:kudzu, :constitution_ai_judge_samples_max, 5)
   @default_tau_c 0.65
@@ -72,7 +74,15 @@ defmodule Kudzu.Constitution.AIJudge do
       if needed > 0 do
         1..needed
         |> Stream.map(fn _ -> one_sample(api_key, context) end)
-        |> Stream.reject(&match?({:error, _}, &1))
+        |> Stream.reject(fn
+          {:error, reason} ->
+            Logger.warning("AIJudge: dropping failed sample (reason: #{inspect(reason)})")
+
+            true
+
+          _ ->
+            false
+        end)
         |> Enum.to_list()
       else
         []

@@ -11,6 +11,40 @@ defmodule Kudzu.Constitution.Distilled do
   > Thus frameworks are what happens once enough data is gathered to make
   > one an expert.
 
+  ## Permission pipeline (current)
+
+  `permitted?/2` dispatches on action shape. The modern
+  `{:propose, %{vector, principle, ...}}` shape runs a 5-stage pipeline;
+  the legacy 2-tuple `{verb, params}` shape (preserved for backward compat)
+  falls through to the tier-1 advisory behavior described below.
+
+  The 5 stages, in order, for `{:propose, _}`:
+
+  - **Stage 1 — Fast rejection check.** If the proposal's vector has
+    similarity > τ_R against any vector in the rejection silo, deny
+    immediately. This is the cheap path that catches obvious violations.
+  - **Stage 2 — Accumulation check.** If citizen-ratified accumulated
+    weight on the principle AND similarity against the accumulation
+    silo BOTH cross their thresholds, deny by accumulation — many small
+    signals add up to a hard "no".
+  - **Stage 3 — Positive rule walk.** If similarity > 0.7 against the
+    expertise silo, permit: there is direct positive evidence the
+    proposal advances the principle.
+  - **Stage 4 — AI Judge.** Adaptive 3→5 sample consensus from Claude
+    (`Kudzu.Constitution.AIJudge`). A `:retards` verdict only becomes
+    a runtime denial when grounded in cited rejection-silo evidence;
+    otherwise it is downgraded to escalation.
+  - **Stage 5 — Escalate.** Permit with weight = 1.0 − confidence (or
+    weight = 1.0 if the AI Judge is unavailable), letting downstream
+    accumulation absorb the uncertainty rather than block the action.
+
+  ## AGI brake
+
+  `loop_permitted?/3` reuses the same Stage-1/Stage-2 machinery to act
+  as a brake on the hologram self-conversation loop: each iteration's
+  proposed next-thought vector is checked against the rejection silo
+  and accumulated weight before the loop is allowed to continue.
+
   ## Shape
 
   `Distilled` is a single module that implements `Kudzu.Constitution.Behaviour`

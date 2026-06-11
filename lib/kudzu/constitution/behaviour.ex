@@ -35,9 +35,10 @@ defmodule Kudzu.Constitution.Behaviour do
           :permitted
           | :denied
           | {:denied, atom()}
-          | {:denied, citation :: String.t(), principle :: String.t(), reason :: atom()}
+          | {:denied, citation :: String.t(), principle :: String.t(), reason :: String.t()}
           | {:denied_by_accumulation, [String.t()], String.t()}
-          | {:permitted_with_weight, float(), Kudzu.HRR.vector(), String.t(), String.t()}
+          | {:permitted_with_weight, weight :: float(), vector :: Kudzu.HRR.vector(),
+             principle :: String.t(), metadata :: map()}
           | {:requires_consensus, threshold :: float()}
   @type audit_result :: {:ok, audit_id :: String.t()} | {:error, term()}
   @type state :: map()
@@ -50,8 +51,7 @@ defmodule Kudzu.Constitution.Behaviour do
   - :denied - Action is forbidden, with reason
   - {:requires_consensus, threshold} - Needs distributed agreement
   """
-  @callback permitted?(action :: action(), state :: state()) ::
-              :permitted | {:denied, reason :: atom()} | {:requires_consensus, float()}
+  @callback permitted?(action :: action(), state :: state()) :: decision()
 
   @doc """
   Transform or constrain desires to comply with this constitution.
