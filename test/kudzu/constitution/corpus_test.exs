@@ -27,9 +27,11 @@ defmodule Kudzu.Constitution.CorpusTest do
       # The orchestrator's filter should strip them so downstream sees only
       # real paragraph content.
       all_chunks = Corpus.stream_chunks() |> Enum.to_list()
-      header_only = Enum.filter(all_chunks, fn c ->
-        Regex.match?(~r/^#+\s+\w+\s+Letters\s*$/, c.text)
-      end)
+
+      header_only =
+        Enum.filter(all_chunks, fn c ->
+          Regex.match?(~r/^#+\s+\w+\s+Letters\s*$/, c.text)
+        end)
 
       assert Enum.empty?(header_only),
              "expected no markdown-header-only chunks; got #{length(header_only)}"
@@ -40,6 +42,7 @@ defmodule Kudzu.Constitution.CorpusTest do
     test "honors :per_source limits for testing" do
       chunks = Corpus.stream_chunks(per_source: 3) |> Enum.to_list()
       grouped = Enum.group_by(chunks, & &1.source_doc)
+
       for {_doc, doc_chunks} <- grouped do
         assert length(doc_chunks) <= 3
       end
