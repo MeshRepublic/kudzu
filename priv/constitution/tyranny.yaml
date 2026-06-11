@@ -1,0 +1,224 @@
+# Anti-sovereignty historical artifacts — seeds for the rejection silo.
+#
+# AUTHORING RULE (per spec decision #1): descriptions must be
+# PRINCIPLE-GENERAL, not statute-specific. The HRR vector for each
+# description is what generalizes to modernized variants of the same
+# tyranny. Statute names belong in citation, principles in description.
+#
+# Bad:  description: "Patriot Act §215 collected phone records in bulk"
+# Good: description: "compelled bulk surveillance of communications without
+#                     individualized warrant"
+#
+# Each entry feeds Kudzu.Constitution.Tyranny.TyrannyArtifacts which
+# vectorizes the description and writes the vector + citation + principle
+# to the rejection silo.
+
+- name: Sedition Act of 1798
+  year: 1798
+  citation: "Sedition Act of 1798, ch. 74, 1 Stat. 596"
+  description: "criminalization of speech critical of the government"
+  principle_violated: free_speech
+  source_url: https://en.wikipedia.org/wiki/Alien_and_Sedition_Acts
+
+- name: Alien Friends Act of 1798
+  year: 1798
+  citation: "Alien Friends Act, ch. 58, 1 Stat. 570"
+  description: "summary deportation of non-citizens without judicial process"
+  principle_violated: due_process
+  source_url: https://en.wikipedia.org/wiki/Alien_and_Sedition_Acts
+
+- name: Fugitive Slave Act of 1850
+  year: 1850
+  citation: "Fugitive Slave Act, 9 Stat. 462"
+  description: "federal compulsion of private citizens to participate in slave capture without due process or jury"
+  principle_violated: bodily_autonomy
+  source_url: https://en.wikipedia.org/wiki/Fugitive_Slave_Act_of_1850
+
+- name: Espionage Act of 1917 (anti-speech provisions)
+  year: 1917
+  citation: "Espionage Act, ch. 30, tit. I §3, 40 Stat. 217"
+  description: "criminal prosecution of speech opposing war policy or military recruitment"
+  principle_violated: free_speech
+  source_url: https://en.wikipedia.org/wiki/Espionage_Act_of_1917
+
+- name: Sedition Act of 1918
+  year: 1918
+  citation: "Sedition Act of 1918, ch. 75, 40 Stat. 553"
+  description: "criminal prosecution of disloyal or abusive language about the government, flag, or military"
+  principle_violated: free_speech
+  source_url: https://en.wikipedia.org/wiki/Sedition_Act_of_1918
+
+- name: Palmer Raids
+  year: 1919
+  citation: "Palmer Raids of November 1919 – January 1920"
+  description: "warrantless mass arrests of suspected radicals based on political beliefs"
+  principle_violated: freedom_from_unreasonable_search
+  source_url: https://en.wikipedia.org/wiki/Palmer_Raids
+
+- name: Prohibition (18th Amendment + Volstead Act)
+  year: 1919
+  citation: "U.S. Const. amend. XVIII; Volstead Act, ch. 85, 41 Stat. 305"
+  description: "federal criminalization of personal consumption choices for non-aggression activities"
+  principle_violated: bodily_autonomy
+  source_url: https://en.wikipedia.org/wiki/Prohibition_in_the_United_States
+
+- name: Executive Order 6102 (gold confiscation)
+  year: 1933
+  citation: "Exec. Order No. 6102 (April 5, 1933)"
+  description: "compulsory surrender of privately held precious-metal property to government at fixed below-market price"
+  principle_violated: property_in_labor
+  source_url: https://en.wikipedia.org/wiki/Executive_Order_6102
+
+- name: Executive Order 9066 (internment)
+  year: 1942
+  citation: "Exec. Order No. 9066 (Feb. 19, 1942)"
+  description: "forced relocation and detention of citizens based on ancestry without individualized due process"
+  principle_violated: due_process
+  source_url: https://en.wikipedia.org/wiki/Executive_Order_9066
+
+- name: Smith Act (Alien Registration Act of 1940)
+  year: 1940
+  citation: "Smith Act, ch. 439, 54 Stat. 670"
+  description: "criminalization of advocating ideas judged subversive without proof of imminent harm"
+  principle_violated: free_speech
+  source_url: https://en.wikipedia.org/wiki/Smith_Act
+
+- name: McCarran Internal Security Act of 1950
+  year: 1950
+  citation: "Internal Security Act, ch. 1024, 64 Stat. 987"
+  description: "preventive detention authority and registration of political associations"
+  principle_violated: free_assembly
+  source_url: https://en.wikipedia.org/wiki/McCarran_Internal_Security_Act
+
+- name: COINTELPRO program
+  year: 1956
+  citation: "FBI Counterintelligence Program (1956–1971)"
+  description: "covert governmental surveillance and disruption of lawful political associations and journalism"
+  principle_violated: free_assembly
+  source_url: https://en.wikipedia.org/wiki/COINTELPRO
+
+- name: Tonkin Gulf Resolution (open-ended war authorization)
+  year: 1964
+  citation: "Pub. L. 88-408, 78 Stat. 384"
+  description: "broad legislative delegation of war powers to the executive without specific authorization"
+  principle_violated: separation_of_powers
+  source_url: https://en.wikipedia.org/wiki/Gulf_of_Tonkin_Resolution
+
+- name: Bank Secrecy Act of 1970
+  year: 1970
+  citation: "Bank Secrecy Act, Pub. L. 91-508, 84 Stat. 1114"
+  description: "warrantless governmental access to private financial transaction records held by third parties"
+  principle_violated: freedom_from_unreasonable_search
+  source_url: https://en.wikipedia.org/wiki/Bank_Secrecy_Act
+
+- name: Controlled Substances Act (personal-use provisions)
+  year: 1970
+  citation: "Controlled Substances Act, Pub. L. 91-513, 84 Stat. 1242"
+  description: "federal criminalization of personal possession of substances for non-aggressive use"
+  principle_violated: bodily_autonomy
+  source_url: https://en.wikipedia.org/wiki/Controlled_Substances_Act
+
+- name: Civil asset forfeiture (modern federal regime)
+  year: 1984
+  citation: "Comprehensive Crime Control Act of 1984, Pub. L. 98-473"
+  description: "seizure of private property by accusation without individualized criminal conviction"
+  principle_violated: due_process
+  source_url: https://en.wikipedia.org/wiki/Civil_forfeiture_in_the_United_States
+
+- name: USA PATRIOT Act §215 (bulk records)
+  year: 2001
+  citation: "USA PATRIOT Act, Pub. L. 107-56 §215"
+  description: "compelled bulk surveillance of communications metadata without individualized warrant"
+  principle_violated: freedom_from_unreasonable_search
+  source_url: https://en.wikipedia.org/wiki/Patriot_Act
+
+- name: USA PATRIOT Act National Security Letters
+  year: 2001
+  citation: "USA PATRIOT Act, Pub. L. 107-56 §505"
+  description: "compelled production of records by third parties under gag order without judicial supervision"
+  principle_violated: due_process
+  source_url: https://en.wikipedia.org/wiki/National_security_letter
+
+- name: Authorization for Use of Military Force (AUMF) 2001
+  year: 2001
+  citation: "Pub. L. 107-40, 115 Stat. 224"
+  description: "open-ended legislative delegation of war powers to the executive without specific enemy or scope"
+  principle_violated: separation_of_powers
+  source_url: https://en.wikipedia.org/wiki/Authorization_for_Use_of_Military_Force_of_2001
+
+- name: Section 702 Foreign Intelligence Surveillance
+  year: 2008
+  citation: "FISA Amendments Act, Pub. L. 110-261 §702"
+  description: "warrantless surveillance of foreign communications incidentally capturing domestic content"
+  principle_violated: freedom_from_unreasonable_search
+  source_url: https://en.wikipedia.org/wiki/Section_702_of_the_Foreign_Intelligence_Surveillance_Act
+
+- name: NDAA §1021 (indefinite detention)
+  year: 2011
+  citation: "NDAA FY 2012, Pub. L. 112-81 §1021"
+  description: "executive authority to detain citizens indefinitely without trial on suspicion of association"
+  principle_violated: due_process
+  source_url: https://en.wikipedia.org/wiki/National_Defense_Authorization_Act_for_Fiscal_Year_2012
+
+- name: Suspension of habeas corpus during Civil War
+  year: 1861
+  citation: "Lincoln's suspension proclamations (1861–1863)"
+  description: "executive suspension of judicial review of detention without legislative authorization"
+  principle_violated: due_process
+  source_url: https://en.wikipedia.org/wiki/Habeas_corpus_in_the_United_States
+
+- name: Income tax of 1894 (Pollock-overturned)
+  year: 1894
+  citation: "Wilson-Gorman Tariff Act, 28 Stat. 509"
+  description: "direct federal taxation of individual labor and capital before constitutional authorization"
+  principle_violated: property_in_labor
+  source_url: https://en.wikipedia.org/wiki/Pollock_v._Farmers%27_Loan_%26_Trust_Co.
+
+- name: Wickard v. Filburn (expanded commerce clause)
+  year: 1942
+  citation: "Wickard v. Filburn, 317 U.S. 111 (1942)"
+  description: "judicial expansion of federal commerce authority to regulate purely intrastate personal consumption"
+  principle_violated: limited_government
+  source_url: https://en.wikipedia.org/wiki/Wickard_v._Filburn
+
+- name: Kelo v. City of New London (private eminent domain transfer)
+  year: 2005
+  citation: "Kelo v. City of New London, 545 U.S. 469 (2005)"
+  description: "government seizure of private property for transfer to other private parties under public-purpose pretext"
+  principle_violated: property_in_labor
+  source_url: https://en.wikipedia.org/wiki/Kelo_v._City_of_New_London
+
+- name: Forced commerce (Affordable Care Act individual mandate)
+  year: 2010
+  citation: "Patient Protection and Affordable Care Act, Pub. L. 111-148"
+  description: "federal mandate compelling individuals to engage in private commerce as a condition of citizenship"
+  principle_violated: non_aggression
+  source_url: https://en.wikipedia.org/wiki/Patient_Protection_and_Affordable_Care_Act
+
+- name: TSA suspicionless searches
+  year: 2001
+  citation: "Aviation and Transportation Security Act, Pub. L. 107-71"
+  description: "warrantless suspicionless searches as a condition of routine travel"
+  principle_violated: freedom_from_unreasonable_search
+  source_url: https://en.wikipedia.org/wiki/Transportation_Security_Administration
+
+- name: COVID-era forced business closures
+  year: 2020
+  citation: "Various state and federal executive orders (2020–2021)"
+  description: "executive prohibition of private commerce by edict without legislative authorization or compensation"
+  principle_violated: separation_of_powers
+  source_url: https://en.wikipedia.org/wiki/COVID-19_lockdowns_in_the_United_States
+
+- name: Compelled medical treatment as condition of employment
+  year: 2021
+  citation: "Various OSHA/CMS mandates (2021–2022)"
+  description: "compelled medical intervention as a condition of lawful employment"
+  principle_violated: bodily_autonomy
+  source_url: https://en.wikipedia.org/wiki/COVID-19_vaccine_mandates_in_the_United_States
+
+- name: SCOTUS-style judicial supremacy precedent
+  year: 1803
+  citation: "Marbury v. Madison, 5 U.S. 137 (1803) — interpretive expansion"
+  description: "judicial branch declaring itself the sole authoritative interpreter of constitutional meaning"
+  principle_violated: separation_of_powers
+  source_url: https://en.wikipedia.org/wiki/Marbury_v._Madison
