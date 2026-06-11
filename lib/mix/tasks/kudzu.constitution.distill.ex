@@ -18,7 +18,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
       mix kudzu.constitution.distill                          # full run
       mix kudzu.constitution.distill --per-source 3           # smoke test
       mix kudzu.constitution.distill --budget-cap-usd 50      # tight cap
-      mix kudzu.constitution.distill --force-reingest         # clear silos first (not yet implemented)
+      mix kudzu.constitution.distill --force-reingest         # not yet implemented (raises)
       mix kudzu.constitution.distill --skip-tyranny           # skip TyrannyArtifacts import
   """
   use Mix.Task
@@ -103,12 +103,13 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
   end
 
   # `Silo.delete_trace/2` is not yet implemented (see Task 19 adaptation
-  # note). Until it lands we cannot truly clear a silo; warn the user
-  # and continue so the rest of the distillation still runs.
-  defp clear_silo(silo) do
-    IO.puts(
-      "  ! --force-reingest requested for #{silo}, but Silo.delete_trace/2 " <>
-        "is not implemented yet. Existing traces will be left in place."
+  # note). Raise loudly rather than silently continuing — users passing
+  # `--force-reingest` expect a clean slate; continuing would produce
+  # duplicate-flavored data.
+  defp clear_silo(_silo) do
+    Mix.raise(
+      "--force-reingest is not yet implemented (Silo.delete_trace/2 missing). " <>
+        "Manually clear silos and re-run without the flag."
     )
   end
 
