@@ -68,6 +68,8 @@ defmodule Kudzu.ConstitutionTest do
 
     test "all four bootstrap impls export loop_permitted?/3" do
       for mod <- [MeshRepublic, Cautious, Open, KudzuEvolve] do
+        Code.ensure_loaded!(mod)
+
         assert function_exported?(mod, :loop_permitted?, 3),
                "#{inspect(mod)} does not export loop_permitted?/3"
       end
