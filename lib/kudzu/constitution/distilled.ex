@@ -177,6 +177,155 @@ defmodule Kudzu.Constitution.Distilled do
     ]
   end
 
+  # ---------- 5-stage pipeline helpers (Stage 1 + Stage 2) ----------
+
+  @typedoc """
+  Runtime configuration for the 5-stage `permitted?/2` pipeline.
+
+  All keys are optional; defaults are baked in. Bootstrap values are
+  τ_R = 0.75, τ_A = 1.0, τ_C = 0.65 (spec decision #11; the calibration
+  sweep in Phase 5 refines these).
+  """
+  @type stage_config :: %{
+          optional(:rejection_silo) => String.t(),
+          optional(:expertise_silo) => String.t(),
+          optional(:tau_r) => float(),
+          optional(:tau_a) => float(),
+          optional(:tau_c) => float()
+        }
+
+  @default_tau_r 0.75
+  @default_tau_a 1.0
+  @default_rejection_silo "rejection:us_constitution_mesh"
+  @default_expertise_silo "expertise:us_constitution_mesh"
+
+  @doc """
+  Stage 1 — fast rejection check.
+
+  Compares `proposal_vector` against every relationship trace in the
+  configured rejection silo (default `#{@default_rejection_silo}`).
+  Returns `{:denied, citation, principle, reason}` when the highest
+  similarity strictly exceeds τ_R; otherwise `:no_match`.
+
+  The vector lookup pulls `:vector` from each trace's
+  `reconstruction_hint` (the field that `Kudzu.Silo.store_relationship/3`
+  writes); traces without a stored vector are skipped.
+  """
+  @spec stage1_rejection_check(Kudzu.HRR.vector(), stage_config()) ::
+          :no_match | {:denied, String.t(), String.t(), String.t()}
+  def stage1_rejection_check(proposal_vector, config) do
+    silo = Map.get(config, :rejection_silo, @default_rejection_silo)
+    tau_r = Map.get(config, :tau_r, @default_tau_r)
+
+    case best_rejection_match(proposal_vector, silo, tau_r) do
+      nil ->
+        :no_match
+
+      {sim, hint} when sim > tau_r ->
+        {:denied, get_hint(hint, :citation, "unknown citation"),
+         get_hint(hint, :principle, "unknown"),
+         get_hint(hint, :rejection_reason, "rejection match")}
+
+      _ ->
+        :no_match
+    end
+  end
+
+  @doc """
+  Stage 2 — accumulation check.
+
+  Pulls the accumulated weight for `principle` from
+  `Kudzu.Constitution.WeightLedger`, superposes the proposal vector with
+  the accumulated vector via `Kudzu.HRR.bundle/1`, then runs the combined
+  vector against the rejection silo. Returns
+  `{:denied_by_accumulation, [proposal_id], principle}` only when BOTH
+  τ_R AND τ_A are exceeded (spec decision #11). Otherwise `:no_match`.
+  """
+  @spec stage2_accumulation_check(Kudzu.HRR.vector(), String.t(), stage_config()) ::
+          :no_match | {:denied_by_accumulation, [String.t()], String.t()}
+  def stage2_accumulation_check(proposal_vector, principle, config) do
+    silo = Map.get(config, :rejection_silo, @default_rejection_silo)
+    tau_r = Map.get(config, :tau_r, @default_tau_r)
+    tau_a = Map.get(config, :tau_a, @default_tau_a)
+
+    {acc_v, acc_scalar} =
+      Kudzu.Constitution.WeightLedger.accumulated_weight(proposal_vector, principle)
+
+    if acc_scalar > tau_a do
+      combined = Kudzu.HRR.bundle([proposal_vector, acc_v])
+
+      case best_rejection_match(combined, silo, tau_r) do
+        {sim, _hint} when sim > tau_r ->
+          stack =
+            principle
+            |> Kudzu.Constitution.WeightLedger.entries_for_principle()
+            |> Enum.map(& &1.proposal_id)
+
+          {:denied_by_accumulation, stack, principle}
+
+        _ ->
+          :no_match
+      end
+    else
+      :no_match
+    end
+  end
+
+  # The expertise silo isn't read directly by Stage 1/2, but expose its
+  # default so Stage 3/4 (Tasks 17-18) and external callers can reuse it
+  # without re-stringifying the magic name.
+  @doc false
+  @spec default_expertise_silo() :: String.t()
+  def default_expertise_silo, do: @default_expertise_silo
+
+  @spec best_rejection_match(Kudzu.HRR.vector(), String.t(), float()) ::
+          nil | {float(), map()}
+  defp best_rejection_match(vector, silo_domain, _tau_r) do
+    case Kudzu.Silo.list_traces(silo_domain) do
+      [] ->
+        nil
+
+      traces ->
+        traces
+        |> Enum.map(&score_trace(&1, vector))
+        |> Enum.reject(&is_nil/1)
+        |> case do
+          [] -> nil
+          scored -> Enum.max_by(scored, fn {sim, _hint} -> sim end)
+        end
+    end
+  end
+
+  @spec score_trace(Kudzu.Trace.t(), Kudzu.HRR.vector()) :: nil | {float(), map()}
+  defp score_trace(%Trace{reconstruction_hint: hint}, vector) when is_map(hint) do
+    case stored_vector(hint) do
+      nil -> nil
+      stored_v -> {Kudzu.HRR.similarity(vector, stored_v), hint}
+    end
+  end
+
+  defp score_trace(_, _), do: nil
+
+  @spec stored_vector(map()) :: Kudzu.HRR.vector() | nil
+  defp stored_vector(hint) do
+    case Map.get(hint, :vector, Map.get(hint, "vector")) do
+      v when is_list(v) -> v
+      _ -> nil
+    end
+  end
+
+  @spec get_hint(map(), atom(), String.t()) :: String.t()
+  defp get_hint(hint, key, default) do
+    case Map.get(hint, key, Map.get(hint, Atom.to_string(key))) do
+      nil -> default
+      "" -> default
+      v when is_binary(v) -> v
+      v -> to_string(v)
+    end
+  end
+
+  # ---------- existing tier-1 permitted?/2 (Task 17 will extend) ----------
+
   @doc """
   Soft permission check based on distilled rules.
 
