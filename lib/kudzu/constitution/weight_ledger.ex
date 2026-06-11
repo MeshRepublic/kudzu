@@ -150,6 +150,7 @@ defmodule Kudzu.Constitution.WeightLedger do
 
     :ets.insert(@ets_table, {proposal_id, entry})
     :ok = :dets.insert(state.dets, {proposal_id, entry})
+    :ok = :dets.sync(state.dets)
 
     :telemetry.execute(
       [:kudzu, :constitution, :weight_ledger, :recorded],
@@ -169,6 +170,7 @@ defmodule Kudzu.Constitution.WeightLedger do
   def handle_call(:clear_for_test, _from, state) do
     :ets.delete_all_objects(@ets_table)
     :ok = :dets.delete_all_objects(state.dets)
+    :ok = :dets.sync(state.dets)
     {:reply, :ok, state}
   end
 
