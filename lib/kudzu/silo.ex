@@ -39,6 +39,16 @@ defmodule Kudzu.Silo do
   end
 
   @doc """
+  Create or find an expertise silo for the given domain, accepting an
+  options/params map for forward compatibility (currently ignored — the
+  silo is always created with the kudzu_evolve constitution).
+  """
+  @spec create(String.t(), map()) :: {:ok, pid()} | {:error, term()}
+  def create(domain, params) when is_map(params) do
+    create(domain)
+  end
+
+  @doc """
   Delete an expertise silo for the given domain.
   """
   @spec delete(String.t()) :: :ok | {:error, :not_found}
@@ -144,6 +154,20 @@ defmodule Kudzu.Silo do
 
       {:error, :not_found} ->
         {:error, {:silo_not_found, domain}}
+    end
+  end
+
+  @doc """
+  List all traces stored in an expertise silo.
+
+  Returns the list of `Kudzu.Trace.t()` values stored in the backing
+  hologram, or `[]` if the silo does not exist.
+  """
+  @spec list_traces(String.t()) :: [Kudzu.Trace.t()]
+  def list_traces(domain) do
+    case find(domain) do
+      {:ok, pid} -> Kudzu.Hologram.recall_all(pid)
+      {:error, :not_found} -> []
     end
   end
 

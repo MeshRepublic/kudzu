@@ -64,7 +64,8 @@ defmodule Kudzu.MixProject do
       {:exla, "~> 0.9", runtime: false},
       # Type discipline / static analysis (dev/test only)
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:yaml_elixir, "~> 2.9"}
     ]
   end
 end
