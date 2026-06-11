@@ -259,6 +259,16 @@ defmodule Kudzu.Constitution.Distilled do
   @spec validate_trace(map(), map()) :: :valid
   def validate_trace(_trace, _state), do: :valid
 
+  @impl true
+  @doc """
+  Stub. Tasks 16-18 will wire `loop_permitted?/3` into the 5-stage
+  `permitted?/2` pipeline so distilled constitutions can govern AGI
+  self-conversation. Until then, the brake is inactive.
+  """
+  @spec loop_permitted?(map(), Kudzu.HRR.vector(), non_neg_integer()) ::
+          {:error, :not_implemented}
+  def loop_permitted?(_state, _thought_vector, _depth), do: {:error, :not_implemented}
+
   # ---------- private — extraction + aggregation ----------
 
   @spec extract_triples([Trace.t()]) :: [triple()]

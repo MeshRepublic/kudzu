@@ -13,6 +13,7 @@ defmodule Kudzu.Constitution.Behaviour do
   - consensus_required?/2 - Does this action need distributed agreement?
   - validate_trace/2 - Verify a trace complies with constitution
   - distill/1 - Crystallize a constitution from accumulated traces
+  - loop_permitted?/3 - Govern AGI self-conversation loop iterations
 
   Frameworks can be hot-swapped at runtime, changing permissible actions
   without modifying the underlying cognition architecture.
@@ -30,7 +31,14 @@ defmodule Kudzu.Constitution.Behaviour do
   """
 
   @type action :: {atom(), map()}
-  @type decision :: :permitted | :denied | {:requires_consensus, threshold :: float()}
+  @type decision ::
+          :permitted
+          | :denied
+          | {:denied, atom()}
+          | {:denied, citation :: String.t(), principle :: String.t(), reason :: atom()}
+          | {:denied_by_accumulation, [String.t()], String.t()}
+          | {:permitted_with_weight, float(), Kudzu.HRR.vector(), String.t(), String.t()}
+          | {:requires_consensus, threshold :: float()}
   @type audit_result :: {:ok, audit_id :: String.t()} | {:error, term()}
   @type state :: map()
 
@@ -115,6 +123,24 @@ defmodule Kudzu.Constitution.Behaviour do
     traces, contradictory signals, etc.).
   """
   @callback distill(traces :: [Kudzu.Trace.t()]) :: {:ok, module()} | {:error, term()}
+
+  @doc """
+  Decide whether the AGI may continue its self-conversation loop with the
+  proposed next-thought vector at the given depth.
+
+  Returns the same `decision()` shapes as `permitted?/2`, plus
+  `{:error, :not_implemented}` for bootstrap defaults. The hologram's
+  self-conversation mechanism consults this before each loop iteration
+  to act as a brake on runaway thinking.
+
+  Bootstrap defaults stub `:not_implemented`; real implementation lives
+  in `Kudzu.Constitution.Distilled` once a distilled framework exists.
+  """
+  @callback loop_permitted?(
+              state :: state(),
+              thought_vector :: Kudzu.HRR.vector(),
+              depth :: non_neg_integer()
+            ) :: decision() | {:error, :not_implemented}
 
   @optional_callbacks [consensus_required?: 2, validate_trace: 2, principles: 0]
 end

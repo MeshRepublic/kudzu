@@ -60,6 +60,29 @@ defmodule Kudzu.ConstitutionTest do
     end
   end
 
+  describe "loop_permitted?/3 - bootstrap defaults" do
+    # Task 3: the AGI self-conversation brake. The 4 hand-coded
+    # constitutions stub loop_permitted?/3 as :not_implemented,
+    # mirroring the distill/1 pattern. Distilled constitutions will
+    # provide the real implementation in later tasks.
+
+    test "all four bootstrap impls export loop_permitted?/3" do
+      for mod <- [MeshRepublic, Cautious, Open, KudzuEvolve] do
+        assert function_exported?(mod, :loop_permitted?, 3),
+               "#{inspect(mod)} does not export loop_permitted?/3"
+      end
+    end
+
+    test "all four bootstrap impls return {:error, :not_implemented}" do
+      state = %{}
+      vector = Kudzu.HRR.seeded_vector("test", Kudzu.HRR.default_dim())
+
+      for mod <- [MeshRepublic, Cautious, Open, KudzuEvolve] do
+        assert {:error, :not_implemented} = mod.loop_permitted?(state, vector, 0)
+      end
+    end
+  end
+
   describe "Open constitution" do
     test "permits all actions" do
       actions = [

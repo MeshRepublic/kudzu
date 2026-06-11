@@ -281,6 +281,16 @@ defmodule Kudzu.Constitution.KudzuEvolve do
   @spec distill([Kudzu.Trace.t()]) :: {:error, :not_implemented}
   def distill(_traces), do: {:error, :not_implemented}
 
+  @impl true
+  @doc """
+  Bootstrap stub. The hand-coded `KudzuEvolve` constitution does not yet
+  implement loop governance for AGI self-conversation. Distilled
+  constitutions implement this via the 5-stage `permitted?/2` pipeline.
+  """
+  @spec loop_permitted?(map(), Kudzu.HRR.vector(), non_neg_integer()) ::
+          {:error, :not_implemented}
+  def loop_permitted?(_state, _thought_vector, _depth), do: {:error, :not_implemented}
+
   # ============================================================================
   # Evolution-Specific Functions (can be called by holograms)
   # ============================================================================
