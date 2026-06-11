@@ -19,6 +19,8 @@ defmodule Kudzu.Constitution.Corpus.Constitution do
   handles all three styles.
   """
 
+  alias Kudzu.Constitution.Corpus.Helpers
+
   @source_doc "U.S. Constitution"
 
   # Heading patterns. Each captures the roman numeral when relevant.
@@ -51,7 +53,9 @@ defmodule Kudzu.Constitution.Corpus.Constitution do
     |> File.read!()
     |> String.replace("\r\n", "\n")
     |> split_into_sections()
-    |> Enum.flat_map(&chunks_for_section/1)
+    |> Enum.flat_map(fn {label, body} ->
+      Helpers.paragraph_chunks(body, label, @source_doc)
+    end)
   end
 
   defp source_file do
@@ -103,21 +107,5 @@ defmodule Kudzu.Constitution.Corpus.Constitution do
       m = Regex.run(@amendment_upper_re, trimmed) -> "Amendment " <> Enum.at(m, 1)
       true -> nil
     end
-  end
-
-  defp chunks_for_section({label, body}) do
-    body
-    |> String.split(~r/\n\s*\n/, trim: true)
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.with_index()
-    |> Enum.map(fn {p, idx} ->
-      %{
-        text: p,
-        source_doc: @source_doc,
-        paragraph_offset: idx,
-        section_label: label
-      }
-    end)
   end
 end
