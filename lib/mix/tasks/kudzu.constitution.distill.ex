@@ -23,6 +23,11 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
   """
   use Mix.Task
 
+  # clear_silo/1 unconditionally raises (Silo.delete_trace/2 not yet
+  # implemented). Dialyzer flags this as no_return; the suppression is
+  # accurate until the underlying Silo API gains delete support.
+  @dialyzer {:nowarn_function, clear_silo: 1}
+
   alias Kudzu.Brain.Distiller
   alias Kudzu.Constitution.Corpus
   alias Kudzu.Constitution.Filter.DistillationRouter

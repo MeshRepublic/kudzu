@@ -13,6 +13,10 @@ defmodule Kudzu.Brain.SelfConverse do
 
   @max_depth Application.compile_env(:kudzu, :self_converse_max_depth, 10)
 
+  # Stubs intentionally raise — they are interface placeholders, not
+  # implementations. Real bodies land in the deferred self-converse sub-project.
+  @dialyzer {:nowarn_function, loop_step: 3, converged?: 1}
+
   @doc """
   Maximum recursion depth for self-conversation. Hard structural ceiling;
   exceeding this is a halt regardless of constitutional judgment. Default

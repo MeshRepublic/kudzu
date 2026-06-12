@@ -13,7 +13,7 @@ defmodule Kudzu.MixProject do
       elixirc_options: [warnings_as_errors: true],
       dialyzer: [
         plt_file: {:no_warn, "_build/#{Mix.env()}/dialyxir.plt"},
-        plt_add_apps: [:mnesia, :ssl, :inets, :crypto, :ex_unit],
+        plt_add_apps: [:mnesia, :ssl, :inets, :crypto, :ex_unit, :mix],
         # NOTE: :unmatched_returns intentionally NOT enabled. It surfaces 115
         # warnings on legitimate fire-and-forget calls (Task.start, Logger.X,
         # GenServer.cast, telemetry.execute, supervisor.start_link result in
