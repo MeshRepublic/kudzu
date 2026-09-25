@@ -1,8 +1,9 @@
 name: quality + tests
 
 on:
+  # All PRs, not only those targeting main: stacked PRs are based on their
+  # parent branch and would otherwise never be tested.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
