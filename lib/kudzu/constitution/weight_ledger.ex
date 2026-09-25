@@ -6,8 +6,12 @@ defmodule Kudzu.Constitution.WeightLedger do
     * ETS table for fast principle-scoped lookups
     * DETS table for durability across restart
     * Anchor-ready schema: each entry has an `anchor_status` field
-      (`:pending | :anchored`) that sub-project 3 (Bitcoin anchoring)
-      will drain.
+      (`:pending | :anchored`). Ratified weights are governance records:
+      the Mandelbrots checkpoint (Mesh Republic whitepaper §4.4.6) will
+      drain `anchor_pending/0` into the Republic's per-checkpoint Merkle
+      root, committed to Bitcoin Layer 1 at the security-ratchet cadence
+      (§4.4.7: dense during bootstrap, yearly floor). Not implemented yet;
+      nothing marks entries `:anchored` today.
 
   The ledger is the constitutional-debt clock: each citizen-ratified
   weighted proposal accumulates weight on the principle under pressure.
@@ -86,6 +90,9 @@ defmodule Kudzu.Constitution.WeightLedger do
     |> Enum.map(fn {_id, entry} -> entry end)
   end
 
+  @doc """
+  Entries not yet committed to a Mandelbrots checkpoint (see moduledoc).
+  """
   @spec anchor_pending() :: [Entry.t()]
   def anchor_pending do
     @ets_table

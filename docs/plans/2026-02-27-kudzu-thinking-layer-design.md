@@ -302,7 +302,7 @@ lib/kudzu/brain/
 
 - No actor-per-concept activation network (v3 evolution)
 - No self-modifying reasoning strategies (framework level, future)
-- No distributed thinking across mesh nodes (needs Fractal ID)
+- No distributed thinking across mesh nodes (needs Autonym, formerly Fractal ID)
 - No Ollama integration in thinking layer (pure Elixir reasoning)
 - No conversation memory between chat sessions (traces handle this)
 - No multi-monarch coordination (single sovereign for now)

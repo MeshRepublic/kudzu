@@ -187,7 +187,7 @@ get_hologram_id() {
     safe_purpose=$(json_escape "$purpose")
 
     local response
-    response=$(kudzu_api_get "/api/v1/holograms") || return 1
+    response=$(kudzu_api_get "/api/v1/holograms?limit=10000") || return 1
 
     echo "$response" | python3 -c "
 import sys, json

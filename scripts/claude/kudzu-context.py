@@ -155,7 +155,7 @@ def discover_hologram_ids() -> dict:
     ids = {"MEMORY_ID": "", "RESEARCH_ID": "", "LEARNING_ID": ""}
 
     try:
-        data = api_get("/api/v1/holograms")
+        data = api_get("/api/v1/holograms?limit=10000")
         for h in data.get("holograms", []):
             purpose = h.get("purpose", "")
             if purpose in purpose_map:
