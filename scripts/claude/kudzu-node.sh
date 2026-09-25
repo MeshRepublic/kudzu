@@ -19,6 +19,13 @@ source "$SCRIPT_DIR/kudzu-common.sh"
 
 KUDZU_SRC="${KUDZU_SRC:-$HOME/kudzu_src}"
 KUDZU_PORT="${KUDZU_PORT:-4001}"
+
+# curl with the API key as a header file (never on the command line).
+node_api_curl() {
+    local key
+    key=$(kudzu_api_key) || return 1
+    curl -s -H @<(printf 'Authorization: Bearer %s\n' "$key") "$@"
+}
 KUDZU_NODE_NAME="${KUDZU_NODE_NAME:-kudzu@$(hostname)}"
 KUDZU_PIDFILE="$KUDZU_STATE_DIR/kudzu.pid"
 
@@ -127,14 +134,14 @@ cmd_start() {
             log_success "Node started!"
 
             # Initialize node
-            curl -s -X POST "http://localhost:$KUDZU_PORT/api/v1/node/init" \
+            node_api_curl -X POST "http://localhost:$KUDZU_PORT/api/v1/node/init" \
                 -H "Content-Type: application/json" \
                 -d "{\"data_dir\": \"$KUDZU_STATE_DIR\"}" > /dev/null
 
             # Join mesh if specified
             if [ -n "$mesh_peer" ]; then
                 log_info "Joining mesh via $mesh_peer..."
-                curl -s -X POST "http://localhost:$KUDZU_PORT/api/v1/node/mesh/join" \
+                node_api_curl -X POST "http://localhost:$KUDZU_PORT/api/v1/node/mesh/join" \
                     -H "Content-Type: application/json" \
                     -d "{\"peer\": \"$mesh_peer\"}"
                 echo ""
@@ -158,7 +165,7 @@ cmd_status() {
     log_info "=== Node Status ==="
 
     local status
-    status=$(curl -s "http://localhost:$KUDZU_PORT/api/v1/node")
+    status=$(node_api_curl "http://localhost:$KUDZU_PORT/api/v1/node")
 
     echo "$status" | python3 -c "
 import sys, json
@@ -187,7 +194,7 @@ except Exception as e:
 
     # Show connected peers if any
     local peers
-    peers=$(curl -s "http://localhost:$KUDZU_PORT/api/v1/node/mesh/peers")
+    peers=$(node_api_curl "http://localhost:$KUDZU_PORT/api/v1/node/mesh/peers")
     local peer_count
     peer_count=$(echo "$peers" | python3 -c "import sys,json; print(json.load(sys.stdin).get('peer_count', 0))" 2>/dev/null) || peer_count="0"
 
@@ -220,7 +227,7 @@ cmd_join() {
     log_info "Joining mesh via $peer..."
 
     local result
-    result=$(curl -s -X POST "http://localhost:$KUDZU_PORT/api/v1/node/mesh/join" \
+    result=$(node_api_curl -X POST "http://localhost:$KUDZU_PORT/api/v1/node/mesh/join" \
         -H "Content-Type: application/json" \
         -d "{\"peer\": \"$peer\"}")
 
@@ -246,7 +253,7 @@ cmd_leave() {
 
     log_info "Leaving mesh..."
 
-    curl -s -X POST "http://localhost:$KUDZU_PORT/api/v1/node/mesh/leave" > /dev/null
+    node_api_curl -X POST "http://localhost:$KUDZU_PORT/api/v1/node/mesh/leave" > /dev/null
 
     log_success "Now operating standalone (local storage still works)"
 }

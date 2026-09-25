@@ -11,6 +11,7 @@ Usage: python3 kudzu-context.py <memory_md_path>
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -21,12 +22,13 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 KUDZU_HOST = os.environ.get("KUDZU_HOST", "titan")
-KUDZU_URL = "http://100.70.67.110:4001"
+KUDZU_URL = os.environ.get("KUDZU_URL", "http://100.70.67.110:4001")
 SSH_TIMEOUT = 10
 CURL_TIMEOUT = 15
 TRACE_LIMIT = 50
 LINE_BUDGET = 180
-STATE_DIR = Path.home() / ".kudzu"
+STATE_DIR = Path(os.environ.get("KUDZU_STATE_DIR", str(Path.home() / ".kudzu")))
+API_KEY_FILE = Path(os.environ.get("KUDZU_API_KEY_FILE", str(STATE_DIR / "api_key")))
 HOLOGRAM_FILE = STATE_DIR / "session_holograms"
 PROJECTS_FILE = STATE_DIR / "projects.json"
 
@@ -40,7 +42,7 @@ FACT_KEYWORDS = {"machine", "repo", "path", "url", "host", "server", "api",
 # SSH / API helpers
 # ---------------------------------------------------------------------------
 
-def ssh_cmd(remote_cmd: str, timeout: int = SSH_TIMEOUT + CURL_TIMEOUT + 5) -> str:
+def ssh_cmd(remote_cmd: str, stdin: str = "", timeout: int = SSH_TIMEOUT + CURL_TIMEOUT + 5) -> str:
     """Run a command on the Kudzu host via SSH. Returns stdout or raises."""
     args = [
         "ssh",
@@ -50,28 +52,73 @@ def ssh_cmd(remote_cmd: str, timeout: int = SSH_TIMEOUT + CURL_TIMEOUT + 5) -> s
         KUDZU_HOST,
         remote_cmd,
     ]
-    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    result = subprocess.run(args, input=stdin, capture_output=True, text=True, timeout=timeout)
     if result.returncode != 0:
         raise RuntimeError(f"SSH failed (rc={result.returncode}): {result.stderr.strip()}")
     return result.stdout
 
 
+class AuthError(RuntimeError):
+    """Missing API key, or the API rejected it (401/403)."""
+
+
+def api_key() -> str:
+    """Resolve the API key: $KUDZU_API_KEY, else the first line of the key file.
+
+    Never hardcoded. A comma-separated list (the server's format) uses the
+    first key.
+    """
+    key = os.environ.get("KUDZU_API_KEY", "")
+    if not key and API_KEY_FILE.is_file():
+        lines = API_KEY_FILE.read_text().splitlines()
+        key = lines[0] if lines else ""
+    key = key.split(",")[0].strip()
+    if not key:
+        raise AuthError(f"no Kudzu API key: set KUDZU_API_KEY or write it to {API_KEY_FILE}")
+    return key
+
+
+def api_request(path: str, curl_args: str = "", body: str = "") -> dict:
+    """Authenticated request to the Kudzu API, run with curl on the Kudzu host.
+
+    The key is sent as the first line of the SSH channel's stdin and handed
+    to curl as a header file, so it never appears on a command line (or in
+    process listings) on either host. Any request body follows on stdin.
+    """
+    url = shlex.quote(f"{KUDZU_URL}{path}")
+    remote = (
+        "IFS= read -r k; "
+        f"curl -s --max-time {CURL_TIMEOUT} "
+        "-H @<(printf 'Authorization: Bearer %s\\n' \"$k\") "
+        f"{curl_args} {url}"
+    )
+    raw = ssh_cmd(remote, stdin=api_key() + "\n" + body)
+    data = json.loads(raw)
+    if isinstance(data, dict) and set(data) == {"error"}:
+        # 401/403 bodies are {"error": "..."}; surface them instead of
+        # letting callers treat them as "no data".
+        raise AuthError(f"Kudzu API rejected the request to {path}: {data['error']}")
+    return data
+
+
 def api_get(path: str) -> dict:
     """GET a JSON endpoint on the Kudzu API."""
-    raw = ssh_cmd(f"curl -s --max-time {CURL_TIMEOUT} '{KUDZU_URL}{path}'")
-    return json.loads(raw)
+    return api_request(path)
 
 
 def api_post(path: str, body: dict) -> dict:
-    """POST JSON to a Kudzu API endpoint using base64 transport."""
-    import base64
-    encoded = base64.b64encode(json.dumps(body).encode()).decode()
-    raw = ssh_cmd(
-        f"echo '{encoded}' | base64 -d | "
-        f"curl -s --max-time {CURL_TIMEOUT} -X POST "
-        f"'{KUDZU_URL}{path}' -H 'Content-Type: application/json' -d @-"
+    """POST JSON to a Kudzu API endpoint."""
+    return api_request(
+        path,
+        "-X POST -H 'Content-Type: application/json' --data-binary @-",
+        json.dumps(body),
     )
-    return json.loads(raw)
+
+
+def health() -> dict:
+    """GET /health (the one unauthenticated endpoint)."""
+    url = shlex.quote(f"{KUDZU_URL}/health")
+    return json.loads(ssh_cmd(f"curl -s --max-time {CURL_TIMEOUT} {url}"))
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +223,8 @@ def fetch_traces(hologram_id: str, limit: int = TRACE_LIMIT) -> list:
     try:
         data = api_get(f"/api/v1/holograms/{hologram_id}/traces?limit={limit}")
         return data.get("traces", [])
+    except AuthError:
+        raise
     except Exception:
         return []
 
@@ -475,7 +524,7 @@ def render_fallback_md(reason: str) -> str:
         f"**WARNING**: Kudzu is currently unreachable ({reason}).",
         "Context may be stale or unavailable. Try:",
         "```",
-        'ssh titan "curl -s http://100.70.67.110:4001/health"',
+        f'ssh {KUDZU_HOST} "curl -s {KUDZU_URL}/health"',
         "```",
         "",
     ])
@@ -550,8 +599,7 @@ def main():
     # Step 1: Check Kudzu health
     kudzu_reachable = False
     try:
-        health = api_get("/health")
-        if health.get("status") == "ok":
+        if health().get("status") == "ok":
             kudzu_reachable = True
     except Exception as e:
         # Write fallback and exit gracefully
@@ -563,6 +611,16 @@ def main():
     if not kudzu_reachable:
         memory_md_path.write_text(render_fallback_md("health check failed"))
         print("[kudzu-context] Kudzu health check failed", file=sys.stderr)
+        print("[kudzu-context] Wrote fallback MEMORY.md")
+        return
+
+    # Step 1b: Fail loudly on a missing/rejected key rather than rendering an
+    # empty "no traces" context.
+    try:
+        api_get("/api/v1/holograms?limit=1")
+    except AuthError as e:
+        memory_md_path.write_text(render_fallback_md(str(e)[:120]))
+        print(f"[kudzu-context] {e}", file=sys.stderr)
         print("[kudzu-context] Wrote fallback MEMORY.md")
         return
 

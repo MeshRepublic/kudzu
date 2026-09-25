@@ -16,6 +16,21 @@ MEMORY.md is regenerated from Kudzu traces each session — no manual init neede
 /home/eel/claude/scripts/kudzu-session.sh end "Fixed bugs, added features"
 ```
 
+## API Key (required)
+
+Every Kudzu API call except `/health` needs a bearer key. The helper scripts read it from
+`$KUDZU_API_KEY`, or else from the first line of `$KUDZU_API_KEY_FILE`
+(default `~/.kudzu/api_key`, keep it `chmod 600`). It is never hardcoded. The key is sent to
+titan over the SSH channel's stdin, never on a command line. Without a valid key the
+SessionStart hook writes a fallback MEMORY.md that names the problem.
+
+```bash
+umask 077; ssh titan 'eval "$(grep -E "^export KUDZU_API_KEY=" ~/.bashrc)"; printf "%s\n" "$KUDZU_API_KEY"' > ~/.kudzu/api_key
+```
+
+Other overrides: `KUDZU_HOST` (ssh host, default `titan`), `KUDZU_URL`, `KUDZU_STATE_DIR`,
+`KUDZU_MEMORY_MD` (hook output; default derives from `$CLAUDE_PROJECT_DIR`).
+
 ## Architecture
 
 ### Core Holograms (Always Running)

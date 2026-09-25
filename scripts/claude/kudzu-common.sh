@@ -11,8 +11,12 @@
 # === Configuration ===
 
 KUDZU_HOST="${KUDZU_HOST:-titan}"
-KUDZU_URL="http://100.70.67.110:4001"
+KUDZU_URL="${KUDZU_URL:-http://100.70.67.110:4001}"
 KUDZU_STATE_DIR="${KUDZU_STATE_DIR:-$HOME/.kudzu}"
+# API key: $KUDZU_API_KEY, else the first line of $KUDZU_API_KEY_FILE.
+# Never hardcode it. If KUDZU_API_KEY holds a comma-separated list (the
+# server's format), the first key is used.
+KUDZU_API_KEY_FILE="${KUDZU_API_KEY_FILE:-$KUDZU_STATE_DIR/api_key}"
 KUDZU_SSH_TIMEOUT="${KUDZU_SSH_TIMEOUT:-10}"
 KUDZU_CURL_TIMEOUT="${KUDZU_CURL_TIMEOUT:-15}"
 KUDZU_LLM_TIMEOUT="${KUDZU_LLM_TIMEOUT:-120}"
@@ -88,52 +92,87 @@ kudzu_ssh() {
     echo "$result"
 }
 
+# Resolve the API key (see KUDZU_API_KEY / KUDZU_API_KEY_FILE above).
+kudzu_api_key() {
+    local key="${KUDZU_API_KEY:-}"
+    if [ -z "$key" ] && [ -r "$KUDZU_API_KEY_FILE" ]; then
+        key=$(head -n1 "$KUDZU_API_KEY_FILE")
+    fi
+    key="${key%%,*}"
+    if [ -z "$key" ]; then
+        log_error "No Kudzu API key: set KUDZU_API_KEY or write it to $KUDZU_API_KEY_FILE" >&2
+        return 1
+    fi
+    printf '%s' "$key"
+}
+
+# Run curl against the Kudzu API on the Kudzu host, authenticated.
+# The key travels as the first line of the SSH channel's stdin and is fed to
+# curl as a header file, so it never appears on a command line (and thus
+# never in process listings) on either host. Any request body follows the
+# key on stdin.
+# Usage: kudzu_api_curl <path> <curl args...>          (no body)
+#        printf '%s' "$body" | kudzu_api_curl <path> <curl args...> --data-binary @-
+_kudzu_api_request() {
+    local path="$1" body="$2"; shift 2
+    local key
+    key=$(kudzu_api_key) || return 1
+
+    local remote_args="" arg
+    for arg in "$@"; do remote_args+=" $(printf '%q' "$arg")"; done
+
+    { printf '%s\n' "$key"; [ -n "$body" ] && printf '%s' "$body"; } |
+        kudzu_ssh "IFS= read -r k; curl -s --max-time $KUDZU_CURL_TIMEOUT -H @<(printf 'Authorization: Bearer %s\\n' \"\$k\")${remote_args} $(printf '%q' "${KUDZU_URL}${path}")"
+}
+
 # Make an API GET request to the Kudzu server.
 # Usage: kudzu_api_get "/api/v1/holograms"
 kudzu_api_get() {
-    local path="$1"
-    kudzu_ssh "curl -s --max-time $KUDZU_CURL_TIMEOUT '${KUDZU_URL}${path}'"
+    _kudzu_api_request "$1" ""
 }
 
 # Make an API POST request to the Kudzu server.
 # Usage: kudzu_api_post "/api/v1/holograms" '{"purpose":"test"}'
 #        kudzu_api_post "/api/v1/holograms/id/stimulate" '{"stimulus":"..."}' 120
-# The JSON body is passed via base64 to avoid shell quoting issues.
 # Optional third argument overrides the curl timeout (for slow LLM calls).
 kudzu_api_post() {
-    local path="$1"
-    local json_body="$2"
-    local timeout="${3:-$KUDZU_CURL_TIMEOUT}"
-
-    kudzu_ssh "echo '$(echo "$json_body" | base64 -w0)' | base64 -d | curl -s --max-time $timeout -X POST '${KUDZU_URL}${path}' -H 'Content-Type: application/json' -d @-"
+    local path="$1" json_body="$2"
+    local KUDZU_CURL_TIMEOUT="${3:-$KUDZU_CURL_TIMEOUT}"
+    _kudzu_api_request "$path" "$json_body" -X POST -H 'Content-Type: application/json' --data-binary @-
 }
 
 # Make an API DELETE request to the Kudzu server.
 # Usage: kudzu_api_delete "/api/v1/holograms/<id>"
 kudzu_api_delete() {
-    local path="$1"
-    kudzu_ssh "curl -s --max-time $KUDZU_CURL_TIMEOUT -X DELETE '${KUDZU_URL}${path}'"
+    _kudzu_api_request "$1" "" -X DELETE
 }
 
 # === Kudzu Health ===
 
-# Check if Kudzu is running on the remote host.
+# Check if Kudzu is running on the remote host. /health needs no key.
 check_kudzu() {
     local health
-    health=$(kudzu_api_get "/health" 2>/dev/null) || return 1
+    health=$(kudzu_ssh "curl -s --max-time $KUDZU_CURL_TIMEOUT $(printf '%q' "${KUDZU_URL}/health")" 2>/dev/null) || return 1
     echo "$health" | grep -q '"status":"ok"'
 }
 
-# Start Kudzu on the remote host if not running.
+KUDZU_SRC="${KUDZU_SRC:-/home/eel/kudzu_src}"
+KUDZU_TMUX_SESSION="${KUDZU_TMUX_SESSION:-kudzu}"
+
+# Start Kudzu on the remote host if not running: the canonical launch is a
+# tmux session running an interactive bash (so ~/.bashrc supplies
+# KUDZU_API_KEY) that sources exla_env.sh, logging to $KUDZU_SRC/kudzu.log.
 ensure_kudzu() {
     if ! check_kudzu; then
-        log_info "Starting Kudzu on $KUDZU_HOST..."
-        kudzu_ssh "cd /home/eel/kudzu_src && elixir --erl '-detached' -S mix run --no-halt" || return 1
-        sleep 5
-        if ! check_kudzu; then
-            log_error "Could not start Kudzu"
-            return 1
-        fi
+        log_info "Starting Kudzu on $KUDZU_HOST (tmux session '$KUDZU_TMUX_SESSION')..."
+        kudzu_ssh "tmux has-session -t $KUDZU_TMUX_SESSION 2>/dev/null || tmux new-session -d -s $KUDZU_TMUX_SESSION -c $KUDZU_SRC 'bash -ic \"source exla_env.sh && mix run --no-halt 2>&1 | tee -a $KUDZU_SRC/kudzu.log\"'" || return 1
+        local i
+        for i in $(seq 1 24); do
+            sleep 5
+            check_kudzu && return 0
+        done
+        log_error "Could not start Kudzu"
+        return 1
     fi
     return 0
 }
