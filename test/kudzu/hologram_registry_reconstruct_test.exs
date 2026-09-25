@@ -14,11 +14,9 @@ defmodule Kudzu.HologramRegistryReconstructTest do
     HologramRegistry.deregister(id)
 
     Enum.each(live_pids(id), fn {pid, _} ->
-      try do
-        GenServer.stop(pid, :normal)
-      catch
-        :exit, _ -> :ok
-      end
+      # terminate_child: a GenServer.stop of a :permanent child is restarted,
+      # and many in a row trip the supervisor's restart intensity.
+      Kudzu.Application.stop_hologram(pid)
     end)
   end
 

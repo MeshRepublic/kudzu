@@ -121,7 +121,9 @@ defmodule KudzuWeb.HologramController do
       {:ok, pid} ->
         # Deregister from persistent registry before stopping
         Kudzu.HologramRegistry.deregister(id)
-        GenServer.stop(pid, :normal)
+        # terminate_child, not GenServer.stop: holograms are :permanent
+        # children, so a plain stop is restarted by the supervisor.
+        Kudzu.Application.stop_hologram(pid)
         json(conn, %{deleted: true, id: id})
 
       :error ->
