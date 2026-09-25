@@ -42,6 +42,12 @@ defmodule Kudzu.Storage do
   # 1 hour without access → warm
   @hot_to_warm_seconds 3600
 
+  # Most warm→cold demotions per aging cycle (every 10 min). Aging runs inside
+  # this GenServer, so a first run over a large backlog must not block
+  # store/retrieve for long; the backlog drains over successive cycles.
+  # Override with the :kudzu, :warm_to_cold_batch application env.
+  @default_warm_to_cold_batch 500
+
   # Default warm→cold threshold (7 days). Operators can override at runtime
   # via the :kudzu, :warm_to_cold_seconds application env to e.g. gate the
   # first archival sweep on a long-running node where the warm tier has
@@ -212,7 +218,8 @@ defmodule Kudzu.Storage do
     # Initialize warm tier (DETS)
     {:ok, _} = :dets.open_file(warm_file(), type: :set)
 
-    # Check if Mnesia cold tier is available
+    # Bring up the local Mnesia cold tier (idempotent), then check it.
+    maybe_init_cold_tier()
     mnesia_ready = check_mnesia_ready()
 
     # Schedule periodic aging
@@ -223,6 +230,26 @@ defmodule Kudzu.Storage do
        initialized_at: DateTime.utc_now(),
        mnesia_ready: mnesia_ready
      }}
+  end
+
+  # Without an initialized cold tier every warm→cold demotion fails and the
+  # warm DETS tier never drains. Disable with
+  # `config :kudzu, :cold_tier_auto_init, false` (e.g. when a mesh
+  # operator manages Mnesia by hand).
+  defp maybe_init_cold_tier do
+    if Application.get_env(:kudzu, :cold_tier_auto_init, true) do
+      case Kudzu.Storage.MnesiaSchema.ensure_local() do
+        :ok ->
+          Logger.info("[Storage] Cold tier (Mnesia #{inspect(@cold_table)}) ready")
+
+        {:error, reason} ->
+          Logger.warning("[Storage] Cold tier unavailable: #{inspect(reason)}")
+      end
+    end
+  rescue
+    e -> Logger.warning("[Storage] Cold tier init crashed: #{Exception.message(e)}")
+  catch
+    :exit, reason -> Logger.warning("[Storage] Cold tier init exited: #{inspect(reason)}")
   end
 
   defp check_mnesia_ready do
@@ -578,6 +605,7 @@ defmodule Kudzu.Storage do
       Application.get_env(:kudzu, :warm_to_cold_seconds, @default_warm_to_cold_seconds)
 
     cutoff = DateTime.add(now, -threshold_seconds)
+    batch = Application.get_env(:kudzu, :warm_to_cold_batch, @default_warm_to_cold_batch)
 
     stale_records =
       :dets.foldl(
@@ -593,6 +621,9 @@ defmodule Kudzu.Storage do
         [],
         warm_file()
       )
+      # Oldest first, so the backlog drains in age order.
+      |> Enum.sort_by(& &1.last_accessed, DateTime)
+      |> Enum.take(batch)
 
     Enum.reduce(stale_records, 0, fn record, acc ->
       case write_cold(record) do
@@ -691,10 +722,18 @@ defmodule Kudzu.Storage do
 
   defp query_dets_by_hologram(_hologram_id, _limit), do: []
 
-  defp query_mnesia_by_hologram(_hologram_id, _limit) do
-    # TODO: implement
-    []
+  # Hologram reconstruction reads through query_hologram/2; without this,
+  # traces migrated to the cold tier silently vanished from their hologram
+  # on the next restart.
+  defp query_mnesia_by_hologram(hologram_id, limit) when limit > 0 do
+    Kudzu.Storage.MnesiaSchema.query_by_hologram(hologram_id, limit)
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
   end
+
+  defp query_mnesia_by_hologram(_hologram_id, _limit), do: []
 
   defp mnesia_size do
     try do
