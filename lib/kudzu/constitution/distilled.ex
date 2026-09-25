@@ -34,9 +34,19 @@ defmodule Kudzu.Constitution.Distilled do
     (`Kudzu.Constitution.AIJudge`). A `:retards` verdict only becomes
     a runtime denial when grounded in cited rejection-silo evidence;
     otherwise it is downgraded to escalation.
-  - **Stage 5 — Escalate.** Permit with weight = 1.0 − confidence (or
-    weight = 1.0 if the AI Judge is unavailable), letting downstream
-    accumulation absorb the uncertainty rather than block the action.
+  - **Stage 5 — Escalate.** Permit with weight = 1.0 − confidence,
+    letting downstream accumulation absorb the uncertainty of an
+    ambiguous or low-confidence judgment.
+
+  ## Fail-closed
+
+  Enforcement never permits by default. If the AI Judge cannot rule —
+  no `ANTHROPIC_API_KEY` configured, or the judge errors — Stage 4
+  *denies* with citation `"fail_closed:judge_not_configured"` or
+  `"fail_closed:judge_unavailable"` and audits the denial (telemetry
+  `[:kudzu, :constitution, :fail_closed]` plus a warning log). A
+  proposal that nothing could vouch for is not allowed through: as the
+  calibrate task puts it, fail-permits erode principles.
 
   ## AGI brake
 
@@ -225,7 +235,8 @@ defmodule Kudzu.Constitution.Distilled do
           optional(:expertise_silo) => String.t(),
           optional(:tau_r) => float(),
           optional(:tau_a) => float(),
-          optional(:tau_c) => float()
+          optional(:tau_c) => float(),
+          optional(:judge) => module() | (map() -> {:ok, term()} | {:error, term()})
         }
 
   @default_tau_r 0.75
@@ -510,10 +521,45 @@ defmodule Kudzu.Constitution.Distilled do
         weight = 1.0 - confidence
         stage5_escalate(vector, principle, params, weight, reasoning, evidence)
 
-      {:error, _reason} ->
-        # AI Judge unavailable — escalate at maximum weight per fail-safe.
-        stage5_escalate(vector, principle, params, 1.0, "AI Judge unavailable", [])
+      {:error, reason} ->
+        # The judge could not rule. Fail closed: deny and audit, never permit.
+        fail_closed(principle, params, reason)
     end
+  end
+
+  @spec fail_closed(String.t(), map(), term()) :: Kudzu.Constitution.Behaviour.decision()
+  defp fail_closed(principle, params, reason) do
+    {citation, why} =
+      case reason do
+        :missing_api_key ->
+          {"fail_closed:judge_not_configured",
+           "AI Judge not configured (no ANTHROPIC_API_KEY); denying rather than permitting unjudged"}
+
+        other ->
+          {"fail_closed:judge_unavailable",
+           "AI Judge unavailable (#{inspect(other)}); denying rather than permitting unjudged"}
+      end
+
+    audit_id = "audit-fail-closed-" <> Base.encode16(:crypto.strong_rand_bytes(6), case: :lower)
+
+    :telemetry.execute(
+      [:kudzu, :constitution, :fail_closed],
+      %{count: 1},
+      %{
+        id: audit_id,
+        citation: citation,
+        principle: principle,
+        reason: reason,
+        proposal: Map.get(params, :proposal_text)
+      }
+    )
+
+    Logger.warning(
+      "[Constitution.Distilled] fail-closed denial #{audit_id}: #{citation} " <>
+        "principle=#{principle} proposal=#{inspect(Map.get(params, :proposal_text))}"
+    )
+
+    {:denied, citation, principle, why}
   end
 
   @spec stage5_escalate(
@@ -546,7 +592,10 @@ defmodule Kudzu.Constitution.Distilled do
       accumulated_weight: acc_scalar
     }
 
-    Kudzu.Constitution.AIJudge.judge(context)
+    case Map.get(config, :judge, Kudzu.Constitution.AIJudge) do
+      judge when is_function(judge, 1) -> judge.(context)
+      judge when is_atom(judge) -> judge.judge(context)
+    end
   end
 
   @spec nearest_triples(Kudzu.HRR.vector(), String.t(), pos_integer()) :: [map()]

@@ -79,7 +79,7 @@ defmodule Kudzu.Constitution.Distilled5StageTest do
                match?({:permitted_with_weight, _, _, _, _}, result)
     end
 
-    test "off-corpus topic produces :permitted_with_weight via Stage 5", %{state: state} do
+    test "off-corpus topic with no judge configured is denied fail-closed", %{state: state} do
       action =
         {:propose,
          %{
@@ -92,11 +92,11 @@ defmodule Kudzu.Constitution.Distilled5StageTest do
            principle: "self_governance"
          }}
 
-      # Without a real Claude API key, Stage 4 returns :error and Stage 5
-      # escalates with weight 1.0; if the AI Judge ever succeeds, the
-      # match also accepts :permitted (Stage 3 strong-positive path).
+      # No judge can rule (injected stub = no API key): nothing vouches for
+      # the proposal, so enforcement fails closed instead of permitting.
+      state = put_in(state, [:config, :judge], fn _ -> {:error, :missing_api_key} end)
       result = Distilled.permitted?(action, state)
-      assert match?({:permitted_with_weight, _, _, _, _}, result) or result == :permitted
+      assert {:denied, "fail_closed:judge_not_configured", "self_governance", _} = result
     end
 
     test "tau_r: -1.0 + identical proposal vector guarantees Stage 1 denial",
