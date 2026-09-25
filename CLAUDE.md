@@ -112,30 +112,24 @@ kudzu-session.sh end "Brief summary of what was accomplished"
 
 ## API Access
 
-Direct API access on titan:4000:
+Kudzu listens on titan's Tailscale address, **`100.70.67.110:4001`** (REST `/api/v1`,
+MCP `/mcp`, WebSocket `/socket`), not on `localhost` and not on port 4000.
+`/health` is the only unauthenticated endpoint; everything else needs
+`Authorization: Bearer <key>`. `KUDZU_API_KEY` keys have full (mutate) scope;
+`KUDZU_API_READ_KEY` keys are read-only (list / get / check). On titan the key is in
+`~/.bashrc`; prefer the helper scripts, which never put it on a command line.
 
 ```bash
-# Health check
-ssh titan "curl -s http://localhost:4000/health"
+# Health check (no key needed)
+ssh titan "curl -s http://100.70.67.110:4001/health"
 
-# List holograms
-ssh titan "curl -s http://localhost:4000/api/v1/holograms"
+# Anything else: read the key on titan and pass it as a header file
+ssh titan 'eval "$(grep -E "^export KUDZU_API_KEY=" ~/.bashrc)";
+  curl -s -H @<(printf "Authorization: Bearer %s\n" "${KUDZU_API_KEY%%,*}") \
+    http://100.70.67.110:4001/api/v1/holograms?limit=1000'
 
-# Get hologram details
-ssh titan "curl -s http://localhost:4000/api/v1/holograms/<id>"
-
-# Record trace
-ssh titan 'curl -s -X POST http://localhost:4000/api/v1/holograms/<id>/traces \
-  -H "Content-Type: application/json" \
-  -d "{\"purpose\": \"observation\", \"data\": {\"content\": \"...\"}}"'
-
-# Stimulate (LLM interaction)
-ssh titan 'curl -s -X POST http://localhost:4000/api/v1/holograms/<id>/stimulate \
-  -H "Content-Type: application/json" \
-  -d "{\"stimulus\": \"What do you know about X?\"}"'
-
-# Query traces
-ssh titan "curl -s http://localhost:4000/api/v1/holograms/<id>/traces?purpose=observation"
+# Node metrics: process count, memory, consolidation, brain (no key needed)
+ssh titan "curl -s http://100.70.67.110:4001/metrics"
 ```
 
 ## Trace Purposes
@@ -160,16 +154,25 @@ ssh titan "curl -s http://localhost:4000/api/v1/holograms/<id>/traces?purpose=ob
 
 ## Machine Access
 
-- **titan** - Kudzu server, Ollama (llama4:scout)
-- **radiator** - Claude Code sessions
-- **Screen session** - `screen -x claude-collab` on radiator has persistent SSH to titan
+- **titan** (`titan-super-server`, 100.70.67.110) - Kudzu server (user `eel`), RTX 4090,
+  Ollama on 127.0.0.1:11434 (llama4:scout, mistral, llama3.1, ...)
+- **radiator** - Claude Code sessions (SessionStart hook runs the scripts below)
 
 ## Starting Kudzu
 
-If Kudzu isn't running:
+Kudzu runs from `~/kudzu_src` in the tmux session **`kudzu`**. The session runs an
+interactive bash (so `~/.bashrc` supplies `KUDZU_API_KEY` and `ANTHROPIC_API_KEY`) that
+sources `exla_env.sh` (CUDA libraries for the EXLA GPU backend) and appends all output to
+**`~/kudzu_src/kudzu.log`**:
+
 ```bash
-ssh titan "cd /home/eel/kudzu_src && elixir --erl '-detached' -S mix run --no-halt"
+ssh titan 'cd ~/kudzu_src && tmux new-session -d -s kudzu -c ~/kudzu_src \
+  "bash -ic \"source exla_env.sh && mix run --no-halt 2>&1 | tee -a ~/kudzu_src/kudzu.log\""'
 ```
+
+`ensure_kudzu` in `kudzu-common.sh` does exactly this when `/health` fails. Watch it live with
+`ssh -t titan tmux attach -t kudzu` (detach: Ctrl-b d). Startup reconstruction of ~190
+holograms takes about 15-30 s; the Brain initializes once it completes.
 
 ## Script Locations
 
@@ -191,14 +194,19 @@ ssh titan "cd /home/eel/kudzu_src && elixir --erl '-detached' -S mix run --no-ha
 ## Troubleshooting
 
 ```bash
-# Check if Kudzu is running
-ssh titan "curl -s http://localhost:4000/health"
+# Is it up? (health) / how is it doing? (metrics: process_count should stay ~900)
+ssh titan "curl -s http://100.70.67.110:4001/health"
+ssh titan "curl -s http://100.70.67.110:4001/metrics"
 
-# Restart Kudzu
-ssh titan "kill \$(lsof -ti :4000); cd /home/eel/kudzu_src && elixir --erl '-detached' -S mix run --no-halt"
+# Recent log / errors
+ssh titan "tail -n 100 ~/kudzu_src/kudzu.log"
+ssh titan "grep -a '\[error\]' ~/kudzu_src/kudzu.log | tail"
 
-# Check holograms
-ssh titan "curl -s http://localhost:4000/api/v1/holograms" | python3 -m json.tool
+# Restart: SIGTERM is a graceful shutdown (persists hologram state), then start as above
+ssh titan 'kill -TERM $(pgrep -f "beam.smp.*-- -home /home/eel"); sleep 5; tmux ls'
+
+# GPU: Kudzu allocates on demand, capped at 40% of the 4090 (config :exla, :clients)
+ssh titan "nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv"
 ```
 
 ## License

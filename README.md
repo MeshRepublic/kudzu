@@ -179,7 +179,8 @@ Kudzu provides a Phoenix-based API for language-agnostic access. Use REST for re
 
 ### Starting the API Server
 
-The API server starts automatically with the application on port 4000:
+The API server starts automatically with the application on port 4001, bound to `KUDZU_MCP_IP`
+(default: titan's Tailscale address `100.70.67.110`; override with `KUDZU_MCP_IP` / `KUDZU_MCP_PORT`):
 
 ```bash
 # Start Kudzu with the API server
@@ -211,14 +212,15 @@ In production, also set:
 
 ```bash
 export SECRET_KEY_BASE=$(mix phx.gen.secret)
-export KUDZU_PORT=4000
+export KUDZU_MCP_IP=100.70.67.110   # address to bind
+export KUDZU_MCP_PORT=4001
 export KUDZU_CORS_ORIGINS="https://your-app.com"
 ```
 
-When enabled, include the API key in requests:
+Include the API key in every request except `/health`:
 
 ```bash
-curl -H "Authorization: Bearer your-api-key" http://localhost:4000/api/v1/holograms
+curl -H "Authorization: Bearer $KUDZU_KEY" http://100.70.67.110:4001/api/v1/holograms
 ```
 
 ### REST API Endpoints
@@ -243,8 +245,11 @@ curl -H "Authorization: Bearer your-api-key" http://localhost:4000/api/v1/hologr
 ### REST API Examples
 
 ```bash
+KUDZU=http://100.70.67.110:4001
+AUTH="Authorization: Bearer $KUDZU_KEY"   # mutate-scoped key for the writes below
+
 # Create a hologram
-curl -X POST http://localhost:4000/api/v1/holograms \
+curl -X POST -H "$AUTH" $KUDZU/api/v1/holograms \
   -H "Content-Type: application/json" \
   -d '{"purpose": "researcher", "desires": ["Find knowledge"], "cognition": true}'
 
@@ -252,7 +257,7 @@ curl -X POST http://localhost:4000/api/v1/holograms \
 # {"id": "holo_abc123", "purpose": "researcher", "constitution": "mesh_republic"}
 
 # Send a stimulus
-curl -X POST http://localhost:4000/api/v1/holograms/holo_abc123/stimulate \
+curl -X POST -H "$AUTH" $KUDZU/api/v1/holograms/holo_abc123/stimulate \
   -H "Content-Type: application/json" \
   -d '{"stimulus": "What have you discovered?"}'
 
@@ -260,23 +265,23 @@ curl -X POST http://localhost:4000/api/v1/holograms/holo_abc123/stimulate \
 # {"response": "I have been exploring...", "actions": [...], "traces": [...]}
 
 # Get traces
-curl http://localhost:4000/api/v1/holograms/holo_abc123/traces
+curl -H "$AUTH" $KUDZU/api/v1/holograms/holo_abc123/traces
 
 # Response:
 # {"traces": [{"id": "trace_1", "purpose": "thought", "content": {...}}]}
 
 # Record a trace
-curl -X POST http://localhost:4000/api/v1/holograms/holo_abc123/traces \
+curl -X POST -H "$AUTH" $KUDZU/api/v1/holograms/holo_abc123/traces \
   -H "Content-Type: application/json" \
   -d '{"purpose": "observation", "data": {"content": "Something interesting"}}'
 
 # Change constitution
-curl -X PUT http://localhost:4000/api/v1/holograms/holo_abc123/constitution \
+curl -X PUT -H "$AUTH" $KUDZU/api/v1/holograms/holo_abc123/constitution \
   -H "Content-Type: application/json" \
   -d '{"constitution": "cautious"}'
 
 # Get cluster stats (distributed mode)
-curl http://localhost:4000/api/v1/cluster
+curl -H "$AUTH" $KUDZU/api/v1/cluster
 
 # Response:
 # {"node": "kudzu@192.168.1.10", "distributed": true, "nodes": 3, "total_holograms": 15}
@@ -290,7 +295,7 @@ For real-time interaction, connect via Phoenix Channels:
 import { Socket } from "phoenix";
 
 // Connect to the socket
-const socket = new Socket("ws://localhost:4001/socket", {
+const socket = new Socket("ws://100.70.67.110:4001/socket", {
   params: { token: "your-api-key" }  // required; a read key cannot join "hologram:new" or mutate
 });
 socket.connect();
