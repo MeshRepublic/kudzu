@@ -241,7 +241,9 @@ defmodule Kudzu.HologramRegistry do
   end
 
   def handle_cast({:persist_snapshot, metadata_list}, state) do
-    Enum.each(metadata_list, fn metadata -> :dets.insert(state.dets, {metadata.id, metadata}) end)
+    # One batched insert: per-record inserts for hundreds of holograms held
+    # the registry for seconds on a busy disk, timing out register/2.
+    :dets.insert(state.dets, Enum.map(metadata_list, &{&1.id, &1}))
     {:noreply, schedule_sync(state)}
   end
 
@@ -358,10 +360,7 @@ defmodule Kudzu.HologramRegistry do
   end
 
   defp do_persist_all_live(state) do
-    Enum.each(live_snapshot(), fn metadata ->
-      :dets.insert(state.dets, {metadata.id, metadata})
-    end)
-
+    :dets.insert(state.dets, Enum.map(live_snapshot(), &{&1.id, &1}))
     :dets.sync(state.dets)
   end
 

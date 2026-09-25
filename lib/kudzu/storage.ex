@@ -185,9 +185,17 @@ defmodule Kudzu.Storage do
     GenServer.call(__MODULE__, {:search_by_embedding, query_vector, opts}, 30_000)
   end
 
-  @doc "Embed a batch of unembedded traces. Returns count embedded."
+  @doc """
+  Embed a batch of unembedded traces. Returns count embedded.
+
+  Runs in the calling process, not in the Storage GenServer: each embedding
+  is an Ollama HTTP call (up to 30 s when Ollama is slow, cold-loading a
+  model, or down), and running it inside the server stalled every store
+  and retrieve behind it. It only touches the public ETS tables and hands
+  vectors back through `store_embedding/2`.
+  """
   def embed_batch(batch_size \\ 5) do
-    GenServer.call(__MODULE__, {:embed_batch, batch_size}, 300_000)
+    do_embed_batch(batch_size)
   end
 
   @doc "Get the number of embedded traces."
@@ -293,11 +301,6 @@ defmodule Kudzu.Storage do
     # Embedding happens via periodic batch (see embed_batch/1)
 
     {:reply, :ok, state}
-  end
-
-  def handle_call({:embed_batch, batch_size}, _from, state) do
-    count = do_embed_batch(batch_size)
-    {:reply, count, state}
   end
 
   @impl true
@@ -961,6 +964,9 @@ defmodule Kudzu.Storage do
 
   # — ETS-hash cache hit/miss inside trace embedding fold — flat case-in-case
   # credo:disable-for-next-line Credo.Check.Refactor.Nesting
+  # Configurable so tests can substitute a slow or failing embedder.
+  defp embedder, do: Application.get_env(:kudzu, :embedder, Kudzu.Embedding)
+
   defp do_embed_batch(batch_size) do
     all_trace_ids = :ets.foldl(fn {id, _trace}, acc -> [id | acc] end, [], @hot_table)
 
@@ -985,7 +991,7 @@ defmodule Kudzu.Storage do
               # — cache miss embedding branch inside do_embed_batch/3 fold.
               [] ->
                 # credo:disable-for-next-line Credo.Check.Refactor.Nesting
-                case Kudzu.Embedding.embed(text, timeout: 30_000) do
+                case embedder().embed(text, timeout: 30_000) do
                   {:ok, vector} ->
                     store_embedding(trace_id, vector)
                     :ets.insert(@content_hash_table, {content_hash, vector})
