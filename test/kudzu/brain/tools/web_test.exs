@@ -6,7 +6,9 @@ defmodule Kudzu.Brain.Tools.WebTest do
   @moduletag :capture_log
 
   describe "web_search" do
+    # Live network (DuckDuckGo): excluded by default, like other external tests.
     @tag :integration
+    @tag :external
     test "returns results for a query" do
       {:ok, results} = Web.execute("web_search", %{"query" => "Elixir programming language"})
       assert is_list(results.results)
@@ -21,7 +23,9 @@ defmodule Kudzu.Brain.Tools.WebTest do
   end
 
   describe "web_read" do
+    # Live network (elixir-lang.org): excluded by default.
     @tag :integration
+    @tag :external
     test "fetches and extracts text from a URL" do
       {:ok, result} = Web.execute("web_read", %{"url" => "https://elixir-lang.org"})
       assert is_binary(result.text)
