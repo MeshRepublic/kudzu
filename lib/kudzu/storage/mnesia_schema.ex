@@ -85,6 +85,52 @@ defmodule Kudzu.Storage.MnesiaSchema do
   defp data_root, do: Application.fetch_env!(:kudzu, :data_root)
 
   @doc """
+  Ensure a local cold tier: Mnesia running on its on-disk directory under
+  `:data_root`, with a disc schema and the cold trace table. Idempotent --
+  a no-op when the table is already available -- so it is safe to call at
+  every Storage start. A node that later joins a mesh keeps this local
+  table and extends it with `join_mesh/1`.
+
+  Without this the cold tier only existed after a manual
+  `node/init` + `mesh/create`, and every warm→cold demotion failed with
+  `{:no_exists, :kudzu_cold_traces}`.
+  """
+  @spec ensure_local() :: :ok | {:error, term()}
+  def ensure_local do
+    if table_available?() do
+      :ok
+    else
+      with :ok <- init_node(),
+           :ok <- ensure_local_schema() do
+        :mnesia.wait_for_tables([@trace_table], 30_000)
+        |> case do
+          :ok -> :ok
+          {:timeout, tables} -> {:error, {:timeout, tables}}
+          {:error, reason} -> {:error, reason}
+        end
+      end
+    end
+  end
+
+  defp table_available? do
+    :mnesia.system_info(:is_running) == :yes and
+      @trace_table in :mnesia.system_info(:tables)
+  catch
+    :exit, _ -> false
+  end
+
+  defp ensure_local_schema do
+    if @trace_table in :mnesia.system_info(:tables) do
+      :ok
+    else
+      case create_schema([node()]) do
+        {:error, reason} -> {:error, reason}
+        _ -> :ok
+      end
+    end
+  end
+
+  @doc """
   Create the distributed schema (run once on first node).
   """
   def create_schema(nodes) when is_list(nodes) do
