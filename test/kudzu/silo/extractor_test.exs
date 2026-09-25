@@ -103,6 +103,9 @@ defmodule Kudzu.Silo.ExtractorTest do
       # We can't easily intercept the outbound HTTP call without a mock
       # library, so this asserts the module attribute directly via the
       # documented default in the @doc. The function arity + spec exists.
+      # function_exported?/3 is false for a module not loaded yet, which
+      # depends on test ordering -- load it first.
+      Code.ensure_loaded!(Extractor)
       assert function_exported?(Extractor, :extract_claude, 3)
     end
 
