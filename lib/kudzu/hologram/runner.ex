@@ -255,7 +255,10 @@ defmodule Kudzu.Hologram.Runner do
         %{state | research_active: true, last_research: now}
 
       {:denied, reason} ->
-        Logger.debug("[Runner:#{short_id(state.hologram_id)}] Research denied: #{reason}")
+        Logger.debug(
+          "[Runner:#{short_id(state.hologram_id)}] Research denied: #{inspect(reason)}"
+        )
+
         state
     end
   end
@@ -316,18 +319,22 @@ defmodule Kudzu.Hologram.Runner do
       System.monotonic_time(:millisecond) - state.last_research >= @research_cooldown
   end
 
-  defp check_constitution(state, action) do
+  @doc false
+  # Public for tests: the Runner's constitutional gate.
+  def check_constitution(state, action) do
     try do
       constitution = Hologram.get_constitution(state.hologram_pid)
       holo_state = Hologram.get_state(state.hologram_pid)
 
-      case Constitution.permitted?(constitution, action, holo_state) do
-        :permitted -> :permitted
-        {:denied, reason} -> {:denied, reason}
-        {:requires_consensus, _} -> :permitted
+      # Fail closed: consensus cannot be obtained (no protocol yet) and a
+      # check that cannot complete is not a permission.
+      case Constitution.classify(Constitution.permitted?(constitution, action, holo_state)) do
+        :permit -> :permitted
+        {:deny, reason} -> {:denied, reason}
+        {:consensus, threshold} -> {:denied, {:consensus_required, threshold}}
       end
     catch
-      _, _ -> :permitted
+      kind, reason -> {:denied, {:check_failed, kind, reason}}
     end
   end
 

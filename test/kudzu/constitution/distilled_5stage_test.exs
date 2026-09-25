@@ -155,8 +155,9 @@ defmodule Kudzu.Constitution.Distilled5StageTest do
                Distilled.permitted?({:install, %{subject: "unknown"}}, %{distilled: d})
     end
 
-    test "legacy shape with no distilled rules in state falls back to :permitted" do
-      assert :permitted = Distilled.permitted?({:install, %{subject: "x"}}, %{})
+    test "legacy shape with no distilled rules in state fails closed" do
+      assert {:denied, :no_distilled_framework} =
+               Distilled.permitted?({:install, %{subject: "x"}}, %{})
     end
   end
 end

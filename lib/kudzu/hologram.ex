@@ -604,13 +604,11 @@ defmodule Kudzu.Hologram do
 
   @impl true
   def handle_call({:set_constitution, constitution}, _from, state) do
-    # SECURITY: Block :open constitution in production environments
-    if constitution == :open and production_env?() do
-      Logger.warning(
-        "[Hologram #{state.id}] Blocked attempt to set :open constitution in production"
-      )
-
-      {:reply, {:error, :open_constitution_blocked_in_production}, state}
+    # SECURITY: the no-constraint :open framework is opt-in per node
+    # (config :kudzu, :allow_open_constitution) -- see Constitution.Open.
+    if constitution == :open and not Kudzu.Constitution.Open.allowed?() do
+      Logger.warning("[Hologram #{state.id}] Blocked attempt to set the :open constitution")
+      {:reply, {:error, :open_constitution_disabled}, state}
     else
       set_constitution_impl(constitution, state)
     end
@@ -892,12 +890,6 @@ defmodule Kudzu.Hologram do
     {:reply, :ok, new_state}
   end
 
-  defp production_env? do
-    # Check if running in production environment
-    Application.get_env(:kudzu, :env, :dev) == :prod or
-      System.get_env("MIX_ENV") == "prod"
-  end
-
   defp execute_actions(actions, state) do
     Enum.reduce(actions, state, fn action, acc_state ->
       execute_action_with_constitution(action, acc_state)
@@ -905,21 +897,24 @@ defmodule Kudzu.Hologram do
   end
 
   defp execute_action_with_constitution(action, state) do
-    # Check constitutional permission
-    case Constitution.permitted?(state.constitution, action, state) do
-      :permitted ->
+    # Check constitutional permission. classify/1 accepts every decision
+    # shape a framework can return and denies anything it doesn't know.
+    decision = Constitution.permitted?(state.constitution, action, state)
+
+    case Constitution.classify(decision) do
+      :permit ->
         new_state = execute_action(action, state)
         # Audit permitted action
-        audit_action(action, :permitted, new_state)
+        audit_action(action, decision, new_state)
         new_state
 
-      {:denied, reason} = decision ->
+      {:deny, reason} ->
         # Log denial and record as trace
-        Logger.debug("[Constitution] Action denied: #{inspect(action)} - #{reason}")
+        Logger.debug("[Constitution] Action denied: #{inspect(action)} - #{inspect(reason)}")
         audit_action(action, decision, state)
         record_denial_trace(action, reason, state)
 
-      {:requires_consensus, threshold} = decision ->
+      {:consensus, threshold} ->
         # For now, log that consensus would be required
         # Full implementation would initiate consensus protocol
         Logger.debug(
@@ -941,6 +936,12 @@ defmodule Kudzu.Hologram do
     }
 
     Constitution.audit(state.constitution, action_trace, decision, state)
+  end
+
+  # Any action shape can be denied: {type, params}, {type, a, b}, or a bare atom.
+  defp record_denial_trace(action, reason, state)
+       when is_tuple(action) and tuple_size(action) > 2 do
+    record_denial_trace({elem(action, 0), %{}}, reason, state)
   end
 
   defp record_denial_trace({action_type, _params}, reason, state) do

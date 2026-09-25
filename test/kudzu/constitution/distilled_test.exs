@@ -218,12 +218,10 @@ defmodule Kudzu.Constitution.DistilledTest do
       assert {:denied, :no_evidence} = Distilled.permitted?(action, state)
     end
 
-    test "permitted? falls back to :permitted when state has no distilled rules" do
-      # If a caller passes an action through a Distilled framework but
-      # forgets to supply the rules in state, fail open (don't crash) —
-      # the rules are a soft guidance layer not a hard gate.
-      action = {:install, %{subject: "anything"}}
-      assert :permitted = Distilled.permitted?(action, %{})
+    test "permitted? fails closed when state has no distilled rules" do
+      # Nothing to consult is not evidence the action is allowed.
+      action = {:install, %{subject: "apt"}}
+      assert {:denied, :no_distilled_framework} = Distilled.permitted?(action, %{})
     end
 
     test "constrain/2 passes through desires unchanged (distilled defaults to advisory)",
@@ -242,11 +240,11 @@ defmodule Kudzu.Constitution.DistilledTest do
   end
 
   describe "Distilled.permitted? rule semantics" do
-    test "actions with no subject field cannot be denied (no rule to consult)" do
+    test "actions with no subject field are denied (no rule to consult)" do
       traces = Enum.map(1..15, fn i -> triple_trace("x", "is", "y_#{i}") end)
       {:ok, d} = Distilled.distill(traces)
       action = {:think, %{}}
-      assert :permitted = Distilled.permitted?(action, %{distilled: d})
+      assert {:denied, :no_subject} = Distilled.permitted?(action, %{distilled: d})
     end
 
     test "high-evidence subjects are permitted; never-seen subjects denied" do

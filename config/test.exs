@@ -15,3 +15,6 @@ config :nx, :default_defn_options, []
 test_root = Path.join(System.tmp_dir!(), "kudzu-test-#{System.system_time(:millisecond)}")
 File.mkdir_p!(test_root)
 config :kudzu, :data_root, test_root
+
+# The no-constraint :open constitution is test-only (see Kudzu.Constitution.Open).
+config :kudzu, :allow_open_constitution, true
