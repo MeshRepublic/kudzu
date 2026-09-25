@@ -83,8 +83,8 @@ defmodule Kudzu.Constitution.Distilled do
   - `rules.relation_frequency` — relation -> count. The top relations
     define the "vocabulary" of the distilled framework.
 
-  The first tier is intentionally limited — `permitted?/2` is advisory,
-  not enforcing. The point is to demonstrate that real triples drive real
+  The first tier is intentionally limited — `permitted?/2` permits only
+  what the triples give evidence for and denies everything else. The point is to demonstrate that real triples drive real
   behavior. Future tiers will add: confidence weighting from the v2 silo's
   provenance fields (once they land), causal-chain inference from
   `(X, requires, Y)` triples, and `constrain/2` rewriting based on
@@ -420,10 +420,10 @@ defmodule Kudzu.Constitution.Distilled do
 
   2. `{any_atom, %{subject: string}}` (legacy) — soft permission based
      on the distilled struct's subject index, kept for backward
-     compatibility with the tier-1 advisory behavior. Unknown subjects
-     return `{:denied, :no_evidence}` only when state carries a
-     `%Distilled{}` value; otherwise the call fails open with
-     `:permitted`.
+     compatibility with the tier-1 behavior. Unknown subjects return
+     `{:denied, :no_evidence}`. It fails closed: with no `%Distilled{}`
+     in state it returns `{:denied, :no_distilled_framework}`, and an
+     action without a subject returns `{:denied, :no_subject}`.
   """
   @impl true
   @spec permitted?(Kudzu.Constitution.Behaviour.action(), map()) ::
@@ -433,16 +433,19 @@ defmodule Kudzu.Constitution.Distilled do
     five_stage_evaluation(v, p, params, config, state)
   end
 
+  # Fail closed: with no distilled framework loaded there is nothing to
+  # consult, and an action with no subject cannot be matched to any rule --
+  # neither is evidence that the action is allowed.
   def permitted?(action, state) do
     case Map.get(state, :distilled) do
-      nil ->
-        :permitted
-
       %__MODULE__{rules: rules} ->
         case action_subject(action) do
-          nil -> :permitted
           subject when is_binary(subject) -> evaluate_subject(subject, rules)
+          _ -> {:denied, :no_subject}
         end
+
+      _ ->
+        {:denied, :no_distilled_framework}
     end
   end
 

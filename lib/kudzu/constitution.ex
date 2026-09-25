@@ -94,6 +94,29 @@ defmodule Kudzu.Constitution do
   end
 
   @doc """
+  Reduce any framework decision to what an enforcement point must do with
+  it: `:permit`, `{:deny, reason}`, or `{:consensus, threshold}` (which no
+  enforcement point may treat as permission -- there is no consensus
+  protocol yet, so the action simply does not run).
+
+  Frameworks return several shapes (`:permitted`, `{:denied, r}`, the
+  Distilled 4-tuple, `{:denied_by_accumulation, ...}`,
+  `{:permitted_with_weight, ...}`). Anything unrecognised denies: an
+  enforcement point that cannot understand a decision must not act on it.
+  """
+  @spec classify(term()) :: :permit | {:deny, term()} | {:consensus, number()}
+  def classify(:permitted), do: :permit
+  def classify({:permitted_with_weight, _weight, _vector, _principle, _meta}), do: :permit
+  def classify({:requires_consensus, threshold}), do: {:consensus, threshold}
+  def classify({:denied, reason}), do: {:deny, reason}
+  def classify({:denied, citation, principle, reason}), do: {:deny, {citation, principle, reason}}
+
+  def classify({:denied_by_accumulation, ids, principle}),
+    do: {:deny, {:accumulation, principle, ids}}
+
+  def classify(other), do: {:deny, {:unrecognized_decision, other}}
+
+  @doc """
   Constrain desires according to constitutional principles.
   """
   @spec constrain(framework(), [String.t()], map()) :: [String.t()]

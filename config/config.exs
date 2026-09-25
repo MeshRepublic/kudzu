@@ -20,7 +20,8 @@ config :kudzu,
 # Security configuration
 # IMPORTANT: Configure these before deploying to production
 config :kudzu,
-  # Environment (:dev, :test, :prod) - :open constitution blocked in :prod
+  # Build environment (:dev, :test, :prod). Note: the :open constitution is
+  # gated by :allow_open_constitution, not by this value.
   env: config_env(),
   # Allowed paths for file IO operations (empty list = no file access)
   # Example: ["/var/kudzu/data", "/tmp/kudzu"]

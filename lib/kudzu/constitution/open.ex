@@ -9,6 +9,9 @@ defmodule Kudzu.Constitution.Open do
   - Exploring unconstrained agent behavior
 
   WARNING: Not suitable for production or multi-tenant environments.
+  Disabled unless `config :kudzu, :allow_open_constitution, true` (set
+  only in the test environment); when disabled it denies every action
+  and holograms refuse to switch to it.
   """
 
   @behaviour Kudzu.Constitution.Behaviour
@@ -26,13 +29,19 @@ defmodule Kudzu.Constitution.Open do
     ]
   end
 
+  @doc """
+  Whether the open (no-constraint) framework may be used on this node.
+  Off unless `config :kudzu, :allow_open_constitution, true` -- enabled
+  only in the test environment. The former guard keyed on the build
+  environment being :prod, but titan runs the dev build, so it never
+  applied there.
+  """
+  @spec allowed?() :: boolean()
+  def allowed?, do: Application.get_env(:kudzu, :allow_open_constitution, false) == true
+
   @impl true
   def permitted?(_action, _state) do
-    if Application.get_env(:kudzu, :env) == :prod do
-      {:deny, "Open constitution is not available in production"}
-    else
-      :permitted
-    end
+    if allowed?(), do: :permitted, else: {:denied, :open_constitution_disabled}
   end
 
   @impl true
