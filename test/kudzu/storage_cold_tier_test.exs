@@ -71,7 +71,7 @@ defmodule Kudzu.StorageColdTierTest do
       )
 
     assert Map.has_key?(Kudzu.Hologram.get_state(pid).traces, t.id)
-    GenServer.stop(pid, :normal)
+    Kudzu.Application.stop_hologram(pid)
   end
 
   test "aging drains the warm backlog in bounded, oldest-first batches" do
