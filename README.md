@@ -194,8 +194,18 @@ iex -S mix
 `KUDZU_API_KEY` is **mandatory**. The service refuses to start without it — there is no hardcoded fallback. Set it to a comma-separated list of allowed bearer tokens before launching:
 
 ```bash
-export KUDZU_API_KEY="key1,key2,key3"
+export KUDZU_API_KEY="key1,key2,key3"        # mutate keys: full access
+export KUDZU_API_READ_KEY="ro-key1"          # optional read-only keys
 ```
+
+Keys are **scoped**, and one key store (`KudzuWeb.Plugs.APIAuth`) serves REST, MCP and WebSocket:
+
+| Scope | Granted by | May do |
+|-------|-----------|--------|
+| `read` | `KUDZU_API_READ_KEY` | list / get / check: `GET /api/v1/*`, `POST /api/v1/constitutions/:name/check`, read-only MCP tools, joining an existing hologram channel, `get_state` / `recall` |
+| `mutate` | `KUDZU_API_KEY` | everything `read` may do, plus every state change, LLM call and outbound request |
+
+Every `/mcp` request needs a key (401 otherwise). MCP tools are default-deny for read keys — only the list/get/check tools in `KudzuWeb.MCP.Controller`'s read allowlist are callable (others return JSON-RPC error `-32003`), and `tools/list` only advertises what the key may call. REST returns 403 when a read key attempts a mutating route. WebSocket connections must pass `token` in the connect params.
 
 In production, also set:
 
@@ -280,8 +290,8 @@ For real-time interaction, connect via Phoenix Channels:
 import { Socket } from "phoenix";
 
 // Connect to the socket
-const socket = new Socket("ws://localhost:4000/socket", {
-  params: { token: "your-api-key" }  // if auth enabled
+const socket = new Socket("ws://localhost:4001/socket", {
+  params: { token: "your-api-key" }  // required; a read key cannot join "hologram:new" or mutate
 });
 socket.connect();
 

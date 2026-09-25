@@ -28,12 +28,16 @@ defmodule KudzuWeb.MCP.Handlers.Constitution do
     atom = safe_atom(name)
     context = Map.get(params, "context", %{})
 
-    if atom in @frameworks do
-      action_tuple = {String.to_atom(action), context}
-      result = Constitution.permitted?(atom, action_tuple, %{})
+    # This tool is reachable with a read-scoped key, so it must never create
+    # atoms from caller input (atoms are never garbage collected). An action
+    # name that is not already an atom cannot match any constitution clause.
+    with {:framework, true} <- {:framework, atom in @frameworks},
+         {:action, action_atom} when not is_nil(action_atom) <- {:action, safe_atom(action)} do
+      result = Constitution.permitted?(atom, {action_atom, context}, %{})
       {:ok, %{constitution: atom, action: action, result: format_decision(result)}}
     else
-      {:error, -32_602, "Unknown constitution: #{name}"}
+      {:framework, false} -> {:error, -32_602, "Unknown constitution: #{name}"}
+      {:action, nil} -> {:error, -32_602, "Unknown action: #{action}"}
     end
   end
 

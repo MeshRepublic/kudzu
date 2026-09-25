@@ -3,9 +3,17 @@ defmodule KudzuWeb.Router do
   import Plug.Conn
   import Phoenix.Controller
 
+  # Scope follows the HTTP method: GET/HEAD/OPTIONS need a read key,
+  # everything else needs a mutate key (see KudzuWeb.Plugs.APIAuth).
   pipeline :api do
     plug(:accepts, ["json"])
     plug(KudzuWeb.Plugs.APIAuth)
+  end
+
+  # For non-GET routes that only read (e.g. "check" operations).
+  pipeline :api_read do
+    plug(:accepts, ["json"])
+    plug(KudzuWeb.Plugs.APIAuth, scope: :read)
   end
 
   # Health check - no auth required
@@ -22,6 +30,13 @@ defmodule KudzuWeb.Router do
   scope "/api/v1/brain", KudzuWeb do
     post("/chat", BrainChatController, :chat)
     get("/status", BrainChatController, :status)
+  end
+
+  # Read-only operations that use POST
+  scope "/api/v1", KudzuWeb do
+    pipe_through(:api_read)
+
+    post("/constitutions/:name/check", ConstitutionController, :check_permission)
   end
 
   # API v1
@@ -53,7 +68,6 @@ defmodule KudzuWeb.Router do
     scope "/constitutions" do
       get("/", ConstitutionController, :index)
       get("/:name", ConstitutionController, :show)
-      post("/:name/check", ConstitutionController, :check_permission)
     end
 
     # Cluster/distributed operations

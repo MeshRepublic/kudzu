@@ -18,15 +18,40 @@ defmodule KudzuWeb.HologramChannel do
     - trace_recorded: New trace was recorded
     - peer_message: Message from a peer hologram
     - constitution_changed: Constitution was changed
+
+  Scope (from the socket's API key): joining an existing hologram and the
+  `get_state` / `recall` events need `:read`; joining `hologram:new`
+  (spawns a hologram) and `stimulate` / `add_desire` / `add_peer` /
+  `set_constitution` need `:mutate`.
   """
 
   use Phoenix.Channel
   require Logger
 
   alias Kudzu.{Application, Hologram}
+  alias KudzuWeb.Plugs.APIAuth
+
+  @mutating_events ~w(stimulate add_desire add_peer set_constitution)
 
   @impl true
   def join("hologram:new", params, socket) do
+    if mutate?(socket), do: join_new(params, socket), else: {:error, forbidden()}
+  end
+
+  def join("hologram:" <> hologram_id, params, socket) do
+    join_existing(hologram_id, params, socket)
+  end
+
+  @impl true
+  def handle_in(event, params, socket) do
+    if event in @mutating_events and not mutate?(socket) do
+      {:reply, {:error, forbidden()}, socket}
+    else
+      do_handle_in(event, params, socket)
+    end
+  end
+
+  defp join_new(params, socket) do
     # Create a new hologram for this connection
     opts = [
       purpose: get_atom_param(params, "purpose", :websocket_session),
@@ -54,7 +79,7 @@ defmodule KudzuWeb.HologramChannel do
     end
   end
 
-  def join("hologram:" <> hologram_id, _params, socket) do
+  defp join_existing(hologram_id, _params, socket) do
     case find_hologram(hologram_id) do
       {:ok, pid} ->
         socket =
@@ -80,8 +105,7 @@ defmodule KudzuWeb.HologramChannel do
     end
   end
 
-  @impl true
-  def handle_in("stimulate", %{"content" => content} = params, socket) do
+  defp do_handle_in("stimulate", %{"content" => content} = params, socket) do
     pid = socket.assigns.hologram_pid
 
     opts = [
@@ -105,7 +129,7 @@ defmodule KudzuWeb.HologramChannel do
     {:reply, {:ok, %{status: "processing"}}, socket}
   end
 
-  def handle_in("get_state", _params, socket) do
+  defp do_handle_in("get_state", _params, socket) do
     pid = socket.assigns.hologram_pid
     state = Hologram.get_state(pid)
 
@@ -121,13 +145,13 @@ defmodule KudzuWeb.HologramChannel do
       }}, socket}
   end
 
-  def handle_in("add_desire", %{"desire" => desire}, socket) do
+  defp do_handle_in("add_desire", %{"desire" => desire}, socket) do
     pid = socket.assigns.hologram_pid
     Hologram.add_desire(pid, desire)
     {:reply, {:ok, %{added: desire}}, socket}
   end
 
-  def handle_in("recall", params, socket) do
+  defp do_handle_in("recall", params, socket) do
     pid = socket.assigns.hologram_pid
     purpose = Map.get(params, "purpose")
     limit = Map.get(params, "limit", 50)
@@ -141,7 +165,7 @@ defmodule KudzuWeb.HologramChannel do
     {:reply, {:ok, %{traces: traces}}, socket}
   end
 
-  def handle_in("add_peer", %{"peer_id" => peer_id}, socket) do
+  defp do_handle_in("add_peer", %{"peer_id" => peer_id}, socket) do
     pid = socket.assigns.hologram_pid
 
     case find_hologram(peer_id) do
@@ -154,7 +178,7 @@ defmodule KudzuWeb.HologramChannel do
     end
   end
 
-  def handle_in("set_constitution", %{"constitution" => constitution}, socket) do
+  defp do_handle_in("set_constitution", %{"constitution" => constitution}, socket) do
     pid = socket.assigns.hologram_pid
     constitution_atom = safe_to_constitution(constitution)
 
@@ -165,6 +189,10 @@ defmodule KudzuWeb.HologramChannel do
       {:error, reason} ->
         {:reply, {:error, %{reason: inspect(reason)}}, socket}
     end
+  end
+
+  defp do_handle_in(event, _params, socket) do
+    {:reply, {:error, %{reason: "unknown event or invalid params: #{event}"}}, socket}
   end
 
   @impl true
@@ -196,6 +224,10 @@ defmodule KudzuWeb.HologramChannel do
   end
 
   # Helper functions
+
+  defp mutate?(socket), do: APIAuth.permits?(Map.get(socket.assigns, :api_scope), :mutate)
+
+  defp forbidden, do: %{reason: "forbidden: this operation requires a mutate-scoped API key"}
 
   defp find_hologram(id) do
     case Registry.lookup(Kudzu.Registry, {:id, id}) do

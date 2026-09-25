@@ -5,7 +5,10 @@ defmodule KudzuWeb.MCP.ControllerTest do
 
   test "dispatch initialize returns capabilities" do
     {:response, result} =
-      Controller.dispatch({:request, "1", "initialize", %{"protocolVersion" => "2025-03-26"}})
+      Controller.dispatch(
+        {:request, "1", "initialize", %{"protocolVersion" => "2025-03-26"}},
+        :mutate
+      )
 
     assert result["result"]["protocolVersion"] == "2025-03-26"
     assert result["result"]["capabilities"]["tools"]
@@ -13,7 +16,7 @@ defmodule KudzuWeb.MCP.ControllerTest do
   end
 
   test "dispatch tools/list returns tools" do
-    {:response, result} = Controller.dispatch({:request, "2", "tools/list", %{}})
+    {:response, result} = Controller.dispatch({:request, "2", "tools/list", %{}}, :mutate)
     assert is_list(result["result"]["tools"])
     assert length(result["result"]["tools"]) > 40
   end
@@ -21,7 +24,8 @@ defmodule KudzuWeb.MCP.ControllerTest do
   test "dispatch tools/call for kudzu_health" do
     {:response, result} =
       Controller.dispatch(
-        {:request, "3", "tools/call", %{"name" => "kudzu_health", "arguments" => %{}}}
+        {:request, "3", "tools/call", %{"name" => "kudzu_health", "arguments" => %{}}},
+        :mutate
       )
 
     assert result["result"]["content"]
@@ -30,11 +34,11 @@ defmodule KudzuWeb.MCP.ControllerTest do
   end
 
   test "dispatch initialized returns :accepted" do
-    assert :accepted = Controller.dispatch({:notification, "initialized", %{}})
+    assert :accepted = Controller.dispatch({:notification, "initialized", %{}}, :mutate)
   end
 
   test "dispatch ping returns pong" do
-    {:response, result} = Controller.dispatch({:request, "4", "ping", %{}})
+    {:response, result} = Controller.dispatch({:request, "4", "ping", %{}}, :mutate)
     assert result["result"] == %{}
   end
 end
