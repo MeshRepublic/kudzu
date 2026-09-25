@@ -60,8 +60,8 @@ defmodule Kudzu.MixProject do
       {:phoenix_pubsub, "~> 2.1"},
       {:plug_cowboy, "~> 2.6"},
       {:cors_plug, "~> 3.0"},
-      {:nx, "~> 0.9"},
-      {:exla, "~> 0.9", runtime: false},
+      {:nx, "~> 0.12.0"},
+      {:exla, "~> 0.12.0", runtime: false},
       # Type discipline / static analysis (dev/test only)
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

@@ -99,3 +99,14 @@ end
 
 # EXLA default defn compiler — routes defn functions through XLA
 config :nx, :default_defn_options, []
+
+# EXLA GPU memory. By default XLA preallocates ~90% of the GPU at boot; on
+# titan's shared 24GB RTX 4090 that starved llama.cpp (~7GB) and forced
+# Ollama models onto the CPU. Allocate on demand and cap Kudzu at 40%
+# (~9.8GB). The full client list is restated because this setting replaces
+# EXLA's default, and :preferred_clients still names every platform.
+config :exla, :clients,
+  cuda: [platform: :cuda, memory_fraction: 0.4, preallocate: false],
+  rocm: [platform: :rocm],
+  tpu: [platform: :tpu],
+  host: [platform: :host]
