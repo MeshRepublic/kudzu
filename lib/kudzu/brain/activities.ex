@@ -513,42 +513,57 @@ defmodule Kudzu.Brain.Activities do
     end
   end
 
+  # Anomalies use the Reflexes vocabulary (check: :consolidation, reason:
+  # "stale" | "unreachable") so a stale daemon is actually remedied by the
+  # :restart_consolidation reflex and an unreachable one is escalated.
   defp check_consolidation_recency do
     stats = Kudzu.Consolidation.stats()
-    last = Map.get(stats, :last_consolidation)
 
-    cond do
-      is_nil(last) ->
-        {:anomaly, %{check: :consolidation_recency, reason: "No consolidation has ever run"}}
+    consolidation_recency(
+      Map.get(stats, :last_consolidation),
+      Map.get(stats, :started_at),
+      DateTime.utc_now()
+    )
+  rescue
+    e -> consolidation_unreachable(Exception.message(e))
+  catch
+    :exit, reason -> consolidation_unreachable(inspect(reason))
+  end
 
-      is_struct(last, DateTime) ->
-        age_ms = DateTime.diff(DateTime.utc_now(), last, :millisecond)
+  @doc false
+  # Pure recency rule, public for tests. A light cycle first runs one
+  # interval after boot, so "never ran" is only stale once the daemon has
+  # been up longer than the staleness window; with neither timestamp
+  # available there is nothing to judge, which is not an anomaly.
+  @spec consolidation_recency(DateTime.t() | nil, DateTime.t() | nil, DateTime.t()) ::
+          {:nominal, :consolidation} | {:anomaly, map()}
+  def consolidation_recency(last, started_at, now) do
+    case last || started_at do
+      %DateTime{} = reference ->
+        age_ms = DateTime.diff(now, reference, :millisecond)
 
         if age_ms > @consolidation_staleness_ms do
           {:anomaly,
            %{
-             check: :consolidation_recency,
-             reason:
-               "Last consolidation was #{div(age_ms, 1_000)}s ago " <>
-                 "(threshold: #{div(@consolidation_staleness_ms, 1_000)}s)",
-             age_ms: age_ms
+             check: :consolidation,
+             reason: "stale",
+             age_ms: age_ms,
+             last_consolidation: last,
+             detail:
+               "#{if last, do: "Last consolidation", else: "No consolidation since start"} " <>
+                 "#{div(age_ms, 1_000)}s ago (threshold: #{div(@consolidation_staleness_ms, 1_000)}s)"
            }}
         else
-          {:nominal, :consolidation_recency}
+          {:nominal, :consolidation}
         end
 
-      true ->
-        # last_consolidation is a non-nil, non-DateTime value — treat as nominal
-        # (could be a monotonic timestamp or other internal representation)
-        {:nominal, :consolidation_recency}
+      _ ->
+        {:nominal, :consolidation}
     end
-  rescue
-    e ->
-      {:anomaly,
-       %{
-         check: :consolidation_recency,
-         reason: "Consolidation stats failed: #{Exception.message(e)}"
-       }}
+  end
+
+  defp consolidation_unreachable(why) do
+    {:anomaly, %{check: :consolidation, reason: "unreachable", detail: "stats failed: #{why}"}}
   end
 
   defp check_hologram_count do
