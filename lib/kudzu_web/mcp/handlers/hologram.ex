@@ -70,7 +70,9 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
   def handle("kudzu_delete_hologram", %{"id" => id}) do
     with_hologram(id, fn pid ->
       Kudzu.HologramRegistry.deregister(id)
-      GenServer.stop(pid, :normal)
+      # terminate_child, not GenServer.stop: holograms are :permanent
+      # children, so a plain stop is restarted by the supervisor.
+      Kudzu.Application.stop_hologram(pid)
       {:ok, %{deleted: true, id: id}}
     end)
   end
