@@ -62,6 +62,10 @@ defmodule Kudzu.Brain do
   @default_cycle_interval 300_000
   @init_delay 2_000
   @retry_delay 10_000
+  # How long hologram init waits for startup reconstruction before going
+  # ahead anyway (see handle_info(:init_hologram, _)).
+  @reconstruction_wait_ms 120_000
+  @reconstruction_poll_ms 1_000
 
   defstruct [
     :hologram_id,
@@ -82,7 +86,8 @@ defmodule Kudzu.Brain do
     last_storage_check: nil,
     web_learning_active: false,
     researched_topics: MapSet.new(),
-    learning_goals: []
+    learning_goals: [],
+    reconstruction_wait_since: nil
   ]
 
   @typedoc "Internal Brain GenServer state."
@@ -286,67 +291,32 @@ defmodule Kudzu.Brain do
   end
 
   @impl true
+  # Hologram init is find-or-create (the kudzu_brain hologram, the self and
+  # brain_knowledge silos). Until startup reconstruction has respawned the
+  # persisted holograms, "find" misses them and a duplicate is created on
+  # every boot -- so wait for reconstruction (polling, never blocking the
+  # Brain), up to @reconstruction_wait_ms.
   def handle_info(:init_hologram, state) do
-    case Activities.init_hologram(state.desires) do
-      {:ok, pid, id} ->
-        Logger.info("[Brain] Hologram ready — id=#{id}")
+    now = System.monotonic_time(:millisecond)
+    since = state.reconstruction_wait_since || now
 
-        try do
-          Kudzu.Brain.SelfModel.init()
-          Logger.info("[Brain] Self-model silo initialized")
-        catch
-          kind, reason ->
-            Logger.warning("[Brain] Self-model init failed: #{inspect({kind, reason})}")
-        end
+    cond do
+      reconstruction_done?() ->
+        init_hologram(%{state | reconstruction_wait_since: nil})
 
-        # brain_knowledge silo — destination for triples distilled out of
-        # Claude responses (Tier 3 reasoning). Created here at boot so
-        # `Kudzu.Brain.Reasoning.distill_claude_response/2` never silently
-        # drops triples on a missing-silo path.
-        try do
-          case Kudzu.Silo.create("brain_knowledge") do
-            {:ok, _silo_pid} ->
-              Logger.info("[Brain] brain_knowledge silo ready")
-
-            {:error, reason} ->
-              Logger.warning("[Brain] brain_knowledge silo init failed: #{inspect(reason)}")
-          end
-        catch
-          kind, reason ->
-            Logger.warning(
-              "[Brain] brain_knowledge silo init crashed: #{inspect({kind, reason})}"
-            )
-        end
-
-        new_state = %{state | hologram_pid: pid, hologram_id: id}
-        new_state = %{new_state | working_memory: WorkingMemory.new()}
-        # Restore persisted learning goals
-        goals = Learning.restore_learning_goals(pid)
-        new_state = %{new_state | learning_goals: goals}
-        topics = Learning.restore_researched_topics(pid)
-        new_state = %{new_state | researched_topics: topics}
-
-        if goals != [] do
-          active = Enum.find(goals, &(&1.status == :active))
-
-          if active do
-            Logger.info(
-              "[Brain] Restored learning goal: #{active.topic} (#{active.completed_count}/#{length(active.topics)})"
-            )
-          end
-        end
-
-        Activities.schedule_next()
-        Phoenix.PubSub.subscribe(Kudzu.PubSub, "traces:new")
-        {:noreply, new_state}
-
-      {:error, reason} ->
+      now - since >= @reconstruction_wait_ms ->
         Logger.warning(
-          "[Brain] Hologram init failed: #{inspect(reason)} — retrying in #{@retry_delay}ms"
+          "[Brain] Hologram reconstruction not finished after #{@reconstruction_wait_ms}ms — initializing anyway"
         )
 
-        Process.send_after(self(), :init_hologram, @retry_delay)
-        {:noreply, state}
+        init_hologram(%{state | reconstruction_wait_since: nil})
+
+      true ->
+        if state.reconstruction_wait_since == nil,
+          do: Logger.info("[Brain] Waiting for hologram reconstruction before init")
+
+        Process.send_after(self(), :init_hologram, @reconstruction_poll_ms)
+        {:noreply, %{state | reconstruction_wait_since: since}}
     end
   end
 
@@ -468,6 +438,76 @@ defmodule Kudzu.Brain do
   def handle_info(msg, state) do
     Logger.debug("[Brain] Unexpected message: #{inspect(msg)}")
     {:noreply, state}
+  end
+
+  defp reconstruction_done? do
+    Kudzu.HologramRegistry.reconstructed?()
+  catch
+    :exit, _ -> false
+  end
+
+  defp init_hologram(state) do
+    case Activities.init_hologram(state.desires) do
+      {:ok, pid, id} ->
+        Logger.info("[Brain] Hologram ready — id=#{id}")
+
+        try do
+          Kudzu.Brain.SelfModel.init()
+          Logger.info("[Brain] Self-model silo initialized")
+        catch
+          kind, reason ->
+            Logger.warning("[Brain] Self-model init failed: #{inspect({kind, reason})}")
+        end
+
+        # brain_knowledge silo — destination for triples distilled out of
+        # Claude responses (Tier 3 reasoning). Created here at boot so
+        # `Kudzu.Brain.Reasoning.distill_claude_response/2` never silently
+        # drops triples on a missing-silo path.
+        try do
+          case Kudzu.Silo.create("brain_knowledge") do
+            {:ok, _silo_pid} ->
+              Logger.info("[Brain] brain_knowledge silo ready")
+
+            {:error, reason} ->
+              Logger.warning("[Brain] brain_knowledge silo init failed: #{inspect(reason)}")
+          end
+        catch
+          kind, reason ->
+            Logger.warning(
+              "[Brain] brain_knowledge silo init crashed: #{inspect({kind, reason})}"
+            )
+        end
+
+        new_state = %{state | hologram_pid: pid, hologram_id: id}
+        new_state = %{new_state | working_memory: WorkingMemory.new()}
+        # Restore persisted learning goals
+        goals = Learning.restore_learning_goals(pid)
+        new_state = %{new_state | learning_goals: goals}
+        topics = Learning.restore_researched_topics(pid)
+        new_state = %{new_state | researched_topics: topics}
+
+        if goals != [] do
+          active = Enum.find(goals, &(&1.status == :active))
+
+          if active do
+            Logger.info(
+              "[Brain] Restored learning goal: #{active.topic} (#{active.completed_count}/#{length(active.topics)})"
+            )
+          end
+        end
+
+        Activities.schedule_next()
+        Phoenix.PubSub.subscribe(Kudzu.PubSub, "traces:new")
+        {:noreply, new_state}
+
+      {:error, reason} ->
+        Logger.warning(
+          "[Brain] Hologram init failed: #{inspect(reason)} — retrying in #{@retry_delay}ms"
+        )
+
+        Process.send_after(self(), :init_hologram, @retry_delay)
+        {:noreply, state}
+    end
   end
 
   # ── Trace Recording ─────────────────────────────────────────────────
