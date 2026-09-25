@@ -18,6 +18,12 @@ defmodule Kudzu.Constitution.Distilled do
   the legacy 2-tuple `{verb, params}` shape (preserved for backward compat)
   falls through to the tier-1 advisory behavior described below.
 
+  The proposal `vector` MUST be produced by `Kudzu.Constitution.Vectors`
+  (e.g. `Vectors.encode_text(proposal_text)`): Stages 1–3 encode each
+  silo triple in that same basis, and vectors from any other encoder
+  are unrelated to it (similarity ≈ 0), which silently disables those
+  stages.
+
   The 5 stages, in order, for `{:propose, _}`:
 
   - **Stage 1 — Fast rejection check.** If the proposal's vector has
@@ -226,9 +232,9 @@ defmodule Kudzu.Constitution.Distilled do
   @typedoc """
   Runtime configuration for the 5-stage `permitted?/2` pipeline.
 
-  All keys are optional; defaults are baked in. Bootstrap values are
-  τ_R = 0.75, τ_A = 1.0, τ_C = 0.65 (spec decision #11; the calibration
-  sweep in Phase 5 refines these).
+  All keys are optional; defaults are baked in: τ_R = 0.28, τ_A = 1.0,
+  τ_C = 0.65 (spec decision #11 set τ_R = 0.75 before proposals and
+  silo triples shared a vector basis; see `@default_tau_r`).
   """
   @type stage_config :: %{
           optional(:rejection_silo) => String.t(),
@@ -239,7 +245,15 @@ defmodule Kudzu.Constitution.Distilled do
           optional(:judge) => module() | (map() -> {:ok, term()} | {:error, term()})
         }
 
-  @default_tau_r 0.75
+  # τ_R is a threshold on Kudzu.Constitution.Vectors similarity (normalized
+  # token overlap). Measured on the calibration set against the 30 tyranny
+  # artifacts (2026-09-25): :retards rows score 0.17–0.65, :advances and
+  # :ambiguous rows at most 0.25, unrelated text ~0.05–0.15. 0.28 catches
+  # 5/8 :retards rows by lexical overlap alone with no false positives; the
+  # remaining :retards rows share too little vocabulary with any artifact
+  # and fall through to the AI Judge (which fails closed when unavailable).
+  # The former 0.75 was unreachable for anything but verbatim text.
+  @default_tau_r 0.28
   @default_tau_a 1.0
   @default_tau_c 0.65
   @default_rejection_silo "rejection:us_constitution_mesh"
@@ -259,9 +273,11 @@ defmodule Kudzu.Constitution.Distilled do
   Returns `{:denied, citation, principle, reason}` when the highest
   similarity strictly exceeds τ_R; otherwise `:no_match`.
 
-  The vector lookup pulls `:vector` from each trace's
-  `reconstruction_hint` (the field that `Kudzu.Silo.store_relationship/3`
-  writes); traces without a stored vector are skipped.
+  Each trace's `{subject, relation, object}` triple is encoded with
+  `Kudzu.Constitution.Vectors` (the basis the proposal vector must also
+  come from); traces that are not triples are skipped. The hint's
+  stored `:vector` is a `Silo.Relationship` binding in a different
+  basis and is deliberately not used.
   """
   @spec stage1_rejection_check(Kudzu.HRR.vector(), stage_config()) ::
           :no_match | {:denied, String.t(), String.t(), String.t()}
@@ -354,7 +370,7 @@ defmodule Kudzu.Constitution.Distilled do
     do: best_silo_match(vector, silo_domain)
 
   # Shared scan: list traces in the silo, score each against `vector`,
-  # drop traces without a stored `:vector`. Used by `best_silo_match/2`
+  # drop traces that are not subject/relation/object triples. Used by `best_silo_match/2`
   # (which picks the max) and `nearest_triples/3` (which sorts and
   # takes the top N). Returns `[{similarity, hint}]`.
   @spec silo_scored_traces(String.t(), Kudzu.HRR.vector()) :: [{float(), map()}]
@@ -365,23 +381,18 @@ defmodule Kudzu.Constitution.Distilled do
     |> Enum.reject(&is_nil/1)
   end
 
+  # The triple is re-encoded with Kudzu.Constitution.Vectors -- the same
+  # basis proposals must use -- rather than read from the hint's stored
+  # :vector, which is a Silo.Relationship binding in an unrelated basis.
   @spec score_trace(Kudzu.Trace.t(), Kudzu.HRR.vector()) :: nil | {float(), map()}
   defp score_trace(%Trace{reconstruction_hint: hint}, vector) when is_map(hint) do
-    case stored_vector(hint) do
+    case Kudzu.Constitution.Vectors.encode_hint(hint) do
       nil -> nil
-      stored_v -> {Kudzu.HRR.similarity(vector, stored_v), hint}
+      triple_v -> {Kudzu.HRR.similarity(vector, triple_v), hint}
     end
   end
 
   defp score_trace(_, _), do: nil
-
-  @spec stored_vector(map()) :: Kudzu.HRR.vector() | nil
-  defp stored_vector(hint) do
-    case Map.get(hint, :vector, Map.get(hint, "vector")) do
-      v when is_list(v) -> v
-      _ -> nil
-    end
-  end
 
   @spec get_hint(map(), atom(), String.t()) :: String.t()
   defp get_hint(hint, key, default) do
@@ -703,7 +714,9 @@ defmodule Kudzu.Constitution.Distilled do
   @doc """
   AGI self-conversation brake. Reuses the same 5-stage pipeline that
   serves citizen-facing `permitted?/2`. The AGI's next-thought vector is
-  the proposal vector; the brake decides whether the loop may continue.
+  the proposal vector — it must be encoded with
+  `Kudzu.Constitution.Vectors.encode_text/1`, like any proposal — and
+  the brake decides whether the loop may continue.
 
   Returns the same decision type as `permitted?/2`.
   `Kudzu.Brain.SelfConverse` interprets the decision per Flow D:

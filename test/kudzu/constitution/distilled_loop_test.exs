@@ -4,6 +4,7 @@ defmodule Kudzu.Constitution.DistilledLoopTest do
   use ExUnit.Case, async: false
 
   alias Kudzu.Constitution.Distilled
+  alias Kudzu.Constitution.Vectors
   alias Kudzu.Constitution.WeightLedger
 
   describe "loop_permitted?/3 — AGI brake" do
@@ -24,7 +25,8 @@ defmodule Kudzu.Constitution.DistilledLoopTest do
         }
       )
 
-      config = %{rejection_silo: rejection, tau_r: 0.3, tau_a: 1.0, tau_c: 0.65}
+      # tau_r / tau_a: module defaults.
+      config = %{rejection_silo: rejection, tau_c: 0.65}
 
       distilled = %Distilled{
         name: :test,
@@ -39,23 +41,19 @@ defmodule Kudzu.Constitution.DistilledLoopTest do
       %{state: state}
     end
 
-    # NOTE: The plan literal uses Kudzu.HRR.seeded_vector to build the proposal
-    # vector, but seeded_vector outputs are orthogonal to Relationship.encode
-    # outputs (similarity ~0). Re-encoding the surveillance triple the same
-    # way the silo stored it is the only way to make Stage 1 trigger above
-    # tau_r=0.3. Convention matches distilled_5stage_test.exs.
+    # Thought vectors are encoded with Kudzu.Constitution.Vectors -- the basis
+    # Stage 1 uses for silo triples -- so a paraphrase of a rejection triple
+    # is caught by Stage 1 without consulting the judge.
     test "AGI thought about warrantless surveillance gets denied via Stage 1", %{state: state} do
-      v =
-        Kudzu.Silo.Relationship.encode(
-          {"historical_act", "retards", "compelled bulk surveillance"}
-        )
+      v = Vectors.encode_text("bulk surveillance of every citizen")
+      state = put_in(state, [:config, :judge], fn _ -> flunk("AI Judge was called") end)
 
-      result = Distilled.loop_permitted?(state, v, 0)
-      assert match?({:denied, _, _, _}, result)
+      assert {:denied, "USA PATRIOT Act §215", "freedom_from_unreasonable_search", _} =
+               Distilled.loop_permitted?(state, v, 0)
     end
 
     test "innocuous thought is permitted when the judge advances it", %{state: state} do
-      v = Kudzu.HRR.seeded_vector("compute the value of x squared", Kudzu.HRR.default_dim())
+      v = Vectors.encode_text("compute the value of x squared")
       judge = fn _ -> {:ok, {:advances, 0.95, "general", "harmless arithmetic", []}} end
       state = put_in(state, [:config, :judge], judge)
       assert Distilled.loop_permitted?(state, v, 0) == :permitted
@@ -63,7 +61,7 @@ defmodule Kudzu.Constitution.DistilledLoopTest do
 
     test "innocuous thought is denied fail-closed when no judge is configured",
          %{state: state} do
-      v = Kudzu.HRR.seeded_vector("compute the value of x squared", Kudzu.HRR.default_dim())
+      v = Vectors.encode_text("compute the value of x squared")
       state = put_in(state, [:config, :judge], fn _ -> {:error, :missing_api_key} end)
 
       assert {:denied, "fail_closed:judge_not_configured", _, _} =
@@ -71,7 +69,7 @@ defmodule Kudzu.Constitution.DistilledLoopTest do
     end
 
     test "depth ceiling: returns :denied at depth > max", %{state: state} do
-      v = Kudzu.HRR.seeded_vector("innocuous", Kudzu.HRR.default_dim())
+      v = Vectors.encode_text("innocuous")
       result = Distilled.loop_permitted?(state, v, 99)
       assert match?({:denied, _, _, _}, result)
     end

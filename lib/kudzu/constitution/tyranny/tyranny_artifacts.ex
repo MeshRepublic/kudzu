@@ -15,10 +15,13 @@ defmodule Kudzu.Constitution.Tyranny.TyrannyArtifacts do
        provenance (`:origin_type => :tyranny_artifact`, citation, year,
        principle, source URL, rejection reason).
 
-  The HRR vector bound by `store_relationship/3` is what generalizes —
-  the principle-general description vectorizes to a region of HRR
-  space that future text whose vector lies nearby will register as
-  related, even when the statute name has changed.
+  What generalizes is the description's *vocabulary*: Stage 1 of
+  `Kudzu.Constitution.Distilled` encodes each stored triple with
+  `Kudzu.Constitution.Vectors` (token-bundle basis), so future proposal
+  text that shares the principle-general wording scores near it even when
+  the statute name has changed. (The `:vector` that `store_relationship/3`
+  binds is a whole-string hash used by `Silo.probe/2`; it does not
+  generalize and is not used for constitutional comparison.)
 
   ## Idempotency
 

@@ -5,6 +5,7 @@ defmodule Kudzu.Constitution.Distilled5StageTest do
   use ExUnit.Case, async: false
 
   alias Kudzu.Constitution.Distilled
+  alias Kudzu.Constitution.Vectors
   alias Kudzu.Constitution.WeightLedger
 
   describe "permitted?/2 — 5-stage extension" do
@@ -41,7 +42,6 @@ defmodule Kudzu.Constitution.Distilled5StageTest do
       config = %{
         rejection_silo: rejection,
         expertise_silo: expertise,
-        tau_r: 0.4,
         tau_a: 1.0,
         tau_c: 0.65
       }
@@ -65,18 +65,15 @@ defmodule Kudzu.Constitution.Distilled5StageTest do
         {:propose,
          %{
            subject: "speech_restriction",
-           vector:
-             Kudzu.HRR.seeded_vector(
-               "criminalization of dissident speech",
-               Kudzu.HRR.default_dim()
-             ),
+           vector: Vectors.encode_text("state criminalization of compelled speech"),
            principle: "free_speech"
          }}
 
+      # The judge must never be consulted: Stage 1 alone has to deny.
+      state = put_in(state, [:config, :judge], fn _ -> flunk("AI Judge was called") end)
       result = Distilled.permitted?(action, state)
 
-      assert match?({:denied, _, _, _}, result) or result == :permitted or
-               match?({:permitted_with_weight, _, _, _, _}, result)
+      assert {:denied, "Sedition Act of 1798", "free_speech", _} = result
     end
 
     test "off-corpus topic with no judge configured is denied fail-closed", %{state: state} do
@@ -84,11 +81,7 @@ defmodule Kudzu.Constitution.Distilled5StageTest do
         {:propose,
          %{
            subject: "state_bird_designation",
-           vector:
-             Kudzu.HRR.seeded_vector(
-               "state bird designation",
-               Kudzu.HRR.default_dim()
-             ),
+           vector: Vectors.encode_text("state bird designation"),
            principle: "self_governance"
          }}
 
@@ -105,7 +98,7 @@ defmodule Kudzu.Constitution.Distilled5StageTest do
       # [-1.0, 1.0]) so that any rejection-silo match triggers denial.
       # The proposal vector is rebuilt from the same triple stored in
       # the rejection silo, so similarity is ~1.0 — denial is
-      # guaranteed regardless of any seeded_vector noise.
+      # guaranteed regardless of token-vector noise.
       tight_config = Map.put(config, :tau_r, -1.0)
 
       state = %{
@@ -120,9 +113,7 @@ defmodule Kudzu.Constitution.Distilled5StageTest do
       }
 
       proposal_vector =
-        Kudzu.Silo.Relationship.encode(
-          {"historical_act", "retards", "compelled speech criminalization"}
-        )
+        Vectors.encode_triple({"historical_act", "retards", "compelled speech criminalization"})
 
       action =
         {:propose,

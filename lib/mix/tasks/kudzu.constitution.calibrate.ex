@@ -33,7 +33,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Calibrate do
   ## Configuration
 
   Each row is currently evaluated with an empty `config` map, so all
-  stages use the module defaults (`tau_r=0.75`, `tau_a=1.0`,
+  stages use the module defaults (`tau_r=0.28`, `tau_a=1.0`,
   `tau_c=0.65`). Threshold sweeps, reliability diagrams, and
   per-principle breakdowns are deferred to a follow-up task.
 
@@ -45,8 +45,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Calibrate do
   """
   use Mix.Task
 
-  alias Kudzu.Constitution.Distilled
-  alias Kudzu.HRR
+  alias Kudzu.Constitution.{Distilled, Vectors}
 
   @classes [:advances, :retards, :ambiguous]
   @fp_threshold 0.05
@@ -213,7 +212,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Calibrate do
     principle = entry["expected_principle"]
     expected = safe_judgment(entry["expected_judgment"])
 
-    vector = HRR.seeded_vector(proposal_text, HRR.default_dim())
+    vector = Vectors.encode_text(proposal_text)
 
     action = {:propose, %{vector: vector, principle: principle, proposal_text: proposal_text}}
 

@@ -32,8 +32,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Demo do
   use Mix.Task
 
   alias Kudzu.Constitution.Distilled
-  alias Kudzu.Constitution.WeightLedger
-  alias Kudzu.HRR
+  alias Kudzu.Constitution.{Vectors, WeightLedger}
 
   @impl Mix.Task
   def run(argv) do
@@ -69,7 +68,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Demo do
 
   * `:id` — 1..12
   * `:title` — human-readable label
-  * `:proposal_text` — the proposal text fed to `seeded_vector/2`
+  * `:proposal_text` — the proposal text fed to `Kudzu.Constitution.Vectors.encode_text/1`
   * `:expected_stage` — which stage of the pipeline is expected to fire
     (informational; the pipeline's actual decision is what gets printed)
   * `:expected_principle` — bucket name passed to Stages 2/5 and WeightLedger
@@ -196,7 +195,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Demo do
   end
 
   defp run_proposal(scenario, opts) do
-    vector = HRR.seeded_vector(scenario.proposal_text, HRR.default_dim())
+    vector = Vectors.encode_text(scenario.proposal_text)
 
     action =
       {:propose,
@@ -216,7 +215,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Demo do
   end
 
   defp run_vote(scenario) do
-    vector = HRR.seeded_vector(scenario.proposal_text, HRR.default_dim())
+    vector = Vectors.encode_text(scenario.proposal_text)
     proposal_id = "demo-scenario-#{scenario.id}-#{System.unique_integer([:positive])}"
 
     :ok =
@@ -237,7 +236,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Demo do
   end
 
   defp run_agi_brake(scenario) do
-    vector = HRR.seeded_vector(scenario.proposal_text, HRR.default_dim())
+    vector = Vectors.encode_text(scenario.proposal_text)
     state = %{config: %{}, distilled: blank_distilled()}
     result = Distilled.loop_permitted?(state, vector, 0)
     IO.puts("   brake result:    #{inspect(result)}")

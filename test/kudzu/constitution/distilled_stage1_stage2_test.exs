@@ -6,6 +6,7 @@ defmodule Kudzu.Constitution.DistilledStage1Stage2Test do
   use ExUnit.Case, async: false
 
   alias Kudzu.Constitution.Distilled
+  alias Kudzu.Constitution.Vectors
   alias Kudzu.Constitution.WeightLedger
 
   describe "Stage 1 - rejection silo fast path" do
@@ -29,32 +30,25 @@ defmodule Kudzu.Constitution.DistilledStage1Stage2Test do
       %{rejection_silo: rejection}
     end
 
-    test "stage1_rejection_check/2 detects similar concepts (or returns :no_match)",
+    test "stage1_rejection_check/2 denies a paraphrase of a rejection triple",
          %{rejection_silo: r} do
-      v =
-        Kudzu.HRR.seeded_vector(
-          "warrantless surveillance of citizens",
-          Kudzu.HRR.default_dim()
-        )
+      v = Vectors.encode_text("bulk surveillance of private communications")
 
-      result = Distilled.stage1_rejection_check(v, %{rejection_silo: r, tau_r: 0.3})
-      assert match?({:denied, _, _, _}, result) or result == :no_match
+      assert {:denied, "USA PATRIOT Act §215", "freedom_from_unreasonable_search", _} =
+               Distilled.stage1_rejection_check(v, %{rejection_silo: r, tau_r: 0.3})
     end
 
     test "stage1_rejection_check/2 returns :no_match for unrelated concepts at high tau_r",
          %{rejection_silo: r} do
       v =
-        Kudzu.HRR.seeded_vector(
-          "road maintenance subscription",
-          Kudzu.HRR.default_dim()
-        )
+        Vectors.encode_text("road maintenance subscription")
 
       assert Distilled.stage1_rejection_check(v, %{rejection_silo: r, tau_r: 0.9}) ==
                :no_match
     end
 
     test "stage1_rejection_check/2 returns :no_match when rejection silo doesn't exist" do
-      v = Kudzu.HRR.seeded_vector("anything", Kudzu.HRR.default_dim())
+      v = Vectors.encode_text("anything")
 
       assert Distilled.stage1_rejection_check(v, %{
                rejection_silo: "no_such_silo_at_all",
@@ -70,7 +64,7 @@ defmodule Kudzu.Constitution.DistilledStage1Stage2Test do
     end
 
     test "no accumulation: returns :no_match" do
-      v = Kudzu.HRR.seeded_vector("topic", Kudzu.HRR.default_dim())
+      v = Vectors.encode_text("topic")
 
       result =
         Distilled.stage2_accumulation_check(v, "free_speech", %{
@@ -83,10 +77,10 @@ defmodule Kudzu.Constitution.DistilledStage1Stage2Test do
     end
 
     test "accumulation below tau_a: returns :no_match" do
-      v1 = Kudzu.HRR.seeded_vector("speech_x", Kudzu.HRR.default_dim())
+      v1 = Vectors.encode_text("speech_x")
       :ok = WeightLedger.record("p_x", v1, 0.2, "free_speech", :yes_with_weight)
 
-      probe = Kudzu.HRR.seeded_vector("speech_probe", Kudzu.HRR.default_dim())
+      probe = Vectors.encode_text("speech_probe")
 
       result =
         Distilled.stage2_accumulation_check(probe, "free_speech", %{
@@ -99,8 +93,8 @@ defmodule Kudzu.Constitution.DistilledStage1Stage2Test do
     end
 
     test "accumulated above tau_a + tau_r triggers denied_by_accumulation (or :no_match)" do
-      v1 = Kudzu.HRR.seeded_vector("speech_restriction_a", Kudzu.HRR.default_dim())
-      v2 = Kudzu.HRR.seeded_vector("speech_restriction_b", Kudzu.HRR.default_dim())
+      v1 = Vectors.encode_text("speech_restriction_a")
+      v2 = Vectors.encode_text("speech_restriction_b")
 
       :ok = WeightLedger.record("p_a", v1, 0.6, "free_speech", :yes_with_weight)
       :ok = WeightLedger.record("p_b", v2, 0.5, "free_speech", :yes_with_weight)
@@ -115,7 +109,7 @@ defmodule Kudzu.Constitution.DistilledStage1Stage2Test do
         %{}
       )
 
-      probe = Kudzu.HRR.seeded_vector("speech_restriction_c", Kudzu.HRR.default_dim())
+      probe = Vectors.encode_text("speech_restriction_c")
 
       # τ_a = 1.0; we have 0.6 + 0.5 = 1.1 > 1.0. τ_r = 0.0 so any
       # similarity will exceed it (provided the silo has a vectorized entry).
@@ -126,12 +120,13 @@ defmodule Kudzu.Constitution.DistilledStage1Stage2Test do
           %{tau_r: 0.0, tau_a: 1.0, rejection_silo: rejection}
         )
 
-      assert match?({:denied_by_accumulation, _, _}, result) or result == :no_match
+      assert {:denied_by_accumulation, stack, "free_speech"} = result
+      assert Enum.sort(stack) == ["p_a", "p_b"]
     end
 
     test "denied_by_accumulation payload includes principle and proposal_id stack" do
-      v1 = Kudzu.HRR.seeded_vector("speech_a", Kudzu.HRR.default_dim())
-      v2 = Kudzu.HRR.seeded_vector("speech_b", Kudzu.HRR.default_dim())
+      v1 = Vectors.encode_text("speech_a")
+      v2 = Vectors.encode_text("speech_b")
       :ok = WeightLedger.record("stack_a", v1, 0.7, "free_speech", :yes_with_weight)
       :ok = WeightLedger.record("stack_b", v2, 0.5, "free_speech", :yes_with_weight)
 
@@ -145,25 +140,17 @@ defmodule Kudzu.Constitution.DistilledStage1Stage2Test do
         %{}
       )
 
-      probe = Kudzu.HRR.seeded_vector("probe_concept", Kudzu.HRR.default_dim())
+      probe = Vectors.encode_text("probe_concept")
 
-      case Distilled.stage2_accumulation_check(probe, "free_speech", %{
-             tau_r: -1.0,
-             tau_a: 1.0,
-             rejection_silo: rejection
-           }) do
-        {:denied_by_accumulation, stack, principle} ->
-          assert principle == "free_speech"
-          assert is_list(stack)
-          assert Enum.sort(stack) == Enum.sort(["stack_a", "stack_b"])
+      # tau_r = -1.0: any real similarity exceeds it, so accumulation denies.
+      assert {:denied_by_accumulation, stack, "free_speech"} =
+               Distilled.stage2_accumulation_check(probe, "free_speech", %{
+                 tau_r: -1.0,
+                 tau_a: 1.0,
+                 rejection_silo: rejection
+               })
 
-        :no_match ->
-          # Tolerated: if the silo's stored vector somehow yields a
-          # similarity that fails to exceed even tau_r = -1.0 (impossible
-          # for a real similarity in [-1,1], so this branch is defensive),
-          # the test still allows it.
-          :ok
-      end
+      assert Enum.sort(stack) == ["stack_a", "stack_b"]
     end
   end
 end

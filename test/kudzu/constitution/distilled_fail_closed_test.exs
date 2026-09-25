@@ -8,6 +8,7 @@ defmodule Kudzu.Constitution.DistilledFailClosedTest do
   use ExUnit.Case, async: false
 
   alias Kudzu.Constitution.{Distilled, WeightLedger}
+  alias Kudzu.Constitution.Vectors
 
   setup do
     :ok = WeightLedger.clear_for_test()
@@ -27,8 +28,7 @@ defmodule Kudzu.Constitution.DistilledFailClosedTest do
     action =
       {:propose,
        %{
-         vector:
-           Kudzu.HRR.seeded_vector("designate an official state bird", Kudzu.HRR.default_dim()),
+         vector: Vectors.encode_text("designate an official state bird"),
          principle: "self_governance",
          proposal_text: "designate an official state bird"
        }}
