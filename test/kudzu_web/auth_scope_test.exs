@@ -54,6 +54,20 @@ defmodule KudzuWeb.AuthScopeTest do
     KudzuWeb.Router.call(conn, KudzuWeb.Router.init([]))
   end
 
+  # Side-effect checks look for a uniquely named hologram rather than
+  # comparing global counts, which other async test modules change.
+  defp unique_purpose, do: "auth_scope_#{System.unique_integer([:positive])}"
+
+  defp hologram_with_purpose?(purpose) do
+    Enum.any?(Kudzu.Application.list_holograms(), fn pid ->
+      try do
+        to_string(Kudzu.Hologram.get_state(pid).purpose) == purpose
+      catch
+        :exit, _ -> false
+      end
+    end)
+  end
+
   defp mutating_tools do
     Controller.tool_names() |> Enum.filter(&(Controller.required_scope(&1) == :mutate))
   end
@@ -98,10 +112,10 @@ defmodule KudzuWeb.AuthScopeTest do
     end
 
     test "unauthenticated tool call does not execute the tool" do
-      before = length(Kudzu.Application.list_holograms())
-      {status, _} = call_tool("kudzu_create_hologram", nil, %{"purpose" => "should_not_exist"})
+      purpose = unique_purpose()
+      {status, _} = call_tool("kudzu_create_hologram", nil, %{"purpose" => purpose})
       assert status == 401
-      assert length(Kudzu.Application.list_holograms()) == before
+      refute hologram_with_purpose?(purpose)
     end
 
     test "read key can call a read tool" do
@@ -127,10 +141,10 @@ defmodule KudzuWeb.AuthScopeTest do
     end
 
     test "a refused mutating call has no side effect" do
-      before = length(Kudzu.Application.list_holograms())
-      {200, body} = call_tool("kudzu_create_hologram", @read_key, %{"purpose" => "nope"})
+      purpose = unique_purpose()
+      {200, body} = call_tool("kudzu_create_hologram", @read_key, %{"purpose" => purpose})
       assert body["error"]["code"] == -32_003
-      assert length(Kudzu.Application.list_holograms()) == before
+      refute hologram_with_purpose?(purpose)
     end
 
     test "batched requests are scope-checked per item" do
