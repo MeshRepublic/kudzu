@@ -12,16 +12,17 @@ defmodule KudzuWeb.MCP.IntegrationTest do
            "protocolVersion" => "2025-03-26",
            "capabilities" => %{},
            "clientInfo" => %{"name" => "test", "version" => "1.0"}
-         }}
+         }},
+        :mutate
       )
 
     assert init_resp["result"]["serverInfo"]["name"] == "kudzu"
 
     # 2. Initialized notification
-    assert :accepted = Controller.dispatch({:notification, "initialized", %{}})
+    assert :accepted = Controller.dispatch({:notification, "initialized", %{}}, :mutate)
 
     # 3. List tools
-    {:response, tools_resp} = Controller.dispatch({:request, "2", "tools/list", %{}})
+    {:response, tools_resp} = Controller.dispatch({:request, "2", "tools/list", %{}}, :mutate)
     tools = tools_resp["result"]["tools"]
     assert length(tools) > 40
     names = Enum.map(tools, & &1["name"])
@@ -31,7 +32,8 @@ defmodule KudzuWeb.MCP.IntegrationTest do
     # 4. Call health tool
     {:response, health_resp} =
       Controller.dispatch(
-        {:request, "3", "tools/call", %{"name" => "kudzu_health", "arguments" => %{}}}
+        {:request, "3", "tools/call", %{"name" => "kudzu_health", "arguments" => %{}}},
+        :mutate
       )
 
     [content | _] = health_resp["result"]["content"]
@@ -46,7 +48,8 @@ defmodule KudzuWeb.MCP.IntegrationTest do
          %{
            "name" => "kudzu_create_agent",
            "arguments" => %{"name" => "mcp_test_agent"}
-         }}
+         }},
+        :mutate
       )
 
     [c | _] = create_resp["result"]["content"]
@@ -60,7 +63,8 @@ defmodule KudzuWeb.MCP.IntegrationTest do
          %{
            "name" => "kudzu_agent_remember",
            "arguments" => %{"name" => "mcp_test_agent", "content" => "MCP integration works"}
-         }}
+         }},
+        :mutate
       )
 
     # 7. Recall
@@ -70,7 +74,8 @@ defmodule KudzuWeb.MCP.IntegrationTest do
          %{
            "name" => "kudzu_agent_recall",
            "arguments" => %{"name" => "mcp_test_agent"}
-         }}
+         }},
+        :mutate
       )
 
     [rc | _] = recall_resp["result"]["content"]
@@ -83,7 +88,8 @@ defmodule KudzuWeb.MCP.IntegrationTest do
        %{
          "name" => "kudzu_delete_agent",
          "arguments" => %{"name" => "mcp_test_agent"}
-       }}
+       }},
+      :mutate
     )
   end
 end

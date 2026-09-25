@@ -35,12 +35,10 @@ config :kudzu, KudzuWeb.MCP.Endpoint,
   pubsub_server: Kudzu.PubSub
 
 # API authentication
-# IMPORTANT: api_keys is populated at runtime from KUDZU_API_KEY in config/runtime.exs.
-# The compile-time default below is `nil` so the app refuses to start if runtime.exs
-# fails to set it. NEVER add a hardcoded fallback key here.
-config :kudzu, :api_auth,
-  enabled: true,
-  api_keys: nil
+# IMPORTANT: keys are populated at runtime from KUDZU_API_KEY / KUDZU_API_READ_KEY
+# in config/runtime.exs. The compile-time default below is `nil`, so with no
+# runtime keys every request is rejected. NEVER add a hardcoded fallback key here.
+config :kudzu, :api_auth, keys: nil
 
 # CORS allowed origins (use specific origins in production)
 config :kudzu, :cors_origins, ["*"]

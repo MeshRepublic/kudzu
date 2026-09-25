@@ -587,14 +587,13 @@ defmodule KudzuWeb.MCP.Tools do
     %{
       name: "kudzu_brain_chat",
       description:
-        "Send a message to the Kudzu Brain for three-tier reasoning. The brain processes your message through reflexes, silo inference, and Claude API (if needed). All interactions are recorded as traces. Requires KUDZU_API_KEY.",
+        "Send a message to the Kudzu Brain for three-tier reasoning. The brain processes your message through reflexes, silo inference, and Claude API (if needed). All interactions are recorded as traces. Requires a mutate-scoped API key.",
       inputSchema: %{
         type: "object",
         properties: %{
-          message: %{type: "string", description: "The message to send to the brain"},
-          api_key: %{type: "string", description: "KUDZU_API_KEY for authentication"}
+          message: %{type: "string", description: "The message to send to the brain"}
         },
-        required: ["message", "api_key"]
+        required: ["message"]
       }
     },
     %{

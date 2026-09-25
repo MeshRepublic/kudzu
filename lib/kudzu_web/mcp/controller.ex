@@ -1,7 +1,16 @@
 defmodule KudzuWeb.MCP.Controller do
-  @moduledoc "MCP JSON-RPC 2.0 dispatch controller."
+  @moduledoc """
+  MCP JSON-RPC 2.0 dispatch controller.
+
+  Every dispatch carries the caller's API key scope (`:read` or `:mutate`,
+  see `KudzuWeb.Plugs.APIAuth`). Tools are default-deny: only tools listed
+  in `@read_tools` may be called with a read key; every other tool —
+  including any tool added in future without updating this list —
+  requires `:mutate`. `tools/list` only advertises tools the caller may call.
+  """
 
   alias KudzuWeb.MCP.{Protocol, Tools}
+  alias KudzuWeb.Plugs.APIAuth
 
   alias KudzuWeb.MCP.Handlers.{
     Agent,
@@ -87,9 +96,56 @@ defmodule KudzuWeb.MCP.Controller do
     "kudzu_web_read" => Web
   }
 
+  # Tools a read-scoped key may call: list / get / check operations with no
+  # state change, no LLM spend, and no outbound network access.
+  @read_tools MapSet.new([
+                "kudzu_health",
+                "kudzu_list_holograms",
+                "kudzu_get_hologram",
+                "kudzu_hologram_traces",
+                "kudzu_hologram_peers",
+                "kudzu_get_hologram_constitution",
+                "kudzu_get_hologram_desires",
+                "kudzu_list_traces",
+                "kudzu_get_trace",
+                "kudzu_get_agent",
+                "kudzu_agent_recall",
+                "kudzu_agent_desires",
+                "kudzu_agent_peers",
+                "kudzu_list_constitutions",
+                "kudzu_get_constitution_details",
+                "kudzu_check_constitution",
+                "kudzu_cluster_status",
+                "kudzu_cluster_nodes",
+                "kudzu_cluster_stats",
+                "kudzu_node_status",
+                "kudzu_mesh_peers",
+                "kudzu_node_capabilities",
+                "kudzu_list_beamlets",
+                "kudzu_get_beamlet",
+                "kudzu_find_beamlets",
+                "kudzu_semantic_recall",
+                "kudzu_associations",
+                "kudzu_vocabulary",
+                "kudzu_encoder_stats",
+                "kudzu_brain_status"
+              ])
+
+  @forbidden_code -32_003
+
   # --- Public API ---
 
-  def dispatch({:request, id, "initialize", params}) do
+  @doc "All tool names this server can dispatch."
+  @spec tool_names() :: [String.t()]
+  def tool_names, do: Map.keys(@handler_map)
+
+  @doc "Scope required to call `tool_name`. Unknown and unlisted tools require `:mutate`."
+  @spec required_scope(String.t()) :: KudzuWeb.Plugs.APIAuth.scope()
+  def required_scope(tool_name) do
+    if MapSet.member?(@read_tools, tool_name), do: :read, else: :mutate
+  end
+
+  def dispatch({:request, id, "initialize", params}, _scope) do
     result = %{
       "protocolVersion" => Map.get(params, "protocolVersion", @protocol_version),
       "capabilities" => @capabilities,
@@ -99,13 +155,14 @@ defmodule KudzuWeb.MCP.Controller do
     {:response, Protocol.encode_response(id, result)}
   end
 
-  def dispatch({:request, id, "ping", _params}) do
+  def dispatch({:request, id, "ping", _params}, _scope) do
     {:response, Protocol.encode_response(id, %{})}
   end
 
-  def dispatch({:request, id, "tools/list", _params}) do
+  def dispatch({:request, id, "tools/list", _params}, scope) do
     tools =
       Tools.list()
+      |> Enum.filter(&APIAuth.permits?(scope, required_scope(&1.name)))
       |> Enum.map(fn t ->
         %{"name" => t.name, "description" => t.description, "inputSchema" => t.inputSchema}
       end)
@@ -113,12 +170,21 @@ defmodule KudzuWeb.MCP.Controller do
     {:response, Protocol.encode_response(id, %{"tools" => tools})}
   end
 
-  def dispatch({:request, id, "tools/call", %{"name" => tool_name} = params}) do
+  def dispatch({:request, id, "tools/call", %{"name" => tool_name} = params}, scope) do
     arguments = Map.get(params, "arguments", %{})
+    required = required_scope(tool_name)
 
     case Map.get(@handler_map, tool_name) do
       nil ->
         {:response, Protocol.encode_error(id, -32_602, "Unknown tool: #{tool_name}")}
+
+      _handler when required == :mutate and scope != :mutate ->
+        {:response,
+         Protocol.encode_error(
+           id,
+           @forbidden_code,
+           "Forbidden: #{tool_name} requires mutate scope; this API key is #{scope}-only"
+         )}
 
       handler ->
         try do
@@ -149,24 +215,24 @@ defmodule KudzuWeb.MCP.Controller do
     end
   end
 
-  def dispatch({:request, id, method, _params}) do
+  def dispatch({:request, id, method, _params}, _scope) do
     {:response, Protocol.encode_error(id, -32_601, "Method not found: #{method}")}
   end
 
-  def dispatch({:notification, "initialized", _params}) do
+  def dispatch({:notification, "initialized", _params}, _scope) do
     :accepted
   end
 
-  def dispatch({:notification, "notifications/cancelled", _params}) do
+  def dispatch({:notification, "notifications/cancelled", _params}, _scope) do
     :accepted
   end
 
-  def dispatch({:notification, _method, _params}) do
+  def dispatch({:notification, _method, _params}, _scope) do
     :accepted
   end
 
-  def dispatch({:batch, items}) do
-    results = Enum.map(items, &dispatch/1)
+  def dispatch({:batch, items}, scope) do
+    results = Enum.map(items, &dispatch(&1, scope))
 
     responses =
       Enum.filter(results, fn

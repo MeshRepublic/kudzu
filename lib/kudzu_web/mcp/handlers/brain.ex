@@ -1,20 +1,12 @@
 defmodule KudzuWeb.MCP.Handlers.Brain do
   @moduledoc "MCP handler for Brain chat and status tools."
 
-  def handle("kudzu_brain_chat", %{"message" => message} = args) do
-    api_key = Map.get(args, "api_key", "")
-
-    configured_keys =
-      Application.get_env(:kudzu, :api_auth, [])
-      |> Keyword.get(:api_keys, [])
-
-    if api_key in configured_keys do
-      case Kudzu.Brain.chat(message) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> {:error, -32_603, inspect(reason)}
-      end
-    else
-      {:error, -32_602, "Invalid or missing api_key"}
+  # Authentication and scope (mutate) are enforced at the HTTP layer by
+  # KudzuWeb.MCP.Router / Controller; any legacy "api_key" argument is ignored.
+  def handle("kudzu_brain_chat", %{"message" => message}) do
+    case Kudzu.Brain.chat(message) do
+      {:ok, result} -> {:ok, result}
+      {:error, reason} -> {:error, -32_603, inspect(reason)}
     end
   end
 

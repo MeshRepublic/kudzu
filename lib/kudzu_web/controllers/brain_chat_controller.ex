@@ -16,6 +16,8 @@ defmodule KudzuWeb.BrainChatController do
   import Plug.Conn
   require Logger
 
+  alias KudzuWeb.Plugs.APIAuth
+
   @doc """
   POST /brain/chat
 
@@ -29,8 +31,9 @@ defmodule KudzuWeb.BrainChatController do
     event: error      data: {"error": "timeout"}
   """
   def chat(conn, %{"message" => message}) do
-    case authenticate(conn) do
-      :ok ->
+    # Chat mutates state (records traces, spends LLM budget): mutate key.
+    case APIAuth.authorize(conn, :mutate) do
+      {:ok, _scope} ->
         conn =
           conn
           |> put_resp_header("content-type", "text/event-stream")
@@ -41,10 +44,10 @@ defmodule KudzuWeb.BrainChatController do
         Kudzu.Brain.chat_stream(message, self())
         stream_loop(conn)
 
-      {:error, reason} ->
+      {:error, status, reason} ->
         conn
         |> put_resp_content_type("application/json")
-        |> send_resp(401, Jason.encode!(%{error: reason}))
+        |> send_resp(status, Jason.encode!(%{error: reason}))
     end
   end
 
@@ -61,8 +64,8 @@ defmodule KudzuWeb.BrainChatController do
     {"status": "sleeping", "cycle_count": 42, "hologram_id": "...", ...}
   """
   def status(conn, _params) do
-    case authenticate(conn) do
-      :ok ->
+    case APIAuth.authorize(conn, :read) do
+      {:ok, _scope} ->
         state = Kudzu.Brain.get_state()
 
         result = %{
@@ -80,10 +83,10 @@ defmodule KudzuWeb.BrainChatController do
         |> put_resp_content_type("application/json")
         |> send_resp(200, Jason.encode!(result))
 
-      {:error, reason} ->
+      {:error, status, reason} ->
         conn
         |> put_resp_content_type("application/json")
-        |> send_resp(401, Jason.encode!(%{error: reason}))
+        |> send_resp(status, Jason.encode!(%{error: reason}))
     end
   end
 
@@ -130,27 +133,5 @@ defmodule KudzuWeb.BrainChatController do
   defp sse_event(conn, event, data) do
     payload = "event: #{event}\ndata: #{Jason.encode!(data)}\n\n"
     chunk(conn, payload)
-  end
-
-  # ── Authentication ───────────────────────────────────────────────────
-
-  defp authenticate(conn) do
-    auth_config = Application.get_env(:kudzu, :api_auth, [])
-    enabled = Keyword.get(auth_config, :enabled, false)
-
-    if enabled do
-      api_keys = Keyword.get(auth_config, :api_keys, [])
-
-      case get_req_header(conn, "authorization") do
-        ["Bearer " <> token] ->
-          if token in api_keys, do: :ok, else: {:error, "Invalid API key"}
-
-        _ ->
-          {:error, "Authorization header required"}
-      end
-    else
-      # Auth disabled — allow all requests
-      :ok
-    end
   end
 end

@@ -3,6 +3,10 @@ import Config
 # API authentication — KUDZU_API_KEY is mandatory.
 # The app refuses to start without it. There is no fallback.
 # Format: comma-separated list of allowed bearer tokens.
+#
+# Keys are scoped (see KudzuWeb.Plugs.APIAuth):
+#   KUDZU_API_KEY      — mutate keys: full access (read + state changes)
+#   KUDZU_API_READ_KEY — optional read-only keys: list/get/check operations
 kudzu_api_key =
   System.get_env("KUDZU_API_KEY") ||
     raise """
@@ -17,9 +21,26 @@ if kudzu_api_key == "" do
   raise "KUDZU_API_KEY is set but empty. Provide at least one non-empty bearer token."
 end
 
+split_keys = fn csv ->
+  (csv || "")
+  |> String.split(",", trim: true)
+  |> Enum.map(&String.trim/1)
+  |> Enum.reject(&(&1 == ""))
+end
+
+mutate_keys = split_keys.(kudzu_api_key)
+read_keys = split_keys.(System.get_env("KUDZU_API_READ_KEY"))
+
+if mutate_keys == [] do
+  raise "KUDZU_API_KEY is set but contains no usable keys."
+end
+
+if Enum.any?(read_keys, &(&1 in mutate_keys)) do
+  raise "A key appears in both KUDZU_API_KEY and KUDZU_API_READ_KEY; each key must have exactly one scope."
+end
+
 config :kudzu, :api_auth,
-  enabled: true,
-  api_keys: String.split(kudzu_api_key, ",", trim: true)
+  keys: Map.merge(Map.new(read_keys, &{&1, :read}), Map.new(mutate_keys, &{&1, :mutate}))
 
 # Runtime data root for DETS warm files and Mnesia cold tier.
 # Tests override this in config/test.exs to an isolated /tmp path so they
