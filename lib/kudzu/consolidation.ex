@@ -58,6 +58,7 @@ defmodule Kudzu.Consolidation do
     :last_consolidation,
     :last_deep_consolidation,
     :light_cycles_since_persist,
+    :started_at,
     :stats
   ]
 
@@ -168,6 +169,7 @@ defmodule Kudzu.Consolidation do
       last_consolidation: nil,
       last_deep_consolidation: nil,
       light_cycles_since_persist: 0,
+      started_at: DateTime.utc_now(),
       stats: %{
         consolidations: 0,
         deep_consolidations: 0,
@@ -210,7 +212,10 @@ defmodule Kudzu.Consolidation do
 
     combined =
       Map.merge(state.stats, %{
-        encoder: encoder_stats
+        encoder: encoder_stats,
+        last_consolidation: state.last_consolidation,
+        last_deep_consolidation: state.last_deep_consolidation,
+        started_at: state.started_at
       })
 
     {:reply, combined, state}
