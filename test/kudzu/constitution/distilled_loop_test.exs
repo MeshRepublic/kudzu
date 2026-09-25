@@ -54,10 +54,20 @@ defmodule Kudzu.Constitution.DistilledLoopTest do
       assert match?({:denied, _, _, _}, result)
     end
 
-    test "innocuous thought returns :permitted or :permitted_with_weight", %{state: state} do
+    test "innocuous thought is permitted when the judge advances it", %{state: state} do
       v = Kudzu.HRR.seeded_vector("compute the value of x squared", Kudzu.HRR.default_dim())
-      result = Distilled.loop_permitted?(state, v, 0)
-      assert result == :permitted or match?({:permitted_with_weight, _, _, _, _}, result)
+      judge = fn _ -> {:ok, {:advances, 0.95, "general", "harmless arithmetic", []}} end
+      state = put_in(state, [:config, :judge], judge)
+      assert Distilled.loop_permitted?(state, v, 0) == :permitted
+    end
+
+    test "innocuous thought is denied fail-closed when no judge is configured",
+         %{state: state} do
+      v = Kudzu.HRR.seeded_vector("compute the value of x squared", Kudzu.HRR.default_dim())
+      state = put_in(state, [:config, :judge], fn _ -> {:error, :missing_api_key} end)
+
+      assert {:denied, "fail_closed:judge_not_configured", _, _} =
+               Distilled.loop_permitted?(state, v, 0)
     end
 
     test "depth ceiling: returns :denied at depth > max", %{state: state} do
