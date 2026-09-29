@@ -121,7 +121,9 @@ _kudzu_api_request() {
     local remote_args="" arg
     for arg in "$@"; do remote_args+=" $(printf '%q' "$arg")"; done
 
-    { printf '%s\n' "$key"; [ -n "$body" ] && printf '%s' "$body"; } |
+    # if/then, not `[ -n "$body" ] && printf`: with no body that list exits 1,
+    # which fails the whole pipeline in callers that `set -o pipefail`.
+    { printf '%s\n' "$key"; if [ -n "$body" ]; then printf '%s' "$body"; fi; } |
         kudzu_ssh "IFS= read -r k; curl -s --max-time $KUDZU_CURL_TIMEOUT -H @<(printf 'Authorization: Bearer %s\\n' \"\$k\")${remote_args} $(printf '%q' "${KUDZU_URL}${path}")"
 }
 
