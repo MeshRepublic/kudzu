@@ -14,7 +14,6 @@ defmodule Kudzu.Brain.WebLearner do
 
   @max_read_pages 3
   @max_chains_per_page 20
-  @ollama_url "http://localhost:11434"
   @summary_model "llama4:scout"
   @summary_timeout 180_000
 
@@ -272,7 +271,7 @@ defmodule Kudzu.Brain.WebLearner do
         keep_alive: "10m"
       })
 
-    request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
+    request = {~c"#{ollama_url()}/api/generate", [], ~c"application/json", body}
 
     case Kudzu.HTTP.request(:post, request, [{:timeout, @summary_timeout}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
@@ -303,5 +302,11 @@ defmodule Kudzu.Brain.WebLearner do
     catch
       _, _ -> []
     end
+  end
+
+  # Ollama base URL from config (`config :kudzu, :ollama_url`), so worker
+  # nodes and non-default deployments are honoured instead of localhost.
+  defp ollama_url do
+    Application.get_env(:kudzu, :ollama_url, "http://localhost:11434")
   end
 end

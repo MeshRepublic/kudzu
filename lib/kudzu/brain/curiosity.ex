@@ -214,7 +214,9 @@ defmodule Kudzu.Brain.Curiosity do
       if state[:traces_processed] && state[:traces_processed] > 0 do
         Kudzu.Consolidation.semantic_query("important unresolved", 0.3)
         |> Enum.take(limit)
-        |> Enum.map(fn {purpose, _score} -> "What does #{purpose} tell me?" end)
+        |> Enum.map(fn %{record: record} ->
+          "What does #{Map.get(record, :purpose, "this memory")} tell me?"
+        end)
       else
         []
       end

@@ -546,26 +546,62 @@ lib/
 │   ├── trace.ex                # Navigational memory structure
 │   ├── vector_clock.ex         # Causal ordering
 │   ├── hologram.ex             # Context agent (GenServer)
+│   ├── hologram_registry.ex    # Persistent hologram metadata (DETS), reconstruction at boot
+│   ├── hologram/runner.ex      # Autonomous activity loop per hologram
+│   ├── agent.ex                # Universal named-agent interface over holograms
+│   ├── node.ex                 # Node / mesh management (SETI-style distributed memory)
 │   ├── distributed.ex          # Erlang distribution over Tailscale
 │   ├── protocol.ex             # Inter-hologram messaging
 │   ├── telemetry.ex            # Observability hooks
+│   ├── signal_handler.ex       # SIGTERM -> graceful shutdown
+│   ├── http.ex                 # Pooled HTTP client (httpc)
 │   ├── cognition.ex            # Ollama LLM integration
-│   ├── cognition/
-│   │   └── prompt_builder.ex   # Build prompts from state
+│   ├── cognition/known_traces.ex  # Per-session set of traces already shown to a model
+│   ├── prompt_builder.ex       # Unified prompt assembly for every LLM in the mesh
+│   ├── embedding.ex            # Ollama embeddings for semantic search
+│   ├── contradiction.ex        # Contradiction detection against existing knowledge
+│   ├── reconsolidation.ex      # Memory modification during recall
+│   ├── salience.ex             # Salience scoring for consolidation
+│   ├── consolidation.ex        # Tiered storage consolidation daemon (light / deep cycles)
+│   ├── storage.ex              # Hot ETS / warm DETS / cold Mnesia tiers
+│   ├── storage/mnesia_schema.ex   # Cold-tier Mnesia schema
+│   ├── silo.ex                 # Expertise silos (domain knowledge backed by holograms)
+│   ├── silo/
+│   │   ├── extractor.ex        # Subject-relation-object triple extraction (Ollama / Claude)
+│   │   └── relationship.ex     # Triples as HRR bindings
+│   ├── hrr.ex                  # Holographic Reduced Representations (FFT-based)
+│   ├── hrr/
+│   │   ├── nx_backend.ex       # Nx tensor backend (EXLA on GPU when available)
+│   │   ├── encoder.ex          # Token-seeded bundling with co-occurrence blending
+│   │   ├── encoder_state.ex    # Co-occurrence matrix, DETS persistence
+│   │   └── tokenizer.ex        # Stemming, stopwords, bigrams
 │   ├── constitution.ex         # Framework manager
 │   ├── constitution/
 │   │   ├── behaviour.ex        # Constitutional interface
 │   │   ├── mesh_republic.ex    # Distributed governance
 │   │   ├── cautious.ex         # Restrictive framework
-│   │   ├── open.ex             # No constraints (testing)
-│   │   └── kudzu_evolve.ex     # Meta-learning framework
-│   ├── hrr.ex                  # Holographic Reduced Representations (FFT-based)
-│   ├── hrr/
-│   │   ├── encoder.ex          # Token-seeded bundling with co-occurrence blending
-│   │   ├── encoder_state.ex    # Co-occurrence matrix, DETS persistence
-│   │   └── tokenizer.ex        # Stemming, stopwords, bigrams
-│   ├── consolidation.ex        # Tiered storage consolidation daemon
-│   ├── storage.ex              # Hot/warm/cold storage management
+│   │   ├── open.ex             # No constraints (test-only, gated by :allow_open_constitution)
+│   │   ├── kudzu_evolve.ex     # Meta-learning framework
+│   │   ├── distilled.ex        # Rules distilled from the U.S. Constitution corpus (5-stage, fail-closed)
+│   │   ├── vectors.ex          # Shared vector basis for constitutional comparison
+│   │   ├── ai_judge.ex         # Claude-backed evaluation stage
+│   │   ├── weight_ledger.ex    # Citizen-ratified ambiguous proposals (DETS)
+│   │   ├── corpus.ex, corpus/  # Constitution + Federalist + Anti-Federalist chunking
+│   │   ├── filter/             # Sovereignty filter, distillation router
+│   │   └── tyranny/            # Tyranny artifact manifest importer (priv/constitution/tyranny.yaml)
+│   ├── brain/                  # Always-awake autonomous agent ("the Brain")
+│   │   ├── brain.ex            # GenServer: tiered reasoning, activity loop owner
+│   │   ├── activities.ex       # Health check / curiosity / web learning / distillation cycle
+│   │   ├── reflexes.ex         # Tier 1: pattern -> action, zero cost
+│   │   ├── inference_engine.ex # Tier 2: HRR bind/unbind chain reasoning over silos
+│   │   ├── claude.ex, budget.ex   # Tier 3: Claude API client and spend budget
+│   │   ├── thought.ex, working_memory.ex, reasoning.ex  # Thinking layer
+│   │   ├── learning.ex, learning_goal.ex, curriculum_generator.ex
+│   │   ├── curiosity.ex, web_learner.ex, distiller.ex, self_model.ex, self_converse.ex
+│   │   ├── chat.ex             # Interactive chat pipeline (SSE)
+│   │   ├── swarm.ex            # Specialist swarm for parallel research
+│   │   ├── tools/              # web, host, safe_shell, introspection, escalation
+│   │   └── vectors/            # Pluggable learning sources (router, ollama_teacher, ...)
 │   ├── beamlet/
 │   │   ├── behaviour.ex        # Beam-let interface
 │   │   ├── base.ex             # Common implementation
@@ -577,31 +613,31 @@ lib/
 │       ├── collective_search.ex      # Cognitive coordination
 │       └── constitution_compare.ex   # Framework comparison
 │
-└── kudzu_web/                  # Phoenix API layer
-    ├── endpoint.ex             # HTTP/WebSocket entry point
-    ├── router.ex               # REST API routes
-    ├── controllers/
-    │   ├── hologram_controller.ex    # Hologram CRUD + actions
-    │   └── cluster_controller.ex     # Cluster statistics
-    ├── mcp/
-    │   ├── controller.ex         # MCP JSON-RPC dispatch
-    │   ├── tools.ex              # Tool definitions (50+)
-    │   └── handlers/
-    │       ├── system.ex         # Health, node status
-    │       ├── hologram.ex       # Hologram CRUD
-    │       ├── trace.ex          # Trace operations
-    │       ├── agent.ex          # Named agent API
-    │       ├── semantic.ex       # Semantic recall, associations
-    │       ├── constitution.ex   # Framework inspection
-    │       ├── cluster.ex        # Cluster operations
-    │       ├── node.ex           # Node/mesh management
-    │       └── beamlet.ex        # Beamlet operations
-    └── channels/
-        ├── user_socket.ex            # WebSocket authentication
-        └── hologram_channel.ex       # Real-time hologram interaction
+├── kudzu_web/                  # Phoenix API layer (one endpoint: REST + MCP + WebSocket)
+│   ├── router.ex               # REST API routes
+│   ├── plugs/api_auth.ex       # Shared key store; read / mutate scopes
+│   ├── controllers/            # hologram, agent, trace, constitution, cluster, node,
+│   │                           # beamlet, storage, brain_chat (SSE), health, metrics
+│   ├── mcp/
+│   │   ├── endpoint.ex         # Phoenix endpoint (HTTP/WebSocket entry point)
+│   │   ├── router.ex           # MCP Streamable HTTP plug router
+│   │   ├── controller.ex       # MCP JSON-RPC dispatch + read-scope allowlist
+│   │   ├── protocol.ex         # JSON-RPC 2.0 encoding/decoding
+│   │   ├── session.ex          # MCP sessions (ETS)
+│   │   ├── tools.ex            # Tool definitions (50+)
+│   │   └── handlers/           # system, hologram, trace, agent, semantic, constitution,
+│   │                           # cluster, node, beamlet, brain, web
+│   └── channels/
+│       ├── hologram_socket.ex        # WebSocket authentication
+│       └── hologram_channel.ex       # Real-time hologram interaction
+│
+└── mix/tasks/                  # kudzu.constitution.{distill,calibrate,demo}, kudzu.distill.demo
 
+priv/constitution/              # Corpus texts, tyranny manifest, calibration set
 scripts/
-└── start_distributed.sh        # Launch distributed node over Tailscale
+├── start_distributed.sh        # Launch distributed node over Tailscale
+└── claude/                     # Claude Code integration (SessionStart hook, helper scripts)
+docs/plans/                     # Design documents and implementation plans
 ```
 
 ## Philosophy

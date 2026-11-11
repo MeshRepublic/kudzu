@@ -42,7 +42,6 @@ defmodule Kudzu.Brain.Distiller do
   }
 
   @prune_threshold 0.15
-  @ollama_url "http://localhost:11434"
   @extract_model "llama4:scout"
   @extract_timeout 180_000
 
@@ -426,7 +425,7 @@ defmodule Kudzu.Brain.Distiller do
         keep_alive: "10m"
       })
 
-    request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
+    request = {~c"#{ollama_url()}/api/generate", [], ~c"application/json", body}
 
     case Kudzu.HTTP.request(:post, request, [{:timeout, @extract_timeout}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
@@ -511,7 +510,7 @@ defmodule Kudzu.Brain.Distiller do
 
       _ ->
         # Strategy 2: Extract from markdown code fences
-        case Regex.run(~r//, trimmed) do
+        case Regex.run(~r/```(?:json)?\s*([\s\S]*?)```/, trimmed) do
           [_, inner] ->
             inner = String.trim(inner)
 
@@ -599,5 +598,11 @@ defmodule Kudzu.Brain.Distiller do
         String.contains?(action_str, term) or String.contains?(term, action_str)
       end)
     end)
+  end
+
+  # Ollama base URL from config (`config :kudzu, :ollama_url`), so worker
+  # nodes and non-default deployments are honoured instead of localhost.
+  defp ollama_url do
+    Application.get_env(:kudzu, :ollama_url, "http://localhost:11434")
   end
 end

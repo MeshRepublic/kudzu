@@ -27,7 +27,10 @@ config :kudzu,
   # Example: ["/var/kudzu/data", "/tmp/kudzu"]
   allowed_io_paths: []
 
-# Consolidated endpoint (MCP + REST API + WebSocket) — Tailscale IP, port 4001
+# Consolidated endpoint (MCP + REST API + WebSocket). The bind address, port
+# and secret_key_base are set in config/runtime.exs from KUDZU_MCP_IP /
+# KUDZU_MCP_PORT / SECRET_KEY_BASE for every non-test environment (the
+# production node runs `mix run` in :dev, so prod-only handling was ignored).
 config :kudzu, KudzuWeb.MCP.Endpoint,
   url: [host: "localhost"],
   http: [ip: {100, 70, 67, 110}, port: 4001],
@@ -73,26 +76,9 @@ if config_env() == :dev do
     check_origin: false
 end
 
-if config_env() == :prod do
-  # Production requires these environment variables (enforced in config/runtime.exs):
-  # - SECRET_KEY_BASE: generate with `mix phx.gen.secret`
-  # - KUDZU_API_KEY: comma-separated API keys
-  config :kudzu, KudzuWeb.MCP.Endpoint, secret_key_base: System.get_env("SECRET_KEY_BASE")
-
-  config :kudzu,
-         :cors_origins,
-         String.split(System.get_env("KUDZU_CORS_ORIGINS") || "", ",", trim: true)
-
-  # MCP endpoint: use env vars for IP/port
-  mcp_ip =
-    System.get_env("KUDZU_MCP_IP", "100.70.67.110")
-    |> String.split(".")
-    |> Enum.map(&String.to_integer/1)
-    |> List.to_tuple()
-
-  mcp_port = String.to_integer(System.get_env("KUDZU_MCP_PORT") || "4001")
-  config :kudzu, KudzuWeb.MCP.Endpoint, http: [ip: mcp_ip, port: mcp_port]
-end
+# Production env vars (SECRET_KEY_BASE, KUDZU_CORS_ORIGINS, KUDZU_MCP_IP,
+# KUDZU_MCP_PORT, KUDZU_API_KEY) are read in config/runtime.exs, which runs
+# in every environment at boot rather than at compile time.
 
 # Example distributed configuration (uncomment and modify for your setup)
 # config :kudzu,

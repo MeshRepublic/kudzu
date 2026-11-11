@@ -341,14 +341,22 @@ def categorize_trace(trace: dict, content: str) -> str:
 # Deduplication
 # ---------------------------------------------------------------------------
 
-def deduplicate(items: list) -> list:
-    """Remove entries where a shorter string is a substring of a longer one.
+FUZZY_DUP_RATIO = 0.85
+FUZZY_MIN_LEN = 20
 
-    Each item is a (content, recency) tuple. Keeps the longer/more-recent
-    version when duplicates are found.
+
+def deduplicate(items: list) -> list:
+    """Remove entries that are substrings of, or near-identical to, a kept entry.
+
+    Each item is a (content, recency) tuple. Longer items are kept in
+    preference to shorter ones. Near-identical traces (same observation
+    re-recorded with slightly different wording) are caught with a
+    SequenceMatcher ratio above FUZZY_DUP_RATIO.
     """
     if not items:
         return items
+
+    from difflib import SequenceMatcher
 
     # Sort by content length descending so longer items come first
     sorted_items = sorted(items, key=lambda x: len(x[0]), reverse=True)
@@ -358,7 +366,12 @@ def deduplicate(items: list) -> list:
         normalized = content.strip().lower()
         is_dup = False
         for existing_content, _ in kept:
-            if normalized in existing_content.strip().lower():
+            existing_norm = existing_content.strip().lower()
+            if normalized in existing_norm:
+                is_dup = True
+                break
+            if (len(normalized) > FUZZY_MIN_LEN and len(existing_norm) > FUZZY_MIN_LEN
+                    and SequenceMatcher(None, normalized, existing_norm).ratio() > FUZZY_DUP_RATIO):
                 is_dup = True
                 break
         if not is_dup:
@@ -380,6 +393,16 @@ SECTION_ORDER = [
     "Learnings",
     "Recent Decisions",
 ]
+
+# Section priority weights: share of the line budget per item (higher = more).
+SECTION_WEIGHTS = {
+    "Current State": 2.0,
+    "Active Projects": 2.5,
+    "Key Facts": 2.0,
+    "Workflows": 1.0,
+    "Learnings": 1.5,
+    "Recent Decisions": 1.5,
+}
 
 
 def build_sections(all_traces: list) -> dict:
@@ -473,12 +496,14 @@ def render_memory_md(sections: dict) -> str:
     if available < len(active_sections):
         available = len(active_sections)
 
-    # Distribute lines proportionally, minimum 1 per section
-    total_items = sum(len(items) for _, items in active_sections)
+    # Distribute lines by item count scaled with SECTION_WEIGHTS, minimum 1 per section
+    total_weighted = sum(len(items) * SECTION_WEIGHTS.get(name, 1.0)
+                         for name, items in active_sections)
     per_section = {}
     for name, items in active_sections:
-        if total_items > 0:
-            share = max(1, int(available * len(items) / total_items))
+        if total_weighted > 0:
+            weight = SECTION_WEIGHTS.get(name, 1.0)
+            share = max(1, int(available * len(items) * weight / total_weighted))
         else:
             share = 1
         per_section[name] = share

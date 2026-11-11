@@ -171,11 +171,16 @@ ensure_kudzu() {
         local i
         for i in $(seq 1 24); do
             sleep 5
-            check_kudzu && return 0
+            if check_kudzu; then
+                flush_buffer 2>/dev/null || true
+                return 0
+            fi
         done
         log_error "Could not start Kudzu"
         return 1
     fi
+    # Kudzu is up: deliver any traces buffered while it was unreachable.
+    flush_buffer 2>/dev/null || true
     return 0
 }
 
@@ -252,12 +257,60 @@ record_trace() {
     local body="{\"purpose\": \"${safe_purpose}\", \"data\": {\"content\": \"${safe_content}\", \"timestamp\": \"$(date -Iseconds)\"${extra_json}}}"
 
     local response
-    response=$(kudzu_api_post "/api/v1/holograms/${hologram_id}/traces" "$body") || {
-        log_error "Failed to record trace"
-        return 1
-    }
+    if response=$(kudzu_api_post "/api/v1/holograms/${hologram_id}/traces" "$body" 2>/dev/null); then
+        if echo "$response" | grep -q '"trace"'; then
+            log_success "Recorded $purpose trace"
+            return 0
+        fi
+        # A 401/403 body is {"error": ...}: buffering would never succeed.
+        if echo "$response" | grep -q '"error"'; then
+            log_error "Failed to record trace: $response"
+            return 1
+        fi
+    fi
 
-    echo "$response" | grep -q '"trace"' && log_success "Recorded $purpose trace" || log_error "Failed to record trace"
+    # Kudzu unreachable — buffer locally and flush on the next ensure_kudzu.
+    buffer_trace "$hologram_id" "$body"
+}
+
+# === Offline Buffer ===
+
+KUDZU_BUFFER_DIR="$KUDZU_STATE_DIR/pending_traces"
+
+# Buffer a ready-to-send trace body locally when Kudzu is unreachable.
+# Usage: buffer_trace "$hologram_id" "$json_body"
+buffer_trace() {
+    local hologram_id="$1"
+    local body="$2"
+
+    mkdir -p "$KUDZU_BUFFER_DIR"
+    local file="$KUDZU_BUFFER_DIR/$(date +%s%N).json"
+    printf '{"hologram_id": "%s", "body": %s}\n' "$hologram_id" "$body" > "$file"
+    log_info "Buffered trace locally (Kudzu offline): $file"
+}
+
+# Flush buffered traces to Kudzu. Files are removed only on a confirmed write.
+flush_buffer() {
+    [ -d "$KUDZU_BUFFER_DIR" ] || return 0
+    local count=0 failed=0 file hologram_id body response
+
+    for file in "$KUDZU_BUFFER_DIR"/*.json; do
+        [ -f "$file" ] || continue
+        hologram_id=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['hologram_id'])" "$file" 2>/dev/null) || continue
+        body=$(python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))['body']))" "$file" 2>/dev/null) || continue
+
+        if response=$(kudzu_api_post "/api/v1/holograms/${hologram_id}/traces" "$body" 2>/dev/null) &&
+           echo "$response" | grep -q '"trace"'; then
+            rm -f "$file"
+            count=$((count + 1))
+        else
+            failed=$((failed + 1))
+        fi
+    done
+
+    [ $count -gt 0 ] && log_success "Flushed $count buffered trace(s)"
+    [ $failed -gt 0 ] && log_warn "$failed buffered trace(s) still pending in $KUDZU_BUFFER_DIR"
+    return 0
 }
 
 # Query traces from a hologram.

@@ -102,7 +102,7 @@ defmodule Kudzu.Brain.ActivityIndicator do
 
     if removed do
       # Clear the spinner line
-      IO.write("\r\e[2K")
+      write("\r\e[2K")
     end
 
     state = %{state | activities: new_activities}
@@ -137,7 +137,7 @@ defmodule Kudzu.Brain.ActivityIndicator do
       timer = Process.send_after(self(), :tick, @tick_ms)
       {:noreply, %{state | frame: state.frame + 1, timer: timer}}
     else
-      IO.write("\r\e[2K")
+      write("\r\e[2K")
       {:noreply, %{state | timer: nil}}
     end
   end
@@ -172,7 +172,7 @@ defmodule Kudzu.Brain.ActivityIndicator do
       end
 
     # Truncate to terminal width (assume 120 cols, strip ANSI for length check)
-    IO.write("\r\e[2K#{line}")
+    write("\r\e[2K#{line}")
   end
 
   defp format_elapsed(seconds) when seconds < 60, do: "#{seconds}s"
@@ -194,5 +194,12 @@ defmodule Kudzu.Brain.ActivityIndicator do
       String.contains?(id_str, "distill") -> :distilling
       true -> :default
     end
+  end
+
+  # The spinner is for an interactive terminal. In production stdout is piped
+  # through `tee -a kudzu.log`, where the \r\e[2K frames (12 Hz) would be
+  # injected into the log file, so only write when ANSI is enabled.
+  defp write(iodata) do
+    if IO.ANSI.enabled?(), do: IO.write(iodata), else: :ok
   end
 end

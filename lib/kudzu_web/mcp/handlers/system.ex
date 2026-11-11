@@ -2,15 +2,8 @@ defmodule KudzuWeb.MCP.Handlers.System do
   @moduledoc "MCP handler for system tools."
 
   def handle("kudzu_health", _params) do
-    ollama_ok =
-      try do
-        case Kudzu.HTTP.request(:get, {~c"http://localhost:11434/api/tags", []}, timeout: 2000) do
-          {:ok, {{_, 200, _}, _, _}} -> true
-          _ -> false
-        end
-      rescue
-        _ -> false
-      end
+    # Same probe as GET /health, honouring `config :kudzu, :ollama_url`.
+    ollama_ok = Kudzu.Cognition.available?()
 
     {:ok,
      %{

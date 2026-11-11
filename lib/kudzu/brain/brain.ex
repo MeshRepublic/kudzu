@@ -206,10 +206,10 @@ defmodule Kudzu.Brain do
       learning_goals: length(state.learning_goals),
       researched_topics: MapSet.size(state.researched_topics),
       web_learning_active: state.web_learning_active,
-      last_health_check: state.last_health_check,
-      last_curiosity: state.last_curiosity,
-      last_web_learning: state.last_web_learning,
-      last_distillation: state.last_distillation
+      last_health_check: monotonic_to_iso8601(state.last_health_check),
+      last_curiosity: monotonic_to_iso8601(state.last_curiosity),
+      last_web_learning: monotonic_to_iso8601(state.last_web_learning),
+      last_distillation: monotonic_to_iso8601(state.last_distillation)
     }
 
     {:reply, status, state}
@@ -534,4 +534,17 @@ defmodule Kudzu.Brain do
   def ensure_map(%_{} = struct), do: Map.from_struct(struct)
   def ensure_map(map) when is_map(map), do: map
   def ensure_map(other), do: %{value: inspect(other)}
+
+  # Activities store System.monotonic_time/1 (correct for interval checks, but
+  # meaningless outside the VM — it reads as a large negative integer in
+  # /metrics). Convert to wall-clock ISO 8601 for the status report.
+  defp monotonic_to_iso8601(nil), do: nil
+
+  defp monotonic_to_iso8601(mono_ms) when is_integer(mono_ms) do
+    delta_ms = System.monotonic_time(:millisecond) - mono_ms
+
+    (System.os_time(:millisecond) - delta_ms)
+    |> DateTime.from_unix!(:millisecond)
+    |> DateTime.to_iso8601()
+  end
 end

@@ -53,6 +53,28 @@ if config_env() != :test do
   config :kudzu, :data_root, data_root
 end
 
+# Endpoint bind address / port / secret. Applies to dev and prod alike (the
+# production node runs `mix run --no-halt` in :dev); tests keep the
+# compile-time defaults (port 4003, server: false).
+if config_env() != :test do
+  mcp_ip =
+    System.get_env("KUDZU_MCP_IP", "100.70.67.110")
+    |> String.split(".")
+    |> Enum.map(&String.to_integer/1)
+    |> List.to_tuple()
+
+  mcp_port = String.to_integer(System.get_env("KUDZU_MCP_PORT") || "4001")
+  config :kudzu, KudzuWeb.MCP.Endpoint, http: [ip: mcp_ip, port: mcp_port]
+
+  if secret = System.get_env("SECRET_KEY_BASE") do
+    config :kudzu, KudzuWeb.MCP.Endpoint, secret_key_base: secret
+  end
+
+  if cors = System.get_env("KUDZU_CORS_ORIGINS") do
+    config :kudzu, :cors_origins, String.split(cors, ",", trim: true)
+  end
+end
+
 # Worker node configuration — point Ollama to titan, disable web endpoint
 if System.get_env("KUDZU_ROLE") == "worker" do
   ollama_host = System.get_env("KUDZU_OLLAMA_HOST", "100.70.67.110")

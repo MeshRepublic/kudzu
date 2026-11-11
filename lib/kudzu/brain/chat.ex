@@ -524,7 +524,9 @@ defmodule Kudzu.Brain.Chat do
         recall_summary =
           context.recall_results
           |> Enum.take(5)
-          |> Enum.map_join(", ", fn {purpose, sim} -> "#{purpose} (#{Float.round(sim, 3)})" end)
+          |> Enum.map_join(", ", fn %{similarity: sim, record: record} ->
+            "#{Map.get(record, :purpose, "unknown")} (#{Float.round(sim * 1.0, 3)})"
+          end)
 
         parts ++ ["\n\n[Memory recall found related purposes: #{recall_summary}]"]
       else
