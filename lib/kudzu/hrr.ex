@@ -159,8 +159,8 @@ defmodule Kudzu.HRR do
   defp seeded_vector_legacy(seed, dim) do
     hash = :crypto.hash(:sha256, seed)
     <<seed_int::256>> = hash
-    :rand.seed(:exsss, {seed_int, seed_int + 1, seed_int + 2})
-    raw = for _ <- 1..dim, do: :rand.normal()
+    state = :rand.seed_s(:exsss, {seed_int, seed_int + 1, seed_int + 2})
+    {raw, _} = Enum.map_reduce(1..dim, state, fn _, st -> :rand.normal_s(st) end)
     normalize_legacy(raw)
   end
 

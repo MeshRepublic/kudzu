@@ -37,7 +37,7 @@ defmodule Kudzu.Contradiction do
     case Embedding.embed(new_content, timeout: 15_000) do
       {:ok, new_vector} ->
         results = Storage.search_by_embedding(new_vector, limit: 5, threshold: threshold)
-        check_results(new_content, results)
+        check_results(new_content, results, threshold)
 
       {:error, _} ->
         {:ok, :no_contradiction}
@@ -46,9 +46,9 @@ defmodule Kudzu.Contradiction do
     _ -> {:ok, :no_contradiction}
   end
 
-  defp check_results(_new_content, []), do: {:ok, :no_contradiction}
+  defp check_results(_new_content, [], _threshold), do: {:ok, :no_contradiction}
 
-  defp check_results(new_content, results) do
+  defp check_results(new_content, results, threshold) do
     new_lower = String.downcase(new_content)
     has_negation = Enum.any?(@contradiction_indicators, &String.contains?(new_lower, &1))
 
@@ -57,7 +57,7 @@ defmodule Kudzu.Contradiction do
         existing_content = extract_text(record)
         existing_lower = String.downcase(existing_content)
 
-        sim > @similarity_threshold and has_negation and
+        sim > threshold and has_negation and
           content_opposes?(new_lower, existing_lower)
       end)
 

@@ -102,22 +102,53 @@ defmodule Kudzu.Storage.MnesiaSchema do
     else
       with :ok <- init_node(),
            :ok <- ensure_local_schema() do
-        :mnesia.wait_for_tables([@trace_table], 30_000)
-        |> case do
-          :ok -> :ok
-          {:timeout, tables} -> {:error, {:timeout, tables}}
-          {:error, reason} -> {:error, reason}
+        # Always wait for the table to be loaded, including when the schema
+        # already knew it (every boot after the first, every Storage restart).
+        # Schema membership alone is not enough: write/read/delete abort with
+        # {:no_exists, table} until this node is an active replica. On a
+        # single-node schema a timeout (e.g. after an unclean shutdown) is
+        # resolved by force-loading the local copy.
+        case wait_for_table() do
+          :ok ->
+            :ok
+
+          {:timeout, _tables} ->
+            Logger.warning("[MnesiaSchema] #{inspect(@trace_table)} not loaded; force-loading")
+            :mnesia.force_load_table(@trace_table)
+            wait_for_table()
+
+          {:error, reason} ->
+            {:error, reason}
         end
       end
     end
   end
 
-  defp table_available? do
+  defp wait_for_table do
+    case :mnesia.wait_for_tables([@trace_table], 30_000) do
+      :ok -> :ok
+      {:timeout, tables} -> {:timeout, tables}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  True when the cold table is loaded on this node (an active local replica),
+  which is what `:mnesia.write/read/delete` require. `:mnesia.system_info(:tables)`
+  only reports schema membership and stays true while every transaction aborts
+  with `{:no_exists, table}`.
+  """
+  @spec table_loaded?() :: boolean()
+  def table_loaded? do
     :mnesia.system_info(:is_running) == :yes and
-      @trace_table in :mnesia.system_info(:tables)
+      node() in :mnesia.table_info(@trace_table, :where_to_write)
+  rescue
+    _ -> false
   catch
     :exit, _ -> false
   end
+
+  defp table_available?, do: table_loaded?()
 
   defp ensure_local_schema do
     if @trace_table in :mnesia.system_info(:tables) do

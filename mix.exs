@@ -46,7 +46,7 @@ defmodule Kudzu.MixProject do
       quality: [
         "format --check-formatted",
         "credo --strict",
-        "dialyzer --halt-exit-status"
+        "dialyzer"
       ]
     ]
   end

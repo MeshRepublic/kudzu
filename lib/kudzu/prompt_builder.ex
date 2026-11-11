@@ -214,7 +214,7 @@ defmodule Kudzu.PromptBuilder do
       traces =
         state.traces
         |> Map.values()
-        |> Enum.sort_by(& &1.timestamp, :desc)
+        |> Enum.sort_by(& &1.timestamp, {:desc, Kudzu.VectorClock.Sort})
         |> Enum.take(@max_brain_traces)
 
       {traces, :ready}
@@ -227,13 +227,9 @@ defmodule Kudzu.PromptBuilder do
 
   defp collect_traces(%{traces: traces}, format)
        when is_map(traces) and map_size(traces) > 0 do
-    sorter =
-      case format do
-        :ollama_full -> {:desc, Kudzu.VectorClock}
-        :ollama_quick -> {:desc, Kudzu.VectorClock}
-        :ollama_collaborative -> {:desc, Kudzu.VectorClock}
-        _ -> :desc
-      end
+    # Newest first by causal order (timestamps are vector clocks; plain :desc
+    # compared struct term order, and {:desc, VectorClock} never sorted).
+    sorter = {:desc, Kudzu.VectorClock.Sort}
 
     take =
       case format do

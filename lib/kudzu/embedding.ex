@@ -14,16 +14,19 @@ defmodule Kudzu.Embedding do
 
   require Logger
 
-  @default_ollama_url "http://localhost:11434"
   @default_model "llama3.1"
   @timeout 30_000
+
+  # Same resolution as Kudzu.Cognition (`config :kudzu, :ollama_url`), so a
+  # worker node pointed at a remote Ollama embeds there too.
+  defp default_ollama_url, do: Kudzu.Cognition.get_ollama_url()
 
   @doc """
   Embed a single text string. Returns a 4096-dimensional float vector.
   """
   @spec embed(String.t(), keyword()) :: {:ok, [float()]} | {:error, term()}
   def embed(text, opts \\ []) when is_binary(text) do
-    url = Keyword.get(opts, :ollama_url, @default_ollama_url)
+    url = Keyword.get(opts, :ollama_url, default_ollama_url())
     model = Keyword.get(opts, :model, @default_model)
     timeout = Keyword.get(opts, :timeout, @timeout)
 
@@ -63,7 +66,7 @@ defmodule Kudzu.Embedding do
   """
   @spec batch_embed([String.t()], keyword()) :: {:ok, [[float()]]} | {:error, term()}
   def batch_embed(texts, opts \\ []) when is_list(texts) do
-    url = Keyword.get(opts, :ollama_url, @default_ollama_url)
+    url = Keyword.get(opts, :ollama_url, default_ollama_url())
     model = Keyword.get(opts, :model, @default_model)
 
     body = Jason.encode!(%{model: model, input: texts})
@@ -121,7 +124,7 @@ defmodule Kudzu.Embedding do
   """
   @spec available?(keyword()) :: boolean()
   def available?(opts \\ []) do
-    url = Keyword.get(opts, :ollama_url, @default_ollama_url)
+    url = Keyword.get(opts, :ollama_url, default_ollama_url())
 
     case Kudzu.HTTP.request(:get, {~c"#{url}/api/tags", []}, [{:timeout, 5000}]) do
       {:ok, {{_, 200, _}, _, _}} -> true

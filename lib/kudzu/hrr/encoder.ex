@@ -283,8 +283,8 @@ defmodule Kudzu.HRR.Encoder do
     end
   end
 
-  defp encode_content_v2(nil, _codebook, _encoder_state) do
-    HRR.zero_vector(512)
+  defp encode_content_v2(nil, _codebook, encoder_state) do
+    HRR.zero_vector(encoder_state.dim)
   end
 
   # --- Purpose Encoding ---

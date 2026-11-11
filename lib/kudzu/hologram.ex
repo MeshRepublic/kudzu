@@ -345,6 +345,10 @@ defmodule Kudzu.Hologram do
 
   @impl true
   def init(opts) do
+    # Without this, DynamicSupervisor/System.stop shutdown skips terminate/2
+    # and every trace held only in process memory (cognition THOUGHT/
+    # OBSERVATION lines, denials, shares) is lost on restart.
+    Process.flag(:trap_exit, true)
     id = Keyword.fetch!(opts, :id)
     purpose = Keyword.get(opts, :purpose, :general)
     desires = Keyword.get(opts, :desires, [])
@@ -789,6 +793,15 @@ defmodule Kudzu.Hologram do
     }
 
     {:noreply, final_state}
+  end
+
+  @impl true
+  # Exit signals from linked processes arrive as messages while trapping exits.
+  def handle_info({:EXIT, _pid, reason}, state) do
+    unless reason in [:normal, :shutdown],
+      do: Logger.debug("[Hologram #{state.id}] linked exit: #{inspect(reason)}")
+
+    {:noreply, state}
   end
 
   @impl true

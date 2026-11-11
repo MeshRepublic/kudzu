@@ -238,22 +238,50 @@ defmodule Kudzu.Beamlet.IO do
     end
   end
 
-  defp internal_ip?(ip) do
-    Enum.any?(@blocked_ip_patterns, &Regex.match?(&1, ip))
+  defp internal_ip?(ip) when is_binary(ip) do
+    Enum.any?(@blocked_ip_patterns, &Regex.match?(&1, ip)) or
+      case :inet.parse_address(to_charlist(ip)) do
+        {:ok, tuple} -> internal_ip_tuple?(tuple)
+        _ -> false
+      end
   end
 
+  # Structural checks the IPv4 string patterns cannot express: IPv6 loopback,
+  # unspecified, link-local, unique-local and IPv4-mapped addresses. A URL
+  # like http://[::1]:4001/ bypassed the pattern list entirely.
+  defp internal_ip_tuple?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
+  defp internal_ip_tuple?({0, 0, 0, 0, 0, 0, 0, 0}), do: true
+  defp internal_ip_tuple?({a, _, _, _, _, _, _, _}) when a in 0xFE80..0xFEBF, do: true
+  defp internal_ip_tuple?({a, _, _, _, _, _, _, _}) when a in 0xFC00..0xFDFF, do: true
+
+  defp internal_ip_tuple?({0, 0, 0, 0, 0, 0xFFFF, hi, lo}),
+    do:
+      internal_ip?(
+        to_string(:inet.ntoa({div(hi, 256), rem(hi, 256), div(lo, 256), rem(lo, 256)}))
+      )
+
+  defp internal_ip_tuple?({a, b, c, d}) when is_integer(a),
+    do: Enum.any?(@blocked_ip_patterns, &Regex.match?(&1, "#{a}.#{b}.#{c}.#{d}"))
+
+  defp internal_ip_tuple?(_), do: false
+
   defp internal_host?(host) do
-    # Try to resolve the hostname and check if it's internal
-    case :inet.gethostbyname(to_charlist(host)) do
-      {:ok, {:hostent, _, _, _, _, addrs}} ->
-        addrs
-        |> Enum.map(&:inet.ntoa/1)
-        |> Enum.map(&to_string/1)
-        |> Enum.any?(&internal_ip?/1)
+    # Literal IPs (including bracketed IPv6, which URI.parse returns without
+    # brackets) are checked structurally; hostnames are resolved in both
+    # families and every address is checked.
+    case :inet.parse_address(to_charlist(host)) do
+      {:ok, tuple} ->
+        internal_ip_tuple?(tuple)
 
       _ ->
-        # If we can't resolve, allow it (will fail at request time anyway)
-        false
+        [:inet, :inet6]
+        |> Enum.flat_map(fn family ->
+          case :inet.getaddrs(to_charlist(host), family) do
+            {:ok, addrs} -> addrs
+            _ -> []
+          end
+        end)
+        |> Enum.any?(&internal_ip_tuple?/1)
     end
   end
 

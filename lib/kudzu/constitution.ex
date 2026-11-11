@@ -78,8 +78,11 @@ defmodule Kudzu.Constitution do
   """
   @spec get_framework(framework()) :: module() | nil
   def get_framework(name) when is_atom(name) do
+    # function_exported?/3 is false for a module not yet loaded (interactive
+    # code loading under `mix run`), so load it first.
     Map.get(@frameworks, name) ||
-      if is_atom(name) and function_exported?(name, :permitted?, 2), do: name
+      if is_atom(name) and Code.ensure_loaded?(name) and function_exported?(name, :permitted?, 2),
+        do: name
   end
 
   @doc """
