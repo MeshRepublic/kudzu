@@ -85,7 +85,11 @@ except Exception:
 kudzu_ssh() {
     local cmd="$1"
     local result
-    if ! result=$(ssh -o ConnectTimeout="$KUDZU_SSH_TIMEOUT" -o ServerAliveInterval=30 -o BatchMode=yes "$KUDZU_HOST" "$cmd" 2>/dev/null); then
+    # ControlMaster reuses one SSH connection across the many short API
+    # calls a script makes (a session start made 6+ handshakes).
+    if ! result=$(ssh -o ConnectTimeout="$KUDZU_SSH_TIMEOUT" -o ServerAliveInterval=30 -o BatchMode=yes \
+            -o ControlMaster=auto -o ControlPersist=60 -o ControlPath="$KUDZU_STATE_DIR/ssh-%C" \
+            "$KUDZU_HOST" "$cmd" 2>/dev/null); then
         log_error "SSH to $KUDZU_HOST failed"
         return 1
     fi
@@ -190,8 +194,6 @@ ensure_kudzu() {
 # Usage: local id=$(get_hologram_id "claude_memory")
 get_hologram_id() {
     local purpose="$1"
-    local safe_purpose
-    safe_purpose=$(json_escape "$purpose")
 
     local response
     response=$(kudzu_api_get "/api/v1/holograms?limit=10000") || return 1

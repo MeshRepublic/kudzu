@@ -46,8 +46,8 @@ Holograms are self-aware context agents. Each hologram:
 # Query traces by purpose
 traces = Kudzu.Hologram.recall(h, :discovery)
 
-# Share knowledge with peers
-Kudzu.Hologram.share_trace(h, peer_id, trace_id)
+# Share knowledge with peers (cross-node aware)
+Kudzu.Distributed.share_trace(h, peer_id, trace_id)
 
 # Trigger cognition (LLM reasoning with hologram state as context)
 {:ok, response, actions} = Kudzu.Hologram.stimulate(h, "What have you learned?")
@@ -167,7 +167,7 @@ Kudzu.Hologram.introduce_peer(h, peer_id)
 
 # Share trace with peer
 [trace | _] = traces
-Kudzu.Hologram.share_trace(h, peer_id, trace.id)
+Kudzu.Distributed.share_trace(h, peer_id, trace.id)
 
 # Trigger cognition (requires Ollama running)
 {:ok, response, actions} = Kudzu.Hologram.stimulate(h, "What should we explore next?")
@@ -217,7 +217,7 @@ export KUDZU_MCP_PORT=4001
 export KUDZU_CORS_ORIGINS="https://your-app.com"
 ```
 
-Include the API key in every request except `/health`:
+Include the API key in every request except `/health` and `/metrics` (both unauthenticated; `/metrics` includes brain budget and cycle counters):
 
 ```bash
 curl -H "Authorization: Bearer $KUDZU_KEY" http://100.70.67.110:4001/api/v1/holograms
@@ -240,7 +240,17 @@ curl -H "Authorization: Bearer $KUDZU_KEY" http://100.70.67.110:4001/api/v1/holo
 | `PUT` | `/api/v1/holograms/:id/constitution` | Change constitution |
 | `GET` | `/api/v1/holograms/:id/desires` | List desires |
 | `POST` | `/api/v1/holograms/:id/desires` | Add a desire |
-| `GET` | `/api/v1/cluster` | Get cluster statistics |
+| `GET` | `/api/v1/cluster` | Node name, distributed flag, connected nodes |
+| `GET` | `/api/v1/cluster/{nodes,stats}` `POST /connect` | Cluster membership and statistics |
+| `GET`/`POST` | `/api/v1/traces`, `/traces/:id`, `/traces/share` | Cross-hologram trace listing, lookup, sharing |
+| `GET`/`POST` | `/api/v1/constitutions`, `/:name`, `/:name/check` | Framework listing, details, permission check |
+| `GET`/`POST` | `/api/v1/node/*` | Node init, mesh create/join/leave, peers, storage, capabilities |
+| `POST`/`GET`/`DELETE` | `/api/v1/agents/:name/*` | Named-agent API: remember/learn/think/observe/decide/recall/stimulate/desires/peers |
+| `GET` | `/api/v1/beamlets`, `/:id`, `/capabilities/:capability` | Beam-let listing and lookup |
+| `GET` | `/api/v1/storage/{stats,temporal}` | Tiered storage statistics |
+| `POST`/`GET` | `/api/v1/brain/{chat,status}` | Brain chat (SSE) and status |
+
+Full route list: `lib/kudzu_web/router.ex`.
 
 ### REST API Examples
 
@@ -254,7 +264,7 @@ curl -X POST -H "$AUTH" $KUDZU/api/v1/holograms \
   -d '{"purpose": "researcher", "desires": ["Find knowledge"], "cognition": true}'
 
 # Response:
-# {"id": "holo_abc123", "purpose": "researcher", "constitution": "mesh_republic"}
+# {"hologram": {"id": "holo_abc123", "pid": "#PID<...>", "purpose": "researcher", "constitution": "mesh_republic"}}
 
 # Send a stimulus
 curl -X POST -H "$AUTH" $KUDZU/api/v1/holograms/holo_abc123/stimulate \
@@ -262,13 +272,14 @@ curl -X POST -H "$AUTH" $KUDZU/api/v1/holograms/holo_abc123/stimulate \
   -d '{"stimulus": "What have you discovered?"}'
 
 # Response:
-# {"response": "I have been exploring...", "actions": [...], "traces": [...]}
+# {"response": "I have been exploring...", "actions": [...], "hologram_id": "holo_abc123"}
 
 # Get traces
 curl -H "$AUTH" $KUDZU/api/v1/holograms/holo_abc123/traces
 
 # Response:
-# {"traces": [{"id": "trace_1", "purpose": "thought", "content": {...}}]}
+# {"traces": [{"id": "trace_1", "purpose": "thought", "origin": "...", "path": [...],
+#              "reconstruction_hint": {...}, "timestamp": "..."}], "count": 1}
 
 # Record a trace
 curl -X POST -H "$AUTH" $KUDZU/api/v1/holograms/holo_abc123/traces \
@@ -284,7 +295,8 @@ curl -X PUT -H "$AUTH" $KUDZU/api/v1/holograms/holo_abc123/constitution \
 curl -H "$AUTH" $KUDZU/api/v1/cluster
 
 # Response:
-# {"node": "kudzu@192.168.1.10", "distributed": true, "nodes": 3, "total_holograms": 15}
+# {"node": "kudzu@192.168.1.10", "distributed": true, "connected_nodes": [...], "node_count": 3}
+# (per-node hologram totals: GET /api/v1/cluster/stats)
 ```
 
 ### WebSocket Channels
@@ -314,37 +326,40 @@ channel.join()
   .receive("ok", resp => console.log("Joined", resp))
   .receive("error", resp => console.log("Failed", resp));
 
-// Send stimulus
-channel.push("stimulate", { stimulus: "What do you see?" })
-  .receive("ok", resp => console.log("Response:", resp));
+// Send stimulus (acknowledged immediately; the LLM reply arrives as an event)
+channel.push("stimulate", { content: "What do you see?" })
+  .receive("ok", resp => console.log(resp));   // {status: "processing"}
 
-// Record trace
-channel.push("record_trace", {
-  purpose: "observation",
-  data: { content: "Found something" }
+channel.on("stimulate_response", payload => {
+  console.log("Response:", payload.response, payload.actions);
 });
+
+// Recall traces
+channel.push("recall", { purpose: "observation" })
+  .receive("ok", resp => console.log(resp.traces));
 
 // Listen for events
-channel.on("trace_received", payload => {
-  console.log("New trace from peer:", payload);
-});
-
-channel.on("peer_connected", payload => {
-  console.log("Peer joined:", payload);
-});
+channel.on("trace_recorded", payload => console.log("New trace:", payload));
+channel.on("peer_message", payload => console.log("Peer message:", payload));
+channel.on("constitution_changed", payload => console.log(payload));
 ```
 
 ### WebSocket Events
 
 | Event | Direction | Description |
 |-------|-----------|-------------|
-| `stimulate` | client → server | Send stimulus, receive LLM response |
-| `record_trace` | client → server | Record a new trace |
+| `stimulate` | client → server | Send `content`; reply `{status: "processing"}`, result via `stimulate_response` / `stimulate_error` |
+| `get_state` | client → server | Hologram summary |
 | `recall` | client → server | Query traces by purpose |
 | `add_peer` | client → server | Add a peer relationship |
 | `add_desire` | client → server | Add a new desire |
-| `trace_received` | server → client | Trace received from peer |
-| `peer_connected` | server → client | New peer connected |
+| `set_constitution` | client → server | Hot-swap the constitution |
+| `stimulate_response` | server → client | LLM response and executed actions |
+| `trace_recorded` | server → client | A trace was recorded on this hologram |
+| `peer_message` | server → client | Message from a peer hologram |
+| `constitution_changed` | server → client | Constitution was changed |
+
+Traces are recorded over REST (`POST /api/v1/holograms/:id/traces`) or MCP (`kudzu_record_trace`); the channel has no `record_trace` event.
 
 ## Distributed Mode
 

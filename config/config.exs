@@ -70,8 +70,10 @@ end
 if config_env() == :dev do
   config :kudzu, telemetry_console: true
   # Dev-friendly endpoint settings
+  # debug_errors stays off: the production node runs in :dev, and debug
+  # pages leak stack traces/config to unauthenticated callers.
   config :kudzu, KudzuWeb.MCP.Endpoint,
-    debug_errors: true,
+    debug_errors: false,
     code_reloader: false,
     check_origin: false
 end

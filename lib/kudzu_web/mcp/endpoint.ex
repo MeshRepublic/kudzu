@@ -14,14 +14,6 @@ defmodule KudzuWeb.MCP.Endpoint do
     longpoll: false
   )
 
-  # Serve static files (for potential dashboard)
-  plug(Plug.Static,
-    at: "/",
-    from: :kudzu,
-    gzip: false,
-    only: ~w(assets fonts images favicon.ico robots.txt)
-  )
-
   # Request logging
   plug(Plug.RequestId)
   plug(Plug.Telemetry, event_prefix: [:phoenix, :mcp_endpoint])

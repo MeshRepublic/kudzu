@@ -527,8 +527,10 @@ defmodule Kudzu.Hologram do
     info = %{
       id: state.id,
       purpose: state.purpose,
+      constitution: state.constitution,
       trace_count: map_size(state.traces),
       peer_count: map_size(state.peers),
+      peers: Map.keys(state.peers),
       desires: state.desires,
       cognition_enabled: state.cognition_enabled,
       clock: VectorClock.to_map(state.clock)

@@ -115,10 +115,12 @@ defmodule KudzuWeb.HologramChannel do
     # Run stimulation asynchronously to not block the channel
     Task.start(fn ->
       case Hologram.stimulate(pid, content, opts) do
-        {:ok, response, traces} ->
+        {:ok, response, actions} ->
+          # Hologram.stimulate/3 returns {:ok, response, actions}; actions are
+          # tuples, not traces (mapping them with trace_to_map/1 crashed).
           push(socket, "stimulate_response", %{
             response: response,
-            traces: Enum.map(traces, &trace_to_map/1)
+            actions: Enum.map(actions, &KudzuWeb.HologramController.action_to_map/1)
           })
 
         {:error, reason} ->

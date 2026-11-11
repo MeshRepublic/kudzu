@@ -215,8 +215,18 @@ defmodule KudzuWeb.MCP.Controller do
     end
   end
 
+  def dispatch({:request, id, "tools/call", _params}, _scope) do
+    {:response, Protocol.encode_error(id, -32_602, "tools/call requires a \"name\" parameter")}
+  end
+
   def dispatch({:request, id, method, _params}, _scope) do
     {:response, Protocol.encode_error(id, -32_601, "Method not found: #{method}")}
+  end
+
+  # A malformed item inside a batch gets its own error instead of crashing
+  # the whole batch (there was no clause for it -> FunctionClauseError -> 500).
+  def dispatch({:error, :invalid_request}, _scope) do
+    {:response, Protocol.encode_error(nil, -32_600, "Invalid Request")}
   end
 
   def dispatch({:notification, "initialized", _params}, _scope) do

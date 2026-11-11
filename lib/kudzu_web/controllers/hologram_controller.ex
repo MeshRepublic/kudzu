@@ -9,23 +9,24 @@ defmodule KudzuWeb.HologramController do
   GET /api/v1/holograms
   """
   def index(conn, params) do
-    limit = Map.get(params, "limit", "100") |> String.to_integer()
+    limit = parse_limit(params, 100)
 
-    # Select only :id entries to get hologram id and pid
+    # Select only :id entries to get hologram id and pid. Hologram.info/1
+    # returns counts without copying every trace (get_state/1 did).
     holograms =
       Registry.select(Kudzu.Registry, [{{{:id, :"$1"}, :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
       |> Enum.take(limit)
       |> Enum.map(fn {id, pid} ->
         try do
-          state = Hologram.get_state(pid)
+          info = Hologram.info(pid)
 
           %{
             id: id,
             pid: inspect(pid),
-            purpose: state.purpose,
-            constitution: state.constitution,
-            trace_count: map_size(state.traces),
-            peer_count: map_size(state.peers),
+            purpose: info.purpose,
+            constitution: info.constitution,
+            trace_count: info.trace_count,
+            peer_count: info.peer_count,
             alive: Process.alive?(pid)
           }
         rescue
@@ -83,16 +84,9 @@ defmodule KudzuWeb.HologramController do
 
     case Application.spawn_hologram(opts) do
       {:ok, pid} ->
+        # Hologram.init/1 already persists the metadata in HologramRegistry
+        # (re-registering here overwrote the real cognition model).
         id = Hologram.get_id(pid)
-
-        # Register in persistent registry so it survives restarts
-        Kudzu.HologramRegistry.register(id, %{
-          purpose: opts[:purpose],
-          constitution: opts[:constitution],
-          desires: opts[:desires] || [],
-          cognition_enabled: opts[:cognition] || false,
-          cognition_model: Keyword.get(opts, :model, "mistral:latest")
-        })
 
         conn
         |> put_status(:created)
@@ -205,7 +199,7 @@ defmodule KudzuWeb.HologramController do
   """
   def traces(conn, %{"hologram_id" => id} = params) do
     purpose_filter = Map.get(params, "purpose")
-    limit = Map.get(params, "limit", "100") |> String.to_integer()
+    limit = parse_limit(params, 100)
 
     case find_hologram(id) do
       {:ok, pid} ->
@@ -233,9 +227,10 @@ defmodule KudzuWeb.HologramController do
       {:ok, pid} ->
         state = Hologram.get_state(pid)
 
+        # state.peers is %{peer_id => proximity}
         peers =
-          Enum.map(state.peers, fn {peer_id, info} ->
-            %{id: peer_id, trust: info.trust, last_seen: info.last_seen}
+          Enum.map(state.peers, fn {peer_id, proximity} ->
+            %{id: peer_id, proximity: proximity}
           end)
 
         json(conn, %{peers: peers})
@@ -429,28 +424,30 @@ defmodule KudzuWeb.HologramController do
     ArgumentError -> traces
   end
 
-  defp action_to_map({:record_trace, purpose, hints}) do
+  @doc false
+  # Public so HologramChannel can render the same action shapes.
+  def action_to_map({:record_trace, purpose, hints}) do
     %{type: "record_trace", purpose: purpose, hints: hints}
   end
 
-  defp action_to_map({:query_peer, peer_id, purpose}) do
+  def action_to_map({:query_peer, peer_id, purpose}) do
     %{type: "query_peer", peer_id: peer_id, purpose: purpose}
   end
 
-  defp action_to_map({:share_trace, peer_id, trace_id}) do
+  def action_to_map({:share_trace, peer_id, trace_id}) do
     %{type: "share_trace", peer_id: peer_id, trace_id: trace_id}
   end
 
-  defp action_to_map({:update_desire, desire}) do
+  def action_to_map({:update_desire, desire}) do
     %{type: "update_desire", desire: desire}
   end
 
-  defp action_to_map({:respond, message}) do
+  def action_to_map({:respond, message}) do
     %{type: "respond", message: message}
   end
 
-  defp action_to_map(:noop), do: %{type: "noop"}
-  defp action_to_map(other), do: %{type: "unknown", raw: inspect(other)}
+  def action_to_map(:noop), do: %{type: "noop"}
+  def action_to_map(other), do: %{type: "unknown", raw: inspect(other)}
 
   @allowed_trace_purposes ~w(observation thought memory discovery research learning session_context)a
   defp get_trace_purpose(params) do
@@ -494,4 +491,12 @@ defmodule KudzuWeb.HologramController do
   end
 
   defp safe_to_constitution_atom(atom) when is_atom(atom), do: atom
+
+  # "limit" query param: non-numeric or missing values fall back instead of 500.
+  defp parse_limit(params, default) do
+    case Integer.parse(to_string(Map.get(params, "limit", default))) do
+      {n, _} when n > 0 -> n
+      _ -> default
+    end
+  end
 end

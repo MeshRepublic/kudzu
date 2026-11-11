@@ -47,6 +47,10 @@ def ssh_cmd(remote_cmd: str, stdin: str = "", timeout: int = SSH_TIMEOUT + CURL_
     args = [
         "ssh",
         "-o", f"ConnectTimeout={SSH_TIMEOUT}",
+        # Reuse one connection across the 6+ calls a context build makes.
+        "-o", "ControlMaster=auto",
+        "-o", "ControlPersist=60",
+        "-o", f"ControlPath={STATE_DIR}/ssh-%C",
         "-o", "ServerAliveInterval=30",
         "-o", "BatchMode=yes",
         KUDZU_HOST,
@@ -557,30 +561,6 @@ def render_fallback_md(reason: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Session trace recording
-# ---------------------------------------------------------------------------
-
-def record_context_run(memory_id: str) -> None:
-    """Record a session_context trace to mark this context build."""
-    if not memory_id:
-        return
-    try:
-        import socket
-        hostname = socket.gethostname()
-        api_post(f"/api/v1/holograms/{memory_id}/traces", {
-            "purpose": "session_context",
-            "data": {
-                "content": "Auto-context build for Claude Code session",
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                "type": "context_build",
-                "machine": hostname,
-            },
-        })
-    except Exception:
-        pass  # Non-critical; don't let recording failures block context build
-
-
-# ---------------------------------------------------------------------------
-# Summary output (for hook stdout)
 # ---------------------------------------------------------------------------
 
 def print_summary(sections: dict) -> None:
