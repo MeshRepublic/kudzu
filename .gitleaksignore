@@ -1,0 +1,5 @@
+# Accepted gitleaks findings, one fingerprint per line.
+# Add an entry only after confirming the finding is not a real credential.
+
+# README example: `curl -H "Authorization: Bearer your-api-key"` (placeholder text).
+d4114506da39868ff6d25fed46ccda2c95d7dc47:README.md:curl-auth-header:200
