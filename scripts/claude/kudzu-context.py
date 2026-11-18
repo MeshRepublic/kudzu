@@ -66,6 +66,10 @@ class AuthError(RuntimeError):
     """Missing API key, or the API rejected it (401/403)."""
 
 
+class ApiError(RuntimeError):
+    """The API answered with a non-auth error (e.g. 404 hologram not found)."""
+
+
 def api_key() -> str:
     """Resolve the API key: $KUDZU_API_KEY, else the first line of the key file.
 
@@ -92,16 +96,23 @@ def api_request(path: str, curl_args: str = "", body: str = "") -> dict:
     url = shlex.quote(f"{KUDZU_URL}{path}")
     remote = (
         "IFS= read -r k; "
-        f"curl -s --max-time {CURL_TIMEOUT} "
+        f"curl -s --max-time {CURL_TIMEOUT} -w '\\n%{{http_code}}' "
         "-H @<(printf 'Authorization: Bearer %s\\n' \"$k\") "
         f"{curl_args} {url}"
     )
     raw = ssh_cmd(remote, stdin=api_key() + "\n" + body)
+    raw, _, status = raw.rpartition("\n")
     data = json.loads(raw)
-    if isinstance(data, dict) and set(data) == {"error"}:
-        # 401/403 bodies are {"error": "..."}; surface them instead of
-        # letting callers treat them as "no data".
-        raise AuthError(f"Kudzu API rejected the request to {path}: {data['error']}")
+    if status in ("401", "403"):
+        # Surface a rejected key instead of letting callers treat it as
+        # "no data".
+        detail = data.get("error", "") if isinstance(data, dict) else ""
+        raise AuthError(f"Kudzu API rejected the request to {path}: {detail or status}")
+    if not status.startswith("2"):
+        # Anything else (e.g. 404 for a hologram that no longer exists) is a
+        # per-request failure, not a reason to declare Kudzu unreachable.
+        detail = data.get("error", "") if isinstance(data, dict) else ""
+        raise ApiError(f"Kudzu API request to {path} failed ({status}): {detail}")
     return data
 
 
