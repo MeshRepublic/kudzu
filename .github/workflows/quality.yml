@@ -4,8 +4,9 @@ on:
   # All PRs, not only those targeting main: stacked PRs are based on their
   # parent branch and would otherwise never be tested.
   pull_request:
+  # Every push, so the secret scan covers branches that have no PR yet. The
+  # quality and test jobs still run only for PRs and for pushes to main.
   push:
-    branches: [main]
 
 env:
   MIX_ENV: test
@@ -18,6 +19,7 @@ env:
 jobs:
   quality:
     name: mix quality (format + credo + dialyzer)
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -72,6 +74,7 @@ jobs:
 
   test:
     name: mix test
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -105,3 +108,22 @@ jobs:
 
       - name: Run tests (excludes :external by default)
         run: mix test --warnings-as-errors
+
+  gitleaks:
+    name: gitleaks (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # fetch-depth 0 fetches every branch and tag with complete history.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Runs the pinned gitleaks image directly rather than gitleaks-action,
+      # which needs a licence key for organisation repositories. --redact
+      # keeps any finding's value out of the job log.
+      - name: Scan full git history for secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git --no-banner --redact --log-opts="--all" /repo
