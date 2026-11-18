@@ -71,6 +71,10 @@ defmodule Kudzu.Brain.Thought do
       nil ->
         Logger.debug("[Thought #{id}] Timed out at depth #{depth}")
         %Result{id: id, input: input, depth: depth, resolution: :timeout}
+
+      {:exit, reason} ->
+        Logger.warning("[Thought #{id}] Crashed at depth #{depth}: #{inspect(reason)}")
+        %Result{id: id, input: input, depth: depth, resolution: :error}
     end
   end
 

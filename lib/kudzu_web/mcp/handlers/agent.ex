@@ -115,7 +115,8 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
 
       query =
         cond do
-          params["purpose"] -> String.to_atom(params["purpose"])
+          # read-allowlisted tool: never create atoms from caller input
+          params["purpose"] -> existing_purpose_atom(params["purpose"])
           params["query"] -> params["query"]
           true -> ""
         end
@@ -130,7 +131,6 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
     with_agent(name, fn pid ->
       case Agent.stimulate(pid, prompt) do
         {:ok, response, actions} -> {:ok, %{response: response, actions: length(actions)}}
-        {:ok, response} -> {:ok, %{response: response}}
         {:error, reason} -> {:error, -32_603, inspect(reason)}
       end
     end)
@@ -199,4 +199,10 @@ defmodule KudzuWeb.MCP.Handlers.Agent do
 
   defp trace_to_map(trace) when is_map(trace), do: trace
   defp trace_to_map(other), do: %{raw: inspect(other)}
+
+  defp existing_purpose_atom(str) when is_binary(str) do
+    String.to_existing_atom(str)
+  rescue
+    ArgumentError -> :__unknown_purpose__
+  end
 end

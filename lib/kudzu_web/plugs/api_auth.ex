@@ -128,7 +128,15 @@ defmodule KudzuWeb.Plugs.APIAuth do
     end
   end
 
-  defp deny(conn, status, message) do
+  defp deny(conn, 401, message) do
+    conn
+    |> put_resp_header("www-authenticate", ~s(Bearer realm="kudzu"))
+    |> deny_with(401, message)
+  end
+
+  defp deny(conn, status, message), do: deny_with(conn, status, message)
+
+  defp deny_with(conn, status, message) do
     conn
     |> put_resp_content_type("application/json")
     |> send_resp(status, Jason.encode!(%{error: message}))

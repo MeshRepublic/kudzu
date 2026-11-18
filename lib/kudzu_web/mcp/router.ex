@@ -69,18 +69,33 @@ defmodule KudzuWeb.MCP.Router do
       {:error, status, message} ->
         conn
         |> put_resp_content_type("application/json")
+        |> maybe_www_authenticate(status)
         |> send_resp(status, Jason.encode!(%{error: message}))
     end
   end
 
+  # RFC 7235: a 401 names its scheme, so MCP clients know to send a bearer
+  # key instead of falling back to OAuth discovery (POST /register -> 404).
+  defp maybe_www_authenticate(conn, 401),
+    do: put_resp_header(conn, "www-authenticate", ~s(Bearer realm="kudzu"))
+
+  defp maybe_www_authenticate(conn, _status), do: conn
+
+  # Plug.Parsers wraps a top-level JSON array (a JSON-RPC batch) as
+  # %{"_json" => list}; unwrap it so Protocol sees the batch.
+  defp unwrap_body(%{"_json" => list}) when is_list(list), do: list
+  defp unwrap_body(body), do: body
+
   defp handle_post(conn, scope) do
     session_id = get_req_header(conn, "mcp-session-id") |> List.first()
 
-    case Protocol.parse_request(conn.body_params) do
+    case Protocol.parse_request(unwrap_body(conn.body_params)) do
       {:error, :invalid_request} ->
+        # The body was valid JSON (Plug.Parsers already rejected malformed
+        # JSON) but not a JSON-RPC request: -32600, not -32700.
         conn
         |> put_resp_content_type("application/json")
-        |> send_resp(400, Jason.encode!(Protocol.encode_error(nil, -32_700, "Parse error")))
+        |> send_resp(400, Jason.encode!(Protocol.encode_error(nil, -32_600, "Invalid Request")))
 
       parsed ->
         result = Controller.dispatch(parsed, scope)
@@ -102,6 +117,10 @@ defmodule KudzuWeb.MCP.Router do
             conn
             |> put_resp_content_type("application/json")
             |> send_resp(200, Jason.encode!(response))
+
+          {:batch_response, []} ->
+            # notifications only: nothing to return
+            send_resp(conn, 202, "")
 
           {:batch_response, responses} ->
             conn

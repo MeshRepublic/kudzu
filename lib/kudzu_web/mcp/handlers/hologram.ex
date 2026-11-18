@@ -15,14 +15,14 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
       |> Enum.take(limit)
       |> Enum.map(fn {id, pid} ->
         try do
-          state = Hologram.get_state(pid)
+          info = Hologram.info(pid)
 
           %{
             id: id,
-            purpose: state.purpose,
-            constitution: state.constitution,
-            trace_count: map_size(state.traces),
-            peer_count: map_size(state.peers)
+            purpose: info.purpose,
+            constitution: info.constitution,
+            trace_count: info.trace_count,
+            peer_count: info.peer_count
           }
         rescue
           _ -> %{id: id, alive: false}
@@ -130,9 +130,10 @@ defmodule KudzuWeb.MCP.Handlers.Hologram do
     with_hologram(id, fn pid ->
       state = Hologram.get_state(pid)
 
+      # state.peers is %{peer_id => proximity}
       peers =
-        Enum.map(state.peers, fn {peer_id, info} ->
-          %{id: peer_id, trust: info.trust, last_seen: info.last_seen}
+        Enum.map(state.peers, fn {peer_id, proximity} ->
+          %{id: peer_id, proximity: proximity}
         end)
 
       {:ok, %{peers: peers}}

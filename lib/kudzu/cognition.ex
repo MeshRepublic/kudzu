@@ -59,7 +59,7 @@ defmodule Kudzu.Cognition do
   """
   @spec think(map(), String.t() | map(), keyword()) :: {:ok, think_result()} | {:error, term()}
   def think(state, stimulus, opts \\ []) do
-    model = Keyword.get(opts, :model, @default_model)
+    model = Keyword.get(opts, :model, default_model())
     temperature = Keyword.get(opts, :temperature, 0.7)
     ollama_url = get_ollama_url(opts, state)
 
@@ -81,7 +81,7 @@ defmodule Kudzu.Cognition do
   """
   @spec quick_think(map(), String.t(), keyword()) :: {:ok, action()} | {:error, term()}
   def quick_think(state, stimulus, opts \\ []) do
-    model = Keyword.get(opts, :model, @default_model)
+    model = Keyword.get(opts, :model, default_model())
     ollama_url = get_ollama_url(opts, state)
 
     prompt = PromptBuilder.build(state, stimulus, format: :ollama_quick, model_id: model)
@@ -153,7 +153,7 @@ defmodule Kudzu.Cognition do
       body
     }
 
-    case Kudzu.HTTP.request(:post, request, [{:timeout, @timeout}]) do
+    case Kudzu.HTTP.request(:post, request, [{:timeout, cognition_timeout()}]) do
       {:ok, {{_, 200, _}, _, response_body}} ->
         case Jason.decode(to_string(response_body)) do
           {:ok, %{"response" => response}} ->
@@ -302,4 +302,9 @@ defmodule Kudzu.Cognition do
       end
     end)
   end
+
+  # `config :kudzu, default_model: .., cognition_timeout: ..` were defined but
+  # never read; the module constants are now the fallbacks.
+  defp default_model, do: Application.get_env(:kudzu, :default_model, @default_model)
+  defp cognition_timeout, do: Application.get_env(:kudzu, :cognition_timeout, @timeout)
 end

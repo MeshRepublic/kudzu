@@ -138,6 +138,9 @@ defmodule Kudzu.HologramRegistry do
 
   @impl true
   def init(_opts) do
+    # terminate/2 (persist live metadata, close DETS) only runs on shutdown
+    # when exits are trapped.
+    Process.flag(:trap_exit, true)
     file = dets_file()
     dets_dir = Path.dirname(to_string(file))
     File.mkdir_p!(dets_dir)
@@ -246,6 +249,9 @@ defmodule Kudzu.HologramRegistry do
     :dets.insert(state.dets, Enum.map(metadata_list, &{&1.id, &1}))
     {:noreply, schedule_sync(state)}
   end
+
+  @impl true
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
 
   @impl true
   def handle_info(:sync, state) do
@@ -384,6 +390,10 @@ defmodule Kudzu.HologramRegistry do
             last_persisted_at: DateTime.utc_now()
           }
         ]
+      rescue
+        # Non-hologram children (e.g. Kudzu.Hologram.Runner) answer :get_state
+        # with a map lacking these keys; skip them instead of crashing the snapshot.
+        _ -> []
       catch
         :exit, _ -> []
       end

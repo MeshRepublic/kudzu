@@ -110,6 +110,8 @@ defmodule Kudzu.Constitution.WeightLedger do
 
   @impl true
   def init(_opts) do
+    # terminate/2 closes the DETS file only if exits are trapped.
+    Process.flag(:trap_exit, true)
     data_root = Application.fetch_env!(:kudzu, :data_root)
     dets_dir = Path.join(data_root, @dets_subdir)
     File.mkdir_p!(dets_dir)
@@ -180,6 +182,9 @@ defmodule Kudzu.Constitution.WeightLedger do
     :ok = :dets.sync(state.dets)
     {:reply, :ok, state}
   end
+
+  @impl true
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
 
   @impl true
   def terminate(_reason, state) do

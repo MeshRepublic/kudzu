@@ -88,8 +88,8 @@ defmodule Kudzu.Consolidation do
 
   @doc "Get consolidation statistics."
   @spec stats() :: map()
-  def stats do
-    GenServer.call(__MODULE__, :stats)
+  def stats(timeout \\ 5_000) do
+    GenServer.call(__MODULE__, :stats, timeout)
   end
 
   @doc "Get the current encoder state (for use by other modules)."

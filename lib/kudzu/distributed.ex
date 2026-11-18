@@ -177,14 +177,12 @@ defmodule Kudzu.Distributed do
   """
   @spec list_holograms(atom()) :: [pid()]
   def list_holograms(node \\ Node.self()) do
+    # Kudzu.HologramRegistry is the DETS metadata GenServer, not a Registry;
+    # the live hologram pids come from the supervisor.
     if node == Node.self() do
-      # Local
-      Registry.select(Kudzu.HologramRegistry, [{{:_, :"$1", :_}, [], [:"$1"]}])
+      Kudzu.Application.list_holograms()
     else
-      :rpc.call(node, Registry, :select, [
-        Kudzu.HologramRegistry,
-        [{{:_, :"$1", :_}, [], [:"$1"]}]
-      ])
+      :rpc.call(node, Kudzu.Application, :list_holograms, [])
     end
   end
 

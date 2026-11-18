@@ -47,6 +47,10 @@ def ssh_cmd(remote_cmd: str, stdin: str = "", timeout: int = SSH_TIMEOUT + CURL_
     args = [
         "ssh",
         "-o", f"ConnectTimeout={SSH_TIMEOUT}",
+        # Reuse one connection across the 6+ calls a context build makes.
+        "-o", "ControlMaster=auto",
+        "-o", "ControlPersist=60",
+        "-o", f"ControlPath={STATE_DIR}/ssh-%C",
         "-o", "ServerAliveInterval=30",
         "-o", "BatchMode=yes",
         KUDZU_HOST,
@@ -60,6 +64,10 @@ def ssh_cmd(remote_cmd: str, stdin: str = "", timeout: int = SSH_TIMEOUT + CURL_
 
 class AuthError(RuntimeError):
     """Missing API key, or the API rejected it (401/403)."""
+
+
+class ApiError(RuntimeError):
+    """The API answered with a non-auth error (e.g. 404 hologram not found)."""
 
 
 def api_key() -> str:
@@ -88,16 +96,23 @@ def api_request(path: str, curl_args: str = "", body: str = "") -> dict:
     url = shlex.quote(f"{KUDZU_URL}{path}")
     remote = (
         "IFS= read -r k; "
-        f"curl -s --max-time {CURL_TIMEOUT} "
+        f"curl -s --max-time {CURL_TIMEOUT} -w '\\n%{{http_code}}' "
         "-H @<(printf 'Authorization: Bearer %s\\n' \"$k\") "
         f"{curl_args} {url}"
     )
     raw = ssh_cmd(remote, stdin=api_key() + "\n" + body)
+    raw, _, status = raw.rpartition("\n")
     data = json.loads(raw)
-    if isinstance(data, dict) and set(data) == {"error"}:
-        # 401/403 bodies are {"error": "..."}; surface them instead of
-        # letting callers treat them as "no data".
-        raise AuthError(f"Kudzu API rejected the request to {path}: {data['error']}")
+    if status in ("401", "403"):
+        # Surface a rejected key instead of letting callers treat it as
+        # "no data".
+        detail = data.get("error", "") if isinstance(data, dict) else ""
+        raise AuthError(f"Kudzu API rejected the request to {path}: {detail or status}")
+    if not status.startswith("2"):
+        # Anything else (e.g. 404 for a hologram that no longer exists) is a
+        # per-request failure, not a reason to declare Kudzu unreachable.
+        detail = data.get("error", "") if isinstance(data, dict) else ""
+        raise ApiError(f"Kudzu API request to {path} failed ({status}): {detail}")
     return data
 
 
@@ -341,14 +356,22 @@ def categorize_trace(trace: dict, content: str) -> str:
 # Deduplication
 # ---------------------------------------------------------------------------
 
-def deduplicate(items: list) -> list:
-    """Remove entries where a shorter string is a substring of a longer one.
+FUZZY_DUP_RATIO = 0.85
+FUZZY_MIN_LEN = 20
 
-    Each item is a (content, recency) tuple. Keeps the longer/more-recent
-    version when duplicates are found.
+
+def deduplicate(items: list) -> list:
+    """Remove entries that are substrings of, or near-identical to, a kept entry.
+
+    Each item is a (content, recency) tuple. Longer items are kept in
+    preference to shorter ones. Near-identical traces (same observation
+    re-recorded with slightly different wording) are caught with a
+    SequenceMatcher ratio above FUZZY_DUP_RATIO.
     """
     if not items:
         return items
+
+    from difflib import SequenceMatcher
 
     # Sort by content length descending so longer items come first
     sorted_items = sorted(items, key=lambda x: len(x[0]), reverse=True)
@@ -358,7 +381,12 @@ def deduplicate(items: list) -> list:
         normalized = content.strip().lower()
         is_dup = False
         for existing_content, _ in kept:
-            if normalized in existing_content.strip().lower():
+            existing_norm = existing_content.strip().lower()
+            if normalized in existing_norm:
+                is_dup = True
+                break
+            if (len(normalized) > FUZZY_MIN_LEN and len(existing_norm) > FUZZY_MIN_LEN
+                    and SequenceMatcher(None, normalized, existing_norm).ratio() > FUZZY_DUP_RATIO):
                 is_dup = True
                 break
         if not is_dup:
@@ -380,6 +408,16 @@ SECTION_ORDER = [
     "Learnings",
     "Recent Decisions",
 ]
+
+# Section priority weights: share of the line budget per item (higher = more).
+SECTION_WEIGHTS = {
+    "Current State": 2.0,
+    "Active Projects": 2.5,
+    "Key Facts": 2.0,
+    "Workflows": 1.0,
+    "Learnings": 1.5,
+    "Recent Decisions": 1.5,
+}
 
 
 def build_sections(all_traces: list) -> dict:
@@ -473,12 +511,14 @@ def render_memory_md(sections: dict) -> str:
     if available < len(active_sections):
         available = len(active_sections)
 
-    # Distribute lines proportionally, minimum 1 per section
-    total_items = sum(len(items) for _, items in active_sections)
+    # Distribute lines by item count scaled with SECTION_WEIGHTS, minimum 1 per section
+    total_weighted = sum(len(items) * SECTION_WEIGHTS.get(name, 1.0)
+                         for name, items in active_sections)
     per_section = {}
     for name, items in active_sections:
-        if total_items > 0:
-            share = max(1, int(available * len(items) / total_items))
+        if total_weighted > 0:
+            weight = SECTION_WEIGHTS.get(name, 1.0)
+            share = max(1, int(available * len(items) * weight / total_weighted))
         else:
             share = 1
         per_section[name] = share
@@ -532,30 +572,6 @@ def render_fallback_md(reason: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Session trace recording
-# ---------------------------------------------------------------------------
-
-def record_context_run(memory_id: str) -> None:
-    """Record a session_context trace to mark this context build."""
-    if not memory_id:
-        return
-    try:
-        import socket
-        hostname = socket.gethostname()
-        api_post(f"/api/v1/holograms/{memory_id}/traces", {
-            "purpose": "session_context",
-            "data": {
-                "content": "Auto-context build for Claude Code session",
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                "type": "context_build",
-                "machine": hostname,
-            },
-        })
-    except Exception:
-        pass  # Non-critical; don't let recording failures block context build
-
-
-# ---------------------------------------------------------------------------
-# Summary output (for hook stdout)
 # ---------------------------------------------------------------------------
 
 def print_summary(sections: dict) -> None:

@@ -211,6 +211,10 @@ defmodule Kudzu.Storage do
 
   @impl true
   def init(_opts) do
+    # Trap exits so terminate/2 closes the DETS files cleanly; otherwise every
+    # restart reopens them "not properly closed" (repair pass) and up to one
+    # auto_save interval of warm writes is lost.
+    Process.flag(:trap_exit, true)
     # Initialize hot tier (ETS)
     :ets.new(@hot_table, [:named_table, :set, :public, read_concurrency: true])
 
@@ -260,20 +264,9 @@ defmodule Kudzu.Storage do
     :exit, reason -> Logger.warning("[Storage] Cold tier init exited: #{inspect(reason)}")
   end
 
-  defp check_mnesia_ready do
-    try do
-      case :mnesia.system_info(:is_running) do
-        :yes ->
-          tables = :mnesia.system_info(:tables)
-          @cold_table in tables
-
-        _ ->
-          false
-      end
-    rescue
-      _ -> false
-    end
-  end
+  # "Ready" means loaded on this node (where_to_write), not merely present in
+  # the schema; see MnesiaSchema.table_loaded?/0.
+  defp check_mnesia_ready, do: Kudzu.Storage.MnesiaSchema.table_loaded?()
 
   @impl true
   def handle_call({:store, trace, hologram_id, importance}, _from, state) do
@@ -348,7 +341,8 @@ defmodule Kudzu.Storage do
         []
       end
 
-    {:reply, hot_results ++ warm_results ++ cold_results, state}
+    # store/1 writes to hot and warm, so fresh records appear in both.
+    {:reply, Enum.uniq_by(hot_results ++ warm_results ++ cold_results, & &1.id), state}
   end
 
   @impl true
@@ -365,7 +359,7 @@ defmodule Kudzu.Storage do
         []
       end
 
-    {:reply, hot_results ++ warm_results ++ cold_results, state}
+    {:reply, Enum.uniq_by(hot_results ++ warm_results ++ cold_results, & &1.id), state}
   end
 
   @impl true
@@ -540,6 +534,18 @@ defmodule Kudzu.Storage do
   end
 
   @impl true
+  def terminate(_reason, _state) do
+    :dets.close(warm_file())
+    :dets.close(embedding_file())
+    :ok
+  catch
+    _, _ -> :ok
+  end
+
+  @impl true
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
+
+  @impl true
   def handle_info(:age_traces, state) do
     do_age_traces()
     schedule_aging()
@@ -561,9 +567,9 @@ defmodule Kudzu.Storage do
   defp promote_to_hot(trace_id, record) do
     updated = %{record | last_accessed: DateTime.utc_now(), access_count: record.access_count + 1}
     :ets.insert(@hot_table, {trace_id, updated})
-    # Remove from lower tier
-    :dets.delete(warm_file(), trace_id)
-    # Cold deletion handled by Mnesia if present
+    # Hot is a cache; the warm (DETS) copy stays as the durable record. It used
+    # to be deleted here, leaving the trace in memory only until the next
+    # aging pass demoted it again (a crash in that window lost it).
   end
 
   defp do_age_traces do

@@ -100,4 +100,37 @@ defmodule Kudzu.VectorClock do
   def from_map(map) when is_map(map) do
     %__MODULE__{clocks: map}
   end
+
+  defmodule Sort do
+    @moduledoc """
+    Total order over vector clocks for `Enum.sort_by(list, &key/1, {:desc, Kudzu.VectorClock.Sort})`.
+
+    `Enum.sort_by/3` expects `compare/2` to return `:lt | :eq | :gt`;
+    `Kudzu.VectorClock.compare/2` returns `:before | :after | :concurrent |
+    :equal`, so using it directly made the comparator always truthy and left
+    traces in map order. Concurrent clocks (incomparable) fall back to the
+    Lamport sum so the order is still total.
+    """
+
+    @spec compare(Kudzu.VectorClock.t(), Kudzu.VectorClock.t()) :: :lt | :eq | :gt
+    def compare(%Kudzu.VectorClock{} = a, %Kudzu.VectorClock{} = b) do
+      case Kudzu.VectorClock.compare(a, b) do
+        :before -> :lt
+        :after -> :gt
+        :equal -> :eq
+        :concurrent -> compare_sums(a, b)
+      end
+    end
+
+    defp compare_sums(%{clocks: a}, %{clocks: b}) do
+      sa = a |> Map.values() |> Enum.sum()
+      sb = b |> Map.values() |> Enum.sum()
+
+      cond do
+        sa < sb -> :lt
+        sa > sb -> :gt
+        true -> :eq
+      end
+    end
+  end
 end

@@ -13,7 +13,11 @@
 # The script will:
 #   1. Detect your Tailscale IP (or use provided node name)
 #   2. Start Elixir with distributed node settings
-#   3. Configure epmd to listen on the Tailscale interface
+#   3. Pin the distribution port range (inet_dist_listen_min/max 9100-9200)
+#
+# KUDZU_API_KEY must be exported first (config/runtime.exs refuses to boot
+# without it). The canonical production launch is the tmux session described
+# in CLAUDE.md; this script is for ad-hoc distributed experiments.
 #
 
 set -e
@@ -69,7 +73,7 @@ fi
 
 echo "Starting Kudzu distributed node..."
 echo "  Node name: $NODE_NAME"
-echo "  Cookie: $COOKIE"
+echo "  Cookie: (set; not printed)"
 echo ""
 echo "To connect from another node:"
 echo "  Kudzu.Distributed.connect(\"$NODE_NAME\")"

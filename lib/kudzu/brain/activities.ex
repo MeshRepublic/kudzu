@@ -287,6 +287,7 @@ defmodule Kudzu.Brain.Activities do
               )
 
               send(brain_pid, {:learning_progress, goal_id, topic_index, :failed})
+              send(brain_pid, :web_learning_done)
           end
         end)
 
@@ -380,12 +381,17 @@ defmodule Kudzu.Brain.Activities do
             Logger.warning(
               "[Brain] Async web learning crashed: #{inspect(kind)}: #{inspect(reason)}"
             )
+        after
+          # Whatever happened, web learning is no longer in flight. Without
+          # this the flag stuck true after the first curiosity-driven run and
+          # web learning never ran again.
+          send(brain_pid, :web_learning_done)
         end
       end)
 
       state
     else
-      state
+      %{state | web_learning_active: false}
     end
   end
 
@@ -516,8 +522,10 @@ defmodule Kudzu.Brain.Activities do
   # Anomalies use the Reflexes vocabulary (check: :consolidation, reason:
   # "stale" | "unreachable") so a stale daemon is actually remedied by the
   # :restart_consolidation reflex and an unreachable one is escalated.
+  @consolidation_stats_timeout 30_000
+
   defp check_consolidation_recency do
-    stats = Kudzu.Consolidation.stats()
+    stats = Kudzu.Consolidation.stats(@consolidation_stats_timeout)
 
     consolidation_recency(
       Map.get(stats, :last_consolidation),
@@ -527,7 +535,15 @@ defmodule Kudzu.Brain.Activities do
   rescue
     e -> consolidation_unreachable(Exception.message(e))
   catch
-    :exit, reason -> consolidation_unreachable(inspect(reason))
+    # The daemon runs its light/deep cycle inline in handle_info, so a call
+    # timeout means "busy consolidating", not "down". Only :noproc and other
+    # exits are an outage.
+    :exit, {:timeout, _} ->
+      Logger.info("[Brain] Consolidation stats timed out (daemon busy); treating as nominal")
+      {:nominal, :consolidation}
+
+    :exit, reason ->
+      consolidation_unreachable(inspect(reason))
   end
 
   @doc false
@@ -572,19 +588,23 @@ defmodule Kudzu.Brain.Activities do
     if count >= 1 do
       {:nominal, :hologram_count}
     else
+      # check/reason use the Reflexes vocabulary (reflexes.ex matches
+      # `check: :holograms, reason: "no holograms"`); detail carries the text.
       {:anomaly,
        %{
-         check: :hologram_count,
-         reason: "No active holograms (count: #{count})",
-         count: count
+         check: :holograms,
+         reason: "no holograms",
+         count: count,
+         detail: "No active holograms (count: #{count})"
        }}
     end
   rescue
     e ->
       {:anomaly,
        %{
-         check: :hologram_count,
-         reason: "Hologram count check failed: #{Exception.message(e)}"
+         check: :holograms,
+         reason: "check failed",
+         detail: "Hologram count check failed: #{Exception.message(e)}"
        }}
   end
 
@@ -595,10 +615,12 @@ defmodule Kudzu.Brain.Activities do
     {:nominal, :storage_health}
   rescue
     e ->
+      # Reflexes match `check: :storage, reason: "unreachable"`.
       {:anomaly,
        %{
-         check: :storage_health,
-         reason: "Storage query failed: #{Exception.message(e)}"
+         check: :storage,
+         reason: "unreachable",
+         detail: "Storage query failed: #{Exception.message(e)}"
        }}
   end
 end

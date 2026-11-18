@@ -255,7 +255,8 @@ defmodule KudzuWeb.AgentController do
   """
   def recall_by_purpose(conn, %{"name" => name, "purpose" => purpose} = params) do
     with_agent(conn, name, fn pid ->
-      purpose_atom = String.to_atom(purpose)
+      # Read-scoped route: never create atoms from caller input.
+      purpose_atom = existing_purpose_atom(purpose)
       opts = []
 
       opts =
@@ -295,9 +296,6 @@ defmodule KudzuWeb.AgentController do
             response: response,
             actions: length(actions)
           })
-
-        {:ok, response} ->
-          json(conn, %{response: response})
 
         {:error, reason} ->
           conn
@@ -425,6 +423,7 @@ defmodule KudzuWeb.AgentController do
   end
 
   defp safe_stringify(nil), do: nil
+  defp safe_stringify(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
 
   defp safe_stringify(map) when is_struct(map) do
     map |> Map.from_struct() |> safe_stringify()
@@ -440,6 +439,13 @@ defmodule KudzuWeb.AgentController do
 
   defp safe_stringify(list) when is_list(list), do: Enum.map(list, &safe_stringify/1)
   defp safe_stringify(atom) when is_atom(atom), do: Atom.to_string(atom)
-  defp safe_stringify(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
   defp safe_stringify(other), do: other
+
+  # Unknown purposes map to an atom that no trace carries, so recall is empty
+  # rather than growing the atom table from a GET.
+  defp existing_purpose_atom(str) when is_binary(str) do
+    String.to_existing_atom(str)
+  rescue
+    ArgumentError -> :__unknown_purpose__
+  end
 end

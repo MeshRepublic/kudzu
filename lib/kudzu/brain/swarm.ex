@@ -23,7 +23,6 @@ defmodule Kudzu.Brain.Swarm do
   @default_specialists 3
   @default_cycle_interval 60_000
   @default_max_cycles 10
-  @ollama_url "http://localhost:11434"
   @synthesis_model "llama4:scout"
   @synthesis_timeout 180_000
 
@@ -247,7 +246,7 @@ defmodule Kudzu.Brain.Swarm do
         keep_alive: "10m"
       })
 
-    request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
+    request = {~c"#{ollama_url()}/api/generate", [], ~c"application/json", body}
 
     try do
       case Kudzu.HTTP.request(:post, request, [{:timeout, @synthesis_timeout}]) do
@@ -454,7 +453,7 @@ defmodule Kudzu.Brain.Swarm do
         keep_alive: "10m"
       })
 
-    request = {~c"#{@ollama_url}/api/generate", [], ~c"application/json", body}
+    request = {~c"#{ollama_url()}/api/generate", [], ~c"application/json", body}
 
     try do
       case Kudzu.HTTP.request(:post, request, [{:timeout, @synthesis_timeout}]) do
@@ -500,5 +499,11 @@ defmodule Kudzu.Brain.Swarm do
 
   defp generate_swarm_id do
     :crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower)
+  end
+
+  # Ollama base URL from config (`config :kudzu, :ollama_url`), so worker
+  # nodes and non-default deployments are honoured instead of localhost.
+  defp ollama_url do
+    Elixir.Application.get_env(:kudzu, :ollama_url, "http://localhost:11434")
   end
 end

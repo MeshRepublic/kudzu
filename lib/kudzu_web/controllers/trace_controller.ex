@@ -9,7 +9,12 @@ defmodule KudzuWeb.TraceController do
   """
   def index(conn, params) do
     purpose_filter = Map.get(params, "purpose")
-    limit = Map.get(params, "limit", "100") |> String.to_integer()
+
+    limit =
+      case Integer.parse(to_string(Map.get(params, "limit", "100"))) do
+        {n, _} when n > 0 -> n
+        _ -> 100
+      end
 
     # Collect traces from all holograms (select pids from :id entries)
     traces =

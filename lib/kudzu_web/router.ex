@@ -44,7 +44,7 @@ defmodule KudzuWeb.Router do
     pipe_through(:api)
 
     # Hologram management
-    resources "/holograms", HologramController, except: [:new, :edit] do
+    resources "/holograms", HologramController, except: [:new, :edit, :update] do
       # Nested hologram actions
       post("/stimulate", HologramController, :stimulate)
       get("/traces", HologramController, :traces)

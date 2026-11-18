@@ -181,7 +181,7 @@ holograms takes about 15-30 s; the Brain initializes once it completes.
 - `/home/eel/claude/scripts/kudzu-session.sh` - Mid-session recording
 - `/home/eel/claude/scripts/kudzu-project.sh` - Project management
 - `/home/eel/claude/scripts/kudzu-explore.sh` - Distributed cognition
-- `/home/eel/claude/scripts/kudzu-init.sh` - Basic initialization
+- `/home/eel/claude/scripts/kudzu-node.sh` - Run a local Kudzu node / join a mesh
 
 ## Best Practices
 

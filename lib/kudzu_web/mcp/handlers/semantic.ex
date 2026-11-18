@@ -8,7 +8,7 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
 
   alias Kudzu.{Application, Hologram, HRR}
   alias Kudzu.Consolidation
-  alias Kudzu.HRR.{Encoder, EncoderState, Tokenizer}
+  alias Kudzu.HRR.{EncoderState, Tokenizer}
 
   def handle("kudzu_semantic_recall", params) do
     query = params["query"] || ""
@@ -19,7 +19,7 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
     if query == "" do
       {:error, -32_602, "Query text is required"}
     else
-      {_codebook, encoder_state} = get_encoder_context()
+      encoder_state = get_encoder_context()
 
       # Tokenize query into stemmed unigrams
       query_tokens = Tokenizer.unigrams(query) |> MapSet.new()
@@ -32,6 +32,20 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
         query_vecs =
           query_tokens
           |> Enum.map(fn t -> {t, EncoderState.contextual_vector(encoder_state, t)} end)
+          |> Map.new()
+
+        # Co-occurrence neighbours depend only on the query: compute once,
+        # not once per trace (top_neighbors sorts a token's whole row).
+        query_neighbors =
+          query_tokens
+          |> Enum.map(fn t ->
+            neighbors =
+              EncoderState.top_neighbors(encoder_state, t, k: 10)
+              |> Enum.map(fn {nt, _w} -> nt end)
+              |> MapSet.new()
+
+            {t, neighbors}
+          end)
           |> Map.new()
 
         # Collect and score all traces
@@ -47,7 +61,15 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
               |> Enum.reject(&String.contains?(&1, "_"))
               |> MapSet.new()
 
-            score = token_set_similarity(query_tokens, trace_tokens, query_vecs, encoder_state)
+            score =
+              token_set_similarity(
+                query_tokens,
+                trace_tokens,
+                query_vecs,
+                query_neighbors,
+                encoder_state
+              )
+
             {trace, hologram_id, score}
           end)
           |> Enum.filter(fn {_t, _h, score} -> score >= threshold end)
@@ -85,7 +107,7 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
     if token == "" do
       {:error, -32_602, "Token is required"}
     else
-      {_codebook, encoder_state} = get_encoder_context()
+      encoder_state = get_encoder_context()
 
       stemmed = Tokenizer.stem(String.downcase(token))
       neighbors = EncoderState.top_neighbors(encoder_state, stemmed, k: k)
@@ -125,7 +147,7 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
     limit = Map.get(params, "limit", 50)
     query = params["query"]
 
-    {_codebook, encoder_state} = get_encoder_context()
+    encoder_state = get_encoder_context()
 
     tokens =
       encoder_state.token_counts
@@ -160,7 +182,7 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
   end
 
   def handle("kudzu_encoder_stats", _params) do
-    {_codebook, encoder_state} = get_encoder_context()
+    encoder_state = get_encoder_context()
     stats = EncoderState.stats(encoder_state)
 
     json_safe = %{
@@ -177,14 +199,20 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
   # --- Token-Set Similarity ---
 
   # Score = jaccard overlap + contextual boost from co-occurrence vectors
-  defp token_set_similarity(query_tokens, trace_tokens, query_vecs, encoder_state) do
+  defp token_set_similarity(
+         query_tokens,
+         trace_tokens,
+         query_vecs,
+         query_neighbors,
+         encoder_state
+       ) do
     shared = MapSet.intersection(query_tokens, trace_tokens)
     shared_count = MapSet.size(shared)
 
     if shared_count == 0 do
       # No direct overlap — check for co-occurrence proximity
       # For each query token, check if any trace token is a top neighbor
-      indirect_score(query_tokens, trace_tokens, encoder_state)
+      indirect_score(query_tokens, trace_tokens, query_neighbors)
     else
       union_count = MapSet.size(MapSet.union(query_tokens, trace_tokens))
       jaccard = shared_count / max(union_count, 1)
@@ -213,17 +241,13 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
   end
 
   # Indirect matching: no shared tokens, but check co-occurrence neighbors
-  defp indirect_score(query_tokens, trace_tokens, encoder_state) do
-    # For each query token, get its top co-occurrence neighbors
-    # If any neighbor appears in the trace tokens, that's an indirect hit
-    query_list = MapSet.to_list(query_tokens)
-
+  defp indirect_score(query_tokens, trace_tokens, query_neighbors) do
+    # For each query token, check whether its precomputed co-occurrence
+    # neighbours appear in the trace tokens (an indirect hit).
     hits =
-      Enum.reduce(query_list, 0, fn qt, acc ->
-        neighbors = EncoderState.top_neighbors(encoder_state, qt, k: 10)
-        neighbor_tokens = Enum.map(neighbors, fn {t, _w} -> t end) |> MapSet.new()
-        overlap = MapSet.intersection(neighbor_tokens, trace_tokens) |> MapSet.size()
-        acc + overlap
+      Enum.reduce(query_tokens, 0, fn qt, acc ->
+        neighbor_tokens = Map.get(query_neighbors, qt, MapSet.new())
+        acc + MapSet.size(MapSet.intersection(neighbor_tokens, trace_tokens))
       end)
 
     # Normalize by possible hits
@@ -242,20 +266,14 @@ defmodule KudzuWeb.MCP.Handlers.Semantic do
   end
 
   defp get_encoder_context do
+    # Only the encoder state is used; the codebook round-trip to the
+    # consolidation daemon (possibly mid deep-cycle) was discarded.
     try do
-      codebook = Consolidation.get_codebook()
-      encoder_state = Consolidation.get_encoder_state()
-      {codebook, encoder_state}
+      Consolidation.get_encoder_state()
     rescue
-      _ ->
-        codebook = Encoder.init()
-        encoder_state = EncoderState.load()
-        {codebook, encoder_state}
+      _ -> EncoderState.load()
     catch
-      :exit, _ ->
-        codebook = Encoder.init()
-        encoder_state = EncoderState.load()
-        {codebook, encoder_state}
+      :exit, _ -> EncoderState.load()
     end
   end
 

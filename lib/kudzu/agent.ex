@@ -72,7 +72,9 @@ defmodule Kudzu.Agent do
       purpose: purpose,
       constitution: Keyword.get(opts, :constitution, :mesh_republic),
       cognition: Keyword.get(opts, :cognition, false),
-      cognition_model: Keyword.get(opts, :cognition_model, "llama4:scout"),
+      # Hologram.init/1 reads :model; :cognition_model is accepted for callers
+      # written against this module's docs.
+      model: Keyword.get(opts, :model, Keyword.get(opts, :cognition_model, "llama4:scout")),
       desires: Keyword.get(opts, :desires, [])
     ]
 
@@ -305,11 +307,9 @@ defmodule Kudzu.Agent do
   # ============================================================================
 
   defp record_trace(agent, purpose, data) do
+    # Hologram.record_trace/3 already persists to tiered storage; a second
+    # Node.store/3 overwrote the same record (resetting created_at/access_count).
     {:ok, trace} = Hologram.record_trace(agent, purpose, data)
-    # Also persist to tiered storage
-    hologram_id = Hologram.get_id(agent)
-    importance = Map.get(data, :importance, :normal)
-    Node.store(trace, hologram_id, importance: importance)
     {:ok, trace.id}
   end
 
