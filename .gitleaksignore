@@ -1,5 +1,8 @@
 # Accepted gitleaks findings, one fingerprint per line.
 # Add an entry only after confirming the finding is not a real credential.
+# Do not quote the flagged text in this file: the scan reads it too.
 
-# README example: `curl -H "Authorization: Bearer your-api-key"` (placeholder text).
+# README API example whose bearer token is placeholder text, not a key.
 d4114506da39868ff6d25fed46ccda2c95d7dc47:README.md:curl-auth-header:200
+# An earlier version of this file quoted that README example in a comment.
+635907a9c0e16e4d2880703383e81f8a1e3dd641:.gitleaksignore:curl-auth-header:4
