@@ -653,6 +653,7 @@ scripts/
 ├── start_distributed.sh        # Launch distributed node over Tailscale
 └── claude/                     # Claude Code integration (SessionStart hook, helper scripts)
 docs/plans/                     # Design documents and implementation plans
+docs/whitepaper/                # Autonym whitepaper (identity protocol; Kudzu is its memory layer)
 ```
 
 ## Philosophy
