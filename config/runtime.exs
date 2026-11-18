@@ -53,35 +53,77 @@ if config_env() != :test do
   config :kudzu, :data_root, data_root
 end
 
-# Endpoint bind address / port / secret. Applies to dev and prod alike (the
-# production node runs `mix run --no-halt` in :dev); tests keep the
-# compile-time defaults (port 4003, server: false).
+# Endpoint secret. Read from SECRET_KEY_BASE; never a fixed string. :prod
+# refuses to boot without it. Elsewhere (dev/test, including the `mix run`
+# node on titan, which runs in :dev) a missing value is replaced by a random
+# one generated at boot, so anything signed with it is invalidated by a
+# restart: set SECRET_KEY_BASE wherever that matters.
+secret_key_base =
+  case System.get_env("SECRET_KEY_BASE") do
+    blank when blank in [nil, ""] ->
+      if config_env() == :prod do
+        raise """
+        SECRET_KEY_BASE environment variable is required in production.
+
+        Generate one with `mix phx.gen.secret` and export it before starting kudzu.
+        """
+      end
+
+      Base.encode64(:crypto.strong_rand_bytes(48))
+
+    secret when byte_size(secret) < 64 ->
+      raise "SECRET_KEY_BASE is set but shorter than 64 bytes. Generate one with `mix phx.gen.secret`."
+
+    secret ->
+      secret
+  end
+
+config :kudzu, KudzuWeb.MCP.Endpoint, secret_key_base: secret_key_base
+
+# Endpoint bind address / port. Applies to dev and prod alike (the production
+# node runs `mix run --no-halt` in :dev); tests keep the compile-time
+# defaults (port 4003, server: false).
+#
+# The default is titan's Tailscale address, kept so the existing deployment
+# starts unchanged with no extra environment. It is a private tailnet
+# address, not a secret. Any other host must set KUDZU_MCP_IP.
 if config_env() != :test do
   mcp_ip =
-    System.get_env("KUDZU_MCP_IP", "100.70.67.110")
-    |> String.split(".")
-    |> Enum.map(&String.to_integer/1)
-    |> List.to_tuple()
+    case System.get_env("KUDZU_MCP_IP", "100.70.67.110")
+         |> String.to_charlist()
+         |> :inet.parse_address() do
+      {:ok, ip} -> ip
+      {:error, _} -> raise "KUDZU_MCP_IP is not a valid IP address."
+    end
 
   mcp_port = String.to_integer(System.get_env("KUDZU_MCP_PORT") || "4001")
   config :kudzu, KudzuWeb.MCP.Endpoint, http: [ip: mcp_ip, port: mcp_port]
-
-  if secret = System.get_env("SECRET_KEY_BASE") do
-    config :kudzu, KudzuWeb.MCP.Endpoint, secret_key_base: secret
-  end
 
   if cors = System.get_env("KUDZU_CORS_ORIGINS") do
     config :kudzu, :cors_origins, String.split(cors, ",", trim: true)
   end
 end
 
-# Worker node configuration — point Ollama to titan, disable web endpoint
-if System.get_env("KUDZU_ROLE") == "worker" do
-  ollama_host = System.get_env("KUDZU_OLLAMA_HOST", "100.70.67.110")
+# Ollama endpoint. OLLAMA_URL (a full base URL) overrides everything. Without
+# it, a worker node uses KUDZU_OLLAMA_HOST on port 11434 (default: titan, as
+# before) and every other node keeps the compile-time default (local Ollama).
+worker? = System.get_env("KUDZU_ROLE") == "worker"
 
-  config :kudzu,
-    ollama_url: "http://#{ollama_host}:11434"
+ollama_url =
+  case System.get_env("OLLAMA_URL") do
+    blank when blank in [nil, ""] ->
+      if worker?, do: "http://#{System.get_env("KUDZU_OLLAMA_HOST", "100.70.67.110")}:11434"
 
+    url ->
+      url
+  end
+
+if ollama_url do
+  config :kudzu, ollama_url: ollama_url
+end
+
+# Worker node configuration — disable the web endpoint
+if worker? do
   config :kudzu, KudzuWeb.MCP.Endpoint, server: false
 end
 

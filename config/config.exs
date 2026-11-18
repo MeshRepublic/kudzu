@@ -28,14 +28,14 @@ config :kudzu,
   allowed_io_paths: []
 
 # Consolidated endpoint (MCP + REST API + WebSocket). The bind address, port
-# and secret_key_base are set in config/runtime.exs from KUDZU_MCP_IP /
-# KUDZU_MCP_PORT / SECRET_KEY_BASE for every non-test environment (the
-# production node runs `mix run` in :dev, so prod-only handling was ignored).
+# and secret_key_base are set at boot in config/runtime.exs from KUDZU_MCP_IP /
+# KUDZU_MCP_PORT / SECRET_KEY_BASE (the production node runs `mix run` in
+# :dev, so prod-only handling was ignored). NEVER add a literal secret here:
+# this file is compiled into the build.
 config :kudzu, KudzuWeb.MCP.Endpoint,
   url: [host: "localhost"],
-  http: [ip: {100, 70, 67, 110}, port: 4001],
+  http: [ip: {127, 0, 0, 1}, port: 4001],
   server: true,
-  secret_key_base: "generate-a-secret-key-with-mix-phx-gen-secret",
   pubsub_server: Kudzu.PubSub
 
 # API authentication
