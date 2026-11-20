@@ -24,6 +24,14 @@ defmodule Kudzu.Governance.AntitrustTest do
              )
   end
 
+  test "drop just above threshold that rounds to it is still met" do
+    assert {:ok, %{result: :triggered, satisfaction: %{met: true, drop_pct: 10.0}}} =
+             Antitrust.evaluate(
+               %{market_share: 50, baseline_satisfaction: 80_000, current_satisfaction: 71_996.8},
+               %{}
+             )
+  end
+
   test "neither met" do
     assert {:ok, %{result: :not_triggered}} =
              Antitrust.evaluate(

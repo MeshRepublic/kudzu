@@ -44,9 +44,10 @@ defmodule Kudzu.Governance.Antitrust do
          {:ok, current} <- fetch(scenario, :current_satisfaction, &(&1 >= 0)),
          {:ok, share_threshold} <- threshold(thresholds, :share),
          {:ok, drop_threshold} <- threshold(thresholds, :satisfaction_drop) do
-      drop_pct = Float.round((baseline - current) / baseline * 100, 2)
+      raw_drop = (baseline - current) / baseline * 100
+      drop_pct = Float.round(raw_drop, 2)
       share_met = share >= share_threshold
-      drop_met = drop_pct > drop_threshold
+      drop_met = raw_drop > drop_threshold
 
       {:ok,
        %{
