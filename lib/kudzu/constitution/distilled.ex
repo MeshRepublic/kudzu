@@ -107,6 +107,7 @@ defmodule Kudzu.Constitution.Distilled do
 
   @behaviour Kudzu.Constitution.Behaviour
 
+  alias Kudzu.Constitution.AIJudge
   alias Kudzu.Trace
 
   require Logger
@@ -266,6 +267,13 @@ defmodule Kudzu.Constitution.Distilled do
   @stage3_positive_threshold 0.7
 
   @doc """
+  The default pipeline thresholds (τ_R, τ_A, τ_C), before any per-call
+  `config` override.
+  """
+  @spec thresholds() :: %{tau_r: float(), tau_a: float(), tau_c: float()}
+  def thresholds, do: %{tau_r: @default_tau_r, tau_a: @default_tau_a, tau_c: @default_tau_c}
+
+  @doc """
   Stage 1 — fast rejection check.
 
   Compares `proposal_vector` against every relationship trace in the
@@ -282,20 +290,30 @@ defmodule Kudzu.Constitution.Distilled do
   @spec stage1_rejection_check(Kudzu.HRR.vector(), stage_config()) ::
           :no_match | {:denied, String.t(), String.t(), String.t()}
   def stage1_rejection_check(proposal_vector, config) do
+    {result, _detail} = stage1_detailed(proposal_vector, config)
+    result
+  end
+
+  # Stage 1 with its explain detail. `stage1_rejection_check/2` returns
+  # only the result; `explain/2` also records the detail.
+  @spec stage1_detailed(Kudzu.HRR.vector(), stage_config()) ::
+          {:no_match | {:denied, String.t(), String.t(), String.t()}, map()}
+  defp stage1_detailed(proposal_vector, config) do
     silo = Map.get(config, :rejection_silo, @default_rejection_silo)
     tau_r = Map.get(config, :tau_r, @default_tau_r)
 
     case best_silo_match(proposal_vector, silo) do
       nil ->
-        :no_match
+        {:no_match, %{best_similarity: nil, tau_r: tau_r}}
 
       {sim, hint} when sim > tau_r ->
-        {:denied, get_hint(hint, :citation, "unknown citation"),
-         get_hint(hint, :principle, "unknown"),
-         get_hint(hint, :rejection_reason, "rejection match")}
+        {{:denied, get_hint(hint, :citation, "unknown citation"),
+          get_hint(hint, :principle, "unknown"),
+          get_hint(hint, :rejection_reason, "rejection match")},
+         %{best_similarity: sim, tau_r: tau_r}}
 
-      _ ->
-        :no_match
+      {sim, _hint} ->
+        {:no_match, %{best_similarity: sim, tau_r: tau_r}}
     end
   end
 
@@ -312,12 +330,23 @@ defmodule Kudzu.Constitution.Distilled do
   @spec stage2_accumulation_check(Kudzu.HRR.vector(), String.t(), stage_config()) ::
           :no_match | {:denied_by_accumulation, [String.t()], String.t()}
   def stage2_accumulation_check(proposal_vector, principle, config) do
+    {result, _detail} = stage2_detailed(proposal_vector, principle, config)
+    result
+  end
+
+  # Stage 2 with its explain detail. `best_similarity` stays nil unless
+  # τ_A is exceeded, because the silo is only consulted in that case.
+  @spec stage2_detailed(Kudzu.HRR.vector(), String.t(), stage_config()) ::
+          {:no_match | {:denied_by_accumulation, [String.t()], String.t()}, map()}
+  defp stage2_detailed(proposal_vector, principle, config) do
     silo = Map.get(config, :rejection_silo, @default_rejection_silo)
     tau_r = Map.get(config, :tau_r, @default_tau_r)
     tau_a = Map.get(config, :tau_a, @default_tau_a)
 
     {acc_v, acc_scalar} =
       Kudzu.Constitution.WeightLedger.accumulated_weight(proposal_vector, principle)
+
+    detail = %{accumulated_weight: acc_scalar, tau_a: tau_a, best_similarity: nil}
 
     if acc_scalar > tau_a do
       combined = Kudzu.HRR.bundle([proposal_vector, acc_v])
@@ -329,13 +358,16 @@ defmodule Kudzu.Constitution.Distilled do
             |> Kudzu.Constitution.WeightLedger.entries_for_principle()
             |> Enum.map(& &1.proposal_id)
 
-          {:denied_by_accumulation, stack, principle}
+          {{:denied_by_accumulation, stack, principle}, %{detail | best_similarity: sim}}
 
-        _ ->
-          :no_match
+        {sim, _hint} ->
+          {:no_match, %{detail | best_similarity: sim}}
+
+        nil ->
+          {:no_match, detail}
       end
     else
-      :no_match
+      {:no_match, detail}
     end
   end
 
@@ -416,7 +448,8 @@ defmodule Kudzu.Constitution.Distilled do
      positive walk → Stage 4 AI Judge → Stage 5 escalation). See the
      `stage1_rejection_check/2`, `stage2_accumulation_check/3`, and
      private `stage3_positive_rule_walk/5` / `stage4_ai_judge/5` /
-     `stage5_escalate/6` helpers for stage-by-stage behavior.
+     `stage5_escalate/6` helpers for stage-by-stage behavior. This is
+     `explain/2`'s decision; `explain/2` also reports each stage.
 
   2. `{any_atom, %{subject: string}}` (legacy) — soft permission based
      on the distilled struct's subject index, kept for backward
@@ -428,9 +461,8 @@ defmodule Kudzu.Constitution.Distilled do
   @impl true
   @spec permitted?(Kudzu.Constitution.Behaviour.action(), map()) ::
           Kudzu.Constitution.Behaviour.decision()
-  def permitted?({:propose, %{vector: v, principle: p} = params}, state) do
-    config = Map.get(state, :config, %{})
-    five_stage_evaluation(v, p, params, config, state)
+  def permitted?({:propose, %{vector: _, principle: _}} = action, state) do
+    explain(action, state).decision
   end
 
   # Fail closed: with no distilled framework loaded there is nothing to
@@ -449,27 +481,84 @@ defmodule Kudzu.Constitution.Distilled do
     end
   end
 
-  # ---------- 5-stage pipeline ----------
+  # ---------- explain/2 — the 5-stage pipeline with a stage trace ----------
 
-  @spec five_stage_evaluation(
-          Kudzu.HRR.vector(),
-          String.t(),
-          map(),
-          stage_config(),
-          map()
-        ) :: Kudzu.Constitution.Behaviour.decision()
-  defp five_stage_evaluation(vector, principle, params, config, state) do
-    case stage1_rejection_check(vector, config) do
-      {:denied, _, _, _} = result ->
-        result
+  @typedoc """
+  One entry of `explain/2`'s stage trace.
+
+  `:outcome` per stage: 1 and 2 `:no_match | :denied`; 3
+  `:permitted | :insufficient`; 4 `:advances | :retards | :ambiguous |
+  :error`; 5 `:permitted | :denied | :denied_by_accumulation |
+  :permitted_with_weight | :cannot_evaluate`. Stages 2–4 after the
+  deciding stage are `:not_reached` with an empty detail; stage 5 always
+  reports the decision.
+  """
+  @type stage :: %{
+          stage: 1..5,
+          name: String.t(),
+          outcome: atom(),
+          detail: map()
+        }
+
+  @typedoc "`explain/2`'s result: the `permitted?/2` decision plus five stages."
+  @type explanation :: %{
+          decision: Kudzu.Constitution.Behaviour.decision(),
+          stages: [stage()]
+        }
+
+  @stage_names %{
+    1 => "direct rejection match",
+    2 => "accumulated weight",
+    3 => "expertise match",
+    4 => "AI judge",
+    5 => "decision"
+  }
+
+  @doc """
+  Run the 5-stage pipeline for a `{:propose, %{vector: v, principle: p}}`
+  action and return its decision together with what each stage found.
+
+  `decision` is exactly what `permitted?/2` returns for the same input
+  (`permitted?/2` is defined as this function's decision), with the same
+  side effects: the judge is called at most once, and a fail-closed denial
+  is audited once. `stages` always holds five entries in order; see
+  `t:stage/0` for outcomes. Detail keys:
+
+  - stage 1: `best_similarity` (nil when the rejection silo is empty), `tau_r`
+  - stage 2: `accumulated_weight`, `tau_a`, `best_similarity` (nil unless
+    τ_A was exceeded)
+  - stage 3: `best_similarity`, `threshold`
+  - stage 4: `confidence`, `tally` (nil when the judge gives no samples),
+    `reasoning`, `evidence`, `error` (nil unless the outcome is `:error`)
+  - stage 5: `weight` (nil unless weighted), `citation` (nil unless denied
+    with a citation)
+  """
+  @spec explain(Kudzu.Constitution.Behaviour.action(), map()) :: explanation()
+  def explain({:propose, %{vector: v, principle: p} = params}, state) do
+    config = Map.get(state, :config, %{})
+    five_stage_evaluation(v, p, params, config)
+  end
+
+  @spec five_stage_evaluation(Kudzu.HRR.vector(), String.t(), map(), stage_config()) ::
+          explanation()
+  defp five_stage_evaluation(vector, principle, params, config) do
+    {s1, d1} = stage1_detailed(vector, config)
+    trace = [stage_entry(1, denial_outcome(s1), d1)]
+
+    case s1 do
+      {:denied, _, _, _} ->
+        conclude(s1, trace)
 
       :no_match ->
-        case stage2_accumulation_check(vector, principle, config) do
-          {:denied_by_accumulation, _, _} = result ->
-            result
+        {s2, d2} = stage2_detailed(vector, principle, config)
+        trace = [stage_entry(2, denial_outcome(s2), d2) | trace]
+
+        case s2 do
+          {:denied_by_accumulation, _, _} ->
+            conclude(s2, trace)
 
           :no_match ->
-            stage3_positive_rule_walk(vector, principle, params, config, state)
+            stage3_positive_rule_walk(vector, principle, params, config, trace)
         end
     end
   end
@@ -479,20 +568,27 @@ defmodule Kudzu.Constitution.Distilled do
           String.t(),
           map(),
           stage_config(),
-          map()
-        ) :: Kudzu.Constitution.Behaviour.decision()
-  defp stage3_positive_rule_walk(vector, principle, params, config, state) do
+          [stage()]
+        ) :: explanation()
+  defp stage3_positive_rule_walk(vector, principle, params, config, trace) do
     expertise_silo = Map.get(config, :expertise_silo, @default_expertise_silo)
+    best = best_expertise_match(vector, expertise_silo, @stage3_positive_threshold)
 
-    case best_expertise_match(vector, expertise_silo, @stage3_positive_threshold) do
+    detail = %{
+      best_similarity: best && elem(best, 0),
+      threshold: @stage3_positive_threshold
+    }
+
+    case best do
       {sim, _hint} when sim > @stage3_positive_threshold ->
         # Strong positive evidence and (per Stages 1+2) no nearby
         # rejection cluster — permit.
-        :permitted
+        conclude(:permitted, [stage_entry(3, :permitted, detail) | trace])
 
       _ ->
         # Insufficient positive evidence — fall through to Stage 4.
-        stage4_ai_judge(vector, principle, params, config, state)
+        trace = [stage_entry(3, :insufficient, detail) | trace]
+        stage4_ai_judge(vector, principle, params, config, trace)
     end
   end
 
@@ -501,16 +597,43 @@ defmodule Kudzu.Constitution.Distilled do
           String.t(),
           map(),
           stage_config(),
-          map()
-        ) :: Kudzu.Constitution.Behaviour.decision()
-  defp stage4_ai_judge(vector, principle, params, config, _state) do
+          [stage()]
+        ) :: explanation()
+  defp stage4_ai_judge(vector, principle, params, config, trace) do
     case ai_judge_call(vector, principle, params, config) do
-      {:ok, {:advances, confidence, judge_principle, _reasoning, _ev}}
+      {:ok, judgment, samples} ->
+        decision = judged_decision(judgment, vector, principle, params, config)
+
+        conclude(decision, [
+          stage_entry(4, judge_outcome(judgment), judgment_detail(judgment, samples)) | trace
+        ])
+
+      {:error, reason} ->
+        # The judge could not rule. Fail closed: deny and audit, never permit.
+        decision = fail_closed(principle, params, reason)
+
+        detail = %{confidence: nil, tally: nil, reasoning: nil, evidence: nil, error: reason}
+        conclude(decision, [stage_entry(4, :error, detail) | trace], :cannot_evaluate)
+    end
+  end
+
+  # Turn the judge's consensus judgment into a decision. Unchanged from
+  # the pre-explain Stage 4 apart from receiving the bare judgment.
+  @spec judged_decision(
+          Kudzu.Constitution.AIJudge.judgment(),
+          Kudzu.HRR.vector(),
+          String.t(),
+          map(),
+          stage_config()
+        ) :: Kudzu.Constitution.Behaviour.decision()
+  defp judged_decision(judgment, vector, principle, params, config) do
+    case judgment do
+      {:advances, confidence, judge_principle, _reasoning, _ev}
       when confidence >= 0.8 ->
         warn_on_principle_mismatch(principle, judge_principle, :advances)
         :permitted
 
-      {:ok, {:retards, confidence, judge_principle, reasoning, evidence}}
+      {:retards, confidence, judge_principle, reasoning, evidence}
       when confidence >= 0.8 ->
         warn_on_principle_mismatch(principle, judge_principle, :retards)
         tau_c = Map.get(config, :tau_c, @default_tau_c)
@@ -530,16 +653,62 @@ defmodule Kudzu.Constitution.Distilled do
           )
         end
 
-      {:ok, {_verdict, confidence, judge_principle, reasoning, evidence}} ->
+      {_verdict, confidence, judge_principle, reasoning, evidence} ->
         warn_on_principle_mismatch(principle, judge_principle, :ambiguous)
         weight = 1.0 - confidence
         stage5_escalate(vector, principle, params, weight, reasoning, evidence)
-
-      {:error, reason} ->
-        # The judge could not rule. Fail closed: deny and audit, never permit.
-        fail_closed(principle, params, reason)
     end
   end
+
+  @spec judge_outcome(Kudzu.Constitution.AIJudge.judgment()) ::
+          :advances | :retards | :ambiguous
+  defp judge_outcome({verdict, _, _, _, _}) when verdict in [:advances, :retards], do: verdict
+  defp judge_outcome(_judgment), do: :ambiguous
+
+  @spec judgment_detail(AIJudge.judgment(), [AIJudge.judgment()] | nil) :: map()
+  defp judgment_detail({_verdict, confidence, _principle, reasoning, evidence}, samples) do
+    %{
+      confidence: confidence,
+      tally: samples && Kudzu.Constitution.AIJudge.sample_tally(samples),
+      reasoning: reasoning,
+      evidence: evidence,
+      error: nil
+    }
+  end
+
+  @spec stage_entry(1..5, atom(), map()) :: stage()
+  defp stage_entry(n, outcome, detail),
+    do: %{stage: n, name: Map.fetch!(@stage_names, n), outcome: outcome, detail: detail}
+
+  @spec denial_outcome(term()) :: :no_match | :denied
+  defp denial_outcome(:no_match), do: :no_match
+  defp denial_outcome(_denial), do: :denied
+
+  # Finish the trace: `trace` holds the reached stages newest-first; the
+  # unreached stages up to 4 are padded, and stage 5 reports the decision.
+  @spec conclude(Kudzu.Constitution.Behaviour.decision(), [stage()]) :: explanation()
+  defp conclude(decision, trace), do: conclude(decision, trace, decision_outcome(decision))
+
+  @spec conclude(Kudzu.Constitution.Behaviour.decision(), [stage()], atom()) :: explanation()
+  defp conclude(decision, trace, final_outcome) do
+    reached = Enum.reverse(trace)
+    unreached = for n <- (length(reached) + 1)..4//1, do: stage_entry(n, :not_reached, %{})
+    final = stage_entry(5, final_outcome, decision_detail(decision))
+    %{decision: decision, stages: reached ++ unreached ++ [final]}
+  end
+
+  @spec decision_outcome(Kudzu.Constitution.Behaviour.decision()) :: atom()
+  defp decision_outcome(:permitted), do: :permitted
+  defp decision_outcome({:permitted_with_weight, _, _, _, _}), do: :permitted_with_weight
+  defp decision_outcome({:denied_by_accumulation, _, _}), do: :denied_by_accumulation
+  defp decision_outcome(_denied), do: :denied
+
+  @spec decision_detail(Kudzu.Constitution.Behaviour.decision()) :: map()
+  defp decision_detail({:permitted_with_weight, weight, _, _, _}),
+    do: %{weight: weight, citation: nil}
+
+  defp decision_detail({:denied, citation, _, _}), do: %{weight: nil, citation: citation}
+  defp decision_detail(_decision), do: %{weight: nil, citation: nil}
 
   @spec fail_closed(String.t(), map(), term()) :: Kudzu.Constitution.Behaviour.decision()
   defp fail_closed(principle, params, reason) do
@@ -589,8 +758,15 @@ defmodule Kudzu.Constitution.Distilled do
      %{reasoning: reasoning, evidence: evidence}}
   end
 
+  # Calls the judge exactly once. Returns the judgment plus its samples,
+  # or nil when the judge does not report samples. The default AIJudge
+  # module is called through `judge_detailed/1` (same judgment as
+  # `judge/1`); other modules through `judge/1`; an injected function may
+  # return either shape.
   @spec ai_judge_call(Kudzu.HRR.vector(), String.t(), map(), stage_config()) ::
-          {:ok, Kudzu.Constitution.AIJudge.judgment()} | {:error, term()}
+          {:ok, Kudzu.Constitution.AIJudge.judgment(),
+           [Kudzu.Constitution.AIJudge.judgment()] | nil}
+          | {:error, term()}
   defp ai_judge_call(vector, principle, params, config) do
     expertise_silo = Map.get(config, :expertise_silo, @default_expertise_silo)
     rejection_silo = Map.get(config, :rejection_silo, @default_rejection_silo)
@@ -606,9 +782,17 @@ defmodule Kudzu.Constitution.Distilled do
       accumulated_weight: acc_scalar
     }
 
-    case Map.get(config, :judge, Kudzu.Constitution.AIJudge) do
-      judge when is_function(judge, 1) -> judge.(context)
-      judge when is_atom(judge) -> judge.judge(context)
+    result =
+      case Map.get(config, :judge, Kudzu.Constitution.AIJudge) do
+        judge when is_function(judge, 1) -> judge.(context)
+        Kudzu.Constitution.AIJudge -> Kudzu.Constitution.AIJudge.judge_detailed(context)
+        judge when is_atom(judge) -> judge.judge(context)
+      end
+
+    case result do
+      {:ok, judgment, %{samples: samples}} -> {:ok, judgment, samples}
+      {:ok, judgment} -> {:ok, judgment, nil}
+      {:error, _reason} = error -> error
     end
   end
 
@@ -753,7 +937,7 @@ defmodule Kudzu.Constitution.Distilled do
       }
 
       config = Map.get(state, :config, %{})
-      five_stage_evaluation(thought_vector, principle, params, config, state)
+      five_stage_evaluation(thought_vector, principle, params, config).decision
     end
   end
 
