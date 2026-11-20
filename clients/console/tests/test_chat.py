@@ -1,3 +1,4 @@
+import asyncio
 import threading
 
 import pytest
@@ -60,6 +61,7 @@ async def send(app, pilot, text):
     app.query_one("#chat-input").focus()
     await pilot.press(*text)
     await pilot.press("enter")
+    await pilot.pause()  # a slash command reaches the view as a message before it starts any work
     await app.query_one("#view-chat").wait_idle()
     await pilot.pause()
 
@@ -173,6 +175,7 @@ async def test_palette_status_prints_into_conversation(stub):
     app = ChatConsole()
     async with app.run_test() as pilot:
         app.run_palette_command("status")
+        await pilot.pause()  # palette -> app -> chat view messages, then the background call
         await app.query_one("#view-chat").wait_idle()
         await pilot.pause()
         assert "[status] output []" in log_text(app)
@@ -292,3 +295,42 @@ def test_quit_returns_promptly_while_pipeline_blocked(monkeypatch):
         assert elapsed < 2
     finally:
         gate.set()
+
+
+async def test_palette_clear_during_chunk_delivery_leaves_empty_conversation(monkeypatch):
+    """The clear is serialised on the chat view's own message pump, never interleaved with a chunk."""
+    first_shown, gate = threading.Event(), threading.Event()
+
+    def pipeline(message, enabled, settings, on_event):
+        on_event(Event("Kudzu Brain", "chunk", "one"))
+        gate.wait(5)  # released by the test after the clear
+        on_event(Event("Kudzu Brain", "chunk", "two"))
+        return PipelineResult()
+
+    monkeypatch.setattr(chat_mod, "run_pipeline", pipeline)
+    app = ChatConsole()
+    async with app.run_test() as pilot:
+        view = app.query_one("#view-chat")
+        real_add = view._add
+
+        async def add_then_clear(widget):
+            # While the first chunk is being mounted, ask for a clear and give it every chance to run.
+            if isinstance(widget, chat_mod.Markdown) and not first_shown.is_set():
+                first_shown.set()
+                app.run_palette_command("clear")
+                await asyncio.sleep(0.1)
+            await real_add(widget)
+
+        monkeypatch.setattr(view, "_add", add_then_clear)
+        app.query_one("#chat-input").focus()
+        await pilot.press(*"q", "enter")
+        for _ in range(100):
+            if first_shown.is_set():
+                break
+            await pilot.pause(0.02)
+        await pilot.pause(0.3)
+        gate.set()
+        await view.wait_idle()
+        await pilot.pause()
+        assert app.is_running
+        assert log_text(app) == ""

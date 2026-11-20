@@ -38,6 +38,16 @@ class CommandOutput(Message):
         self.text = text
 
 
+class ChatCommand(Message):
+    """A command for the conversation (palette or slash), handled on the view's own message pump
+    so it never interleaves with a chunk being appended."""
+
+    def __init__(self, name: str, args: list[str] | None = None) -> None:
+        super().__init__()
+        self.name = name
+        self.args = args or []
+
+
 class ChatInput(TextArea):
     """Enter submits, Shift+Enter (or Ctrl+J) adds a line, Up/Down at the edges walk history."""
 
@@ -128,6 +138,10 @@ class ChatView(Widget):
     async def wait_idle(self) -> None:
         await wait_idle(self)
 
+    async def on_chat_command(self, message: ChatCommand) -> None:
+        message.stop()
+        await self.run_command(message.name, message.args)
+
     async def run_command(self, name: str, args: list[str] | None = None) -> None:
         """Palette / slash entry point for clear, status, progress, traces."""
         if name == "clear":
@@ -171,7 +185,7 @@ class ChatView(Widget):
         if name in ("quit", "exit"):
             self.app.exit()
         elif name == "clear" or name in SLASH_COMMANDS:
-            await self.run_command(name, parts[1:])
+            self.post_message(ChatCommand(name, parts[1:]))
         else:
             await self._add(Static(f"Unknown command: /{name}. Try /status /progress /traces /clear /quit",
                              classes="note", markup=False))

@@ -17,7 +17,7 @@ from .background import Job, run_in_background
 from .clipboard import copy_text
 from .config import Settings
 from .views.antitrust import AntitrustView
-from .views.chat import ChatView
+from .views.chat import ChatCommand, ChatView
 from .views.ledger import LedgerView
 from .views.proposals import ProposalsView
 
@@ -195,9 +195,10 @@ class KudzuConsole(App):
             self.notify_copy(path)
 
     # --- palette ----------------------------------------------------------
-    async def on_palette_command(self, message: PaletteCommand) -> None:
-        """PaletteCommand never reaches the views, so hand it to the chat view."""
-        await self.query_one(ChatView).run_command(message.name)
+    def on_palette_command(self, message: PaletteCommand) -> None:
+        """PaletteCommand never reaches the views, so post it to the chat view, whose own
+        message pump then runs it in order with the conversation's other updates."""
+        self.query_one(ChatView).post_message(ChatCommand(message.name))
 
     def on_ledger_changed(self, message: LedgerChanged) -> None:
         """LedgerChanged never reaches the views, so forward it to the ledger view."""
