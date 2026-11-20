@@ -133,3 +133,14 @@ def test_error_does_not_leak_key():
     with pytest.raises(KudzuAPIError) as e:
         api.ledger()
     assert "sekret" not in str(e.value) and "sekret" not in repr(e.value)
+
+
+@pytest.mark.parametrize("pid,encoded", [
+    ("a/b?c", "a%2Fb%3Fc"),
+    ("../x", "..%2Fx"),
+    ("0123456789abcdef", "0123456789abcdef"),
+])
+def test_vote_path_encodes_proposal_id(pid, encoded):
+    api, session = make()
+    api.vote(pid, "yes")
+    assert session.calls[0][1] == f"http://k:4001/api/v1/governance/proposals/{encoded}/vote"
