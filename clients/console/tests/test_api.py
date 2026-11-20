@@ -144,3 +144,13 @@ def test_vote_path_encodes_proposal_id(pid, encoded):
     api, session = make()
     api.vote(pid, "yes")
     assert session.calls[0][1] == f"http://k:4001/api/v1/governance/proposals/{encoded}/vote"
+
+
+@pytest.mark.parametrize("pid", ["", ".", ".."])
+def test_vote_rejects_empty_and_dot_segment_ids(pid):
+    api, session = make()
+    with pytest.raises(KudzuAPIError) as e:
+        api.vote(pid, "yes")
+    assert e.value.status is None
+    assert e.value.code == "invalid_id"
+    assert session.calls == []

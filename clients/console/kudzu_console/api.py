@@ -65,6 +65,8 @@ class KudzuAPI:
         return self._call("POST", "/governance/proposals/evaluate", {"text": text, "principle": principle})
 
     def vote(self, proposal_id: str, vote: str) -> dict:
+        if str(proposal_id) in ("", ".", ".."):
+            raise KudzuAPIError(None, "invalid_id", {})
         return self._call("POST", f"/governance/proposals/{quote(str(proposal_id), safe='')}/vote", {"vote": vote})
 
     def ledger(self) -> dict:
