@@ -38,6 +38,19 @@ defmodule Kudzu.Constitution.AIJudge do
   """
   @spec judge(map()) :: {:ok, judgment()} | {:error, term()}
   def judge(context) do
+    case judge_detailed(context) do
+      {:ok, judgment, _detail} -> {:ok, judgment}
+      {:error, _} = err -> err
+    end
+  end
+
+  @doc """
+  Like `judge/1`, but also returns every sample taken. The judgment is
+  identical to what `judge/1` returns.
+  """
+  @spec judge_detailed(map()) ::
+          {:ok, judgment(), %{samples: [judgment()]}} | {:error, term()}
+  def judge_detailed(context) do
     case System.get_env("ANTHROPIC_API_KEY") do
       nil ->
         {:error, :missing_api_key}
@@ -50,15 +63,29 @@ defmodule Kudzu.Constitution.AIJudge do
     end
   end
 
+  @doc """
+  Count samples by verdict.
+  """
+  @spec sample_tally([judgment()]) :: %{
+          advances: non_neg_integer(),
+          retards: non_neg_integer(),
+          ambiguous: non_neg_integer()
+        }
+  def sample_tally(samples) do
+    Enum.reduce(samples, %{advances: 0, retards: 0, ambiguous: 0}, fn sample, acc ->
+      Map.update!(acc, elem(sample, 0), &(&1 + 1))
+    end)
+  end
+
   defp run_adaptive(api_key, context) do
     case sample_until_decision(api_key, context, [], @min_samples) do
-      {:ok, judgment} ->
-        {:ok, judgment}
+      {:ok, judgment, samples} ->
+        {:ok, judgment, %{samples: samples}}
 
       {:needs_more, partial} ->
         case sample_until_decision(api_key, context, partial, @max_samples) do
-          {:ok, judgment} -> {:ok, judgment}
-          {:needs_more, all} -> {:ok, majority_decision(all)}
+          {:ok, judgment, samples} -> {:ok, judgment, %{samples: samples}}
+          {:needs_more, all} -> {:ok, majority_decision(all), %{samples: all}}
           {:error, _} = err -> err
         end
 
@@ -97,13 +124,13 @@ defmodule Kudzu.Constitution.AIJudge do
       _ ->
         case adaptive_sampling_decision(all) do
           :needs_more when length(all) >= @max_samples ->
-            {:ok, majority_decision(all)}
+            {:ok, majority_decision(all), all}
 
           :needs_more ->
             {:needs_more, all}
 
           verdict_tuple ->
-            {:ok, verdict_tuple}
+            {:ok, verdict_tuple, all}
         end
     end
   end
