@@ -131,9 +131,14 @@ def query_kudzu(message: str, settings, emit: Callable[[str, str], None], result
             text = data.get("text", "")
             accumulated += text
             emit("chunk", text)
-        elif event_type in ("tool_call", "tool_use", "tool"):
-            result.tool_calls.append(str(data.get("name", data.get("tool", "?"))))
-        elif event_type == "done":
+        elif event_type == "tool_use":  # {"tools": [names]}
+            tools = data.get("tools")
+            if isinstance(tools, list):
+                result.tool_calls.extend(str(t) for t in tools)
+        elif event_type == "done":  # {"tier", "tool_calls": [...], "cost"}
+            calls = data.get("tool_calls")
+            if isinstance(calls, list):
+                result.tool_calls[:] = [str(c) for c in calls]  # the server's final list wins
             tier = data.get("tier")
             cost = data.get("cost", 0.0)
             if isinstance(tier, int):

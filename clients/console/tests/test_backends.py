@@ -263,3 +263,37 @@ def test_claude_stage_sees_old_ollama_key(net):
     run_pipeline("Q", ["ollama:llama3.1:latest", "claude"], SETTINGS, lambda e: None)
     prompt = net.urls("anthropic")[0][2]["json"]["messages"][0]["content"]
     assert "\n[Ollama: llama3.1:latest]:\nOL" in prompt
+
+
+def kudzu_with_tools():
+    """The server's real shapes (brain_chat_controller.ex): tool_use carries `tools`, done `tool_calls`."""
+    return Resp(lines=sse(("thinking", {"tier": 3, "status": "Thinking..."}),
+                          ("tool_use", {"tools": ["semantic_recall", "web_search"]}),
+                          ("chunk", {"text": "answer"}),
+                          ("done", {"tier": 3, "tool_calls": ["semantic_recall", "web_search", "record_trace"],
+                                    "cost": 0.02})))
+
+
+def test_tool_use_extends_and_done_tool_calls_replace(net):
+    net.routes["/brain/chat"] = Resp(lines=sse(("tool_use", {"tools": ["a", "b"]}),
+                                               ("tool_use", {"tools": ["c"]})))
+    result = run_pipeline("q", ["kudzu"], SETTINGS, lambda e: None)
+    assert result.tool_calls == ["a", "b", "c"]  # no done event: the accumulated names stand
+    net.routes["/brain/chat"] = kudzu_with_tools()
+    result = run_pipeline("q", ["kudzu"], SETTINGS, lambda e: None)
+    assert result.tool_calls == ["semantic_recall", "web_search", "record_trace"]
+
+
+def test_unknown_event_names_are_ignored(net):
+    net.routes["/brain/chat"] = Resp(lines=sse(("tool_call", {"name": "x"}), ("tool", {"tool": "y"})))
+    result = run_pipeline("q", ["kudzu"], SETTINGS, lambda e: None)
+    assert result.tool_calls == []
+
+
+async def test_chat_meta_counts_server_tool_calls(net):
+    from test_chat import ChatConsole, send
+    net.routes["/brain/chat"] = kudzu_with_tools()
+    app = ChatConsole()
+    async with app.run_test() as pilot:
+        await send(app, pilot, "q")
+        assert str(app.query_one("#chat-meta").render()) == "tier 3 · 3 tools · $0.02"
