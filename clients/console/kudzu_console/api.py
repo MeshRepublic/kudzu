@@ -9,6 +9,7 @@ import requests
 from .config import Settings
 
 TIMEOUT = (10, 120)  # connect, read seconds
+EVALUATE_TIMEOUT = (10, 300)  # a judged evaluation; matches the server's 300 s idle timeout
 
 
 class KudzuAPIError(Exception):
@@ -62,7 +63,8 @@ class KudzuAPI:
         return self._call("GET", "/governance/status", timeout=timeout)
 
     def evaluate_proposal(self, text: str, principle: str) -> dict:
-        return self._call("POST", "/governance/proposals/evaluate", {"text": text, "principle": principle})
+        return self._call("POST", "/governance/proposals/evaluate", {"text": text, "principle": principle},
+                          timeout=EVALUATE_TIMEOUT)
 
     def vote(self, proposal_id: str, vote: str) -> dict:
         if str(proposal_id) in ("", ".", ".."):

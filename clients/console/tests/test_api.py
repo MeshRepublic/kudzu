@@ -76,7 +76,7 @@ def test_endpoints(method, args, verb, path, body):
     assert m == verb
     assert url == "http://k:4001" + path
     assert kw["headers"]["Authorization"] == "Bearer sekret"
-    assert kw["timeout"] == (10, 120)
+    assert kw["timeout"] == ((10, 300) if method == "evaluate_proposal" else (10, 120))
     assert kw.get("json") == body
 
 
@@ -162,4 +162,13 @@ def test_status_calls_accept_a_short_timeout(method):
     getattr(api, method)(timeout=(3, 5))
     assert session.calls[0][2]["timeout"] == (3, 5)
     getattr(api, method)()
+    assert session.calls[1][2]["timeout"] == (10, 120)
+
+
+def test_evaluate_proposal_waits_up_to_300_seconds_for_the_judge():
+    """A judged evaluation can take several 120 s judge samples; the server allows 300 s idle."""
+    api, session = make(StubResponse(body={"proposal": {}}))
+    api.evaluate_proposal("t", "p")
+    assert session.calls[0][2]["timeout"] == (10, 300)
+    api.ledger()
     assert session.calls[1][2]["timeout"] == (10, 120)
