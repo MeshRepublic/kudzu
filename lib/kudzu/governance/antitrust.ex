@@ -47,7 +47,8 @@ defmodule Kudzu.Governance.Antitrust do
       raw_drop = (baseline - current) / baseline * 100
       drop_pct = Float.round(raw_drop, 2)
       share_met = share >= share_threshold
-      drop_met = raw_drop > drop_threshold
+      # 6 places absorbs binary float noise (e.g. 10.000000000000009) at exact boundaries.
+      drop_met = Float.round(raw_drop, 6) > drop_threshold
 
       {:ok,
        %{

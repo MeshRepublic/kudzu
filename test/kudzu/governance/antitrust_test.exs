@@ -32,6 +32,14 @@ defmodule Kudzu.Governance.AntitrustTest do
              )
   end
 
+  test "float noise at an exact 10% drop does not count as met" do
+    assert {:ok, %{result: :watch, satisfaction: %{met: false}}} =
+             Antitrust.evaluate(
+               %{market_share: 50, baseline_satisfaction: 1.3, current_satisfaction: 1.17},
+               %{}
+             )
+  end
+
   test "neither met" do
     assert {:ok, %{result: :not_triggered}} =
              Antitrust.evaluate(
