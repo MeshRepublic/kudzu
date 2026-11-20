@@ -41,6 +41,10 @@ class PaletteCommand(Message):
         self.name = name
 
 
+class LedgerChanged(Message):
+    """Posted to the app after every successful vote; the Ledger view listens for it."""
+
+
 class StatusResult(Message):
     """Header text produced by a poll, tagged with the sequence number of that poll."""
 
