@@ -74,9 +74,16 @@ defmodule Kudzu.Governance.Proposals do
     end
   end
 
-  @doc "Casts the proposal's single vote, spending its token."
+  @doc """
+  Casts the proposal's single vote, spending its token.
+
+  Returns `{:error, :ledger_unavailable}` when the weight ledger cannot record
+  the vote (down, restarting, timed out or a non-`:ok` reply). The proposal is
+  left unchanged (token unspent, no vote) so the vote can be retried.
+  """
   @spec vote(String.t(), :yes | :no) ::
-          {:ok, proposal()} | {:error, :not_found | :not_votable | :already_voted}
+          {:ok, proposal()}
+          | {:error, :not_found | :not_votable | :already_voted | :ledger_unavailable}
   def vote(id, choice) when choice in [:yes, :no] do
     GenServer.call(__MODULE__, {:vote, id, choice})
   end
@@ -143,13 +150,34 @@ defmodule Kudzu.Governance.Proposals do
          choice
        ) do
     outcome = if choice == :yes, do: :yes_with_weight, else: :no
-    :ok = WeightLedger.record(id, vector, weight, proposal.principle, outcome)
-    voted = %{proposal | vote: choice, token: %{proposal.token | spent: true}}
-    :ets.insert(table, {id, seq, voted, vector})
-    {:ok, voted}
+
+    case record_vote(id, vector, weight, proposal.principle, outcome) do
+      :ok ->
+        voted = %{proposal | vote: choice, token: %{proposal.token | spent: true}}
+        :ets.insert(table, {id, seq, voted, vector})
+        {:ok, voted}
+
+      :error ->
+        {:error, :ledger_unavailable}
+    end
   end
 
   defp cast_vote(_table, _id, _seq, _proposal, _vector, _choice), do: {:error, :not_votable}
+
+  # A ledger that is down, restarting or slow must not take the store down with
+  # it: report it and leave the proposal untouched so the vote can be retried.
+  defp record_vote(id, vector, weight, principle, outcome) do
+    ledger = Application.get_env(:kudzu, :proposals_ledger, WeightLedger)
+
+    try do
+      case ledger.record(id, vector, weight, principle, outcome) do
+        :ok -> :ok
+        _other -> :error
+      end
+    catch
+      :exit, _reason -> :error
+    end
+  end
 
   defp evict(table) do
     excess = :ets.info(table, :size) - @max_proposals

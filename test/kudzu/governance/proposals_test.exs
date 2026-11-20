@@ -117,6 +117,37 @@ defmodule Kudzu.Governance.ProposalsTest do
     assert WeightLedger.entries() == []
   end
 
+  defmodule DownLedger do
+    @moduledoc false
+    def record(_id, _vector, _weight, _principle, _outcome), do: exit(:noproc)
+  end
+
+  defmodule RefusingLedger do
+    @moduledoc false
+    def record(_id, _vector, _weight, _principle, _outcome), do: {:error, :nope}
+  end
+
+  for {name, stub} <- [down: DownLedger, refusing: RefusingLedger] do
+    test "#{name} ledger leaves the proposal unspent, the store alive and the vote retryable" do
+      p = eval_weighted()
+      pid = Process.whereis(Proposals)
+
+      Application.put_env(:kudzu, :proposals_ledger, unquote(stub))
+      on_exit(fn -> Application.delete_env(:kudzu, :proposals_ledger) end)
+
+      assert {:error, :ledger_unavailable} = Proposals.vote(p.id, :yes)
+      assert Process.whereis(Proposals) == pid
+      assert {:ok, got} = Proposals.get(p.id)
+      assert got.token.spent == false and got.vote == nil
+
+      Application.delete_env(:kudzu, :proposals_ledger)
+      assert {:ok, voted} = Proposals.vote(p.id, :yes)
+      assert voted.token.spent and voted.vote == :yes
+      assert [%{proposal_id: id}] = WeightLedger.entries()
+      assert id == p.id
+    end
+  end
+
   test "unknown id" do
     assert {:error, :not_found} = Proposals.vote("0000000000000000", :yes)
     assert {:error, :not_found} = Proposals.get("0000000000000000")
