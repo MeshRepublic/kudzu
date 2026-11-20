@@ -54,6 +54,8 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
 
     {opts, _rest} = parse_args(argv)
 
+    require_claude!()
+
     ensure_silos!(opts)
 
     unless opts[:skip_tyranny] do
@@ -92,6 +94,18 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
 
   # ── Internal ────────────────────────────────────────────────────────
 
+  # The founding canon is distilled with Claude only: extraction and
+  # judgment both need the API key, and a local-model fallback has been
+  # seen to invent triples about its own prompt format.
+  defp require_claude! do
+    if System.get_env("ANTHROPIC_API_KEY") in [nil, ""] do
+      Mix.raise("ANTHROPIC_API_KEY is not set — constitution distillation requires Claude.")
+    end
+
+    Application.put_env(:kudzu, :distiller_use_claude, true)
+    Application.put_env(:kudzu, :distiller_claude_only, true)
+  end
+
   defp ensure_silos!(opts) do
     Enum.each([:expertise, :rejection, :contested], fn key ->
       silo = @default_silos[key]
@@ -120,7 +134,7 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
 
   defp distill_loop(stream, opts) do
     final =
-      Enum.reduce_while(stream, %{spent: 0.0, processed: 0}, fn chunk, acc ->
+      Enum.reduce_while(stream, %{spent: 0.0, processed: 0, skipped: 0}, fn chunk, acc ->
         if acc.spent > opts[:budget_cap_usd] do
           IO.puts(
             "\n!! Budget cap $#{opts[:budget_cap_usd]} exceeded at " <>
@@ -133,8 +147,14 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
 
           {:halt, acc}
         else
-          {_triples_extracted, cost} = process_chunk(chunk)
-          new_acc = %{acc | spent: acc.spent + cost, processed: acc.processed + 1}
+          {_triples_extracted, cost, skipped} = process_chunk(chunk)
+
+          new_acc = %{
+            acc
+            | spent: acc.spent + cost,
+              processed: acc.processed + 1,
+              skipped: acc.skipped + skipped
+          }
 
           if rem(new_acc.processed, 10) == 0 do
             IO.write("\r processed #{new_acc.processed}, spent $#{Float.round(new_acc.spent, 2)}")
@@ -146,7 +166,8 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
 
     IO.puts(
       "\nDistillation complete: #{final.processed} chunks, " <>
-        "$#{Float.round(final.spent, 2)} spent"
+        "$#{Float.round(final.spent, 2)} spent (estimate), " <>
+        "#{final.skipped} triple(s) skipped on judge error"
     )
   end
 
@@ -156,8 +177,20 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
   defp process_chunk(chunk) do
     triples = Distiller.extract_chains(chunk.text)
     cost = estimate_cost(chunk.text, triples)
-    Enum.each(triples, &route_one(&1, chunk))
-    {length(triples), cost}
+    results = Enum.map(triples, &route_one(&1, chunk))
+    errors = for {:skip, reason} <- results, do: reason
+
+    # Every judgment for a chunk failing means the judge itself is down
+    # (bad model id, bad key, outage) — stop instead of walking the whole
+    # corpus and reporting success with empty silos.
+    if triples != [] and length(errors) == length(triples) do
+      Mix.raise(
+        "Sovereignty judge failed for all #{length(triples)} triple(s) in a chunk of " <>
+          "#{chunk.source_doc} (#{inspect(hd(errors))}). Aborting."
+      )
+    end
+
+    {length(triples), cost, length(errors)}
   end
 
   defp route_one(triple, chunk) do
@@ -171,17 +204,18 @@ defmodule Mix.Tasks.Kudzu.Constitution.Distill do
 
         DistillationRouter.route(triple, judgment, provenance, @default_silos)
 
-      {:error, _} ->
-        :skip
+      {:error, reason} ->
+        {:skip, reason}
     end
   end
 
-  # Rough estimate: $3 per 1M input tokens for Sonnet 4.6.
+  # Rough estimate: $4 per 1M input tokens (Opus 5.5 list price). Output
+  # and thinking tokens are not counted, so real spend runs higher.
   # ~4 chars per token; 3 samples per triple * ~500 tokens each.
   # Calibration happens in Task 21.
   defp estimate_cost(text, triples) do
     input_tokens = byte_size(text) / 4
     sample_tokens = length(triples) * 3 * 500
-    (input_tokens + sample_tokens) / 1_000_000 * 3.0
+    (input_tokens + sample_tokens) / 1_000_000 * 4.0
   end
 end

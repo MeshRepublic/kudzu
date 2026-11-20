@@ -153,7 +153,7 @@ defmodule Kudzu.Constitution.Filter.SovereigntyFilter do
   defp one_judgment(api_key, triple, source_context) do
     prompt = build_prompt(triple, source_context)
 
-    case Claude.simple_message(api_key, prompt, max_tokens: 1024) do
+    case Claude.simple_message(api_key, prompt, max_tokens: 8192) do
       {:ok, text, _usage} -> parse_response(text)
       {:error, _} = err -> err
     end

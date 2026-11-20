@@ -660,7 +660,7 @@ defmodule Kudzu.Brain.Chat do
                tools,
                executor,
                max_turns: state.config[:max_turns] || 10,
-               model: state.config[:model] || "claude-sonnet-4-20250514"
+               model: state.config[:model] || Kudzu.Brain.Claude.default_model()
              ) do
           {:ok, response_text, usage} ->
             tool_calls = Process.get(:chat_tool_calls) |> Enum.reverse()
@@ -769,7 +769,7 @@ defmodule Kudzu.Brain.Chat do
                executor,
                stream_to: stream_to,
                max_turns: state.config[:max_turns] || 10,
-               model: state.config[:model] || "claude-sonnet-4-20250514"
+               model: state.config[:model] || Kudzu.Brain.Claude.default_model()
              ) do
           {:ok, response_text, usage} ->
             tool_calls = Process.get(:chat_tool_calls) |> Enum.reverse()

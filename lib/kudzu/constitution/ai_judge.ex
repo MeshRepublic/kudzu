@@ -171,7 +171,7 @@ defmodule Kudzu.Constitution.AIJudge do
   defp one_sample(api_key, context) do
     prompt = build_prompt(context)
 
-    case Claude.simple_message(api_key, prompt, max_tokens: 2048) do
+    case Claude.simple_message(api_key, prompt, max_tokens: 8192) do
       {:ok, text, _usage} -> parse_response(text)
       {:error, _} = err -> err
     end

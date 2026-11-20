@@ -176,7 +176,7 @@ defmodule Kudzu.Brain do
     api_key = System.get_env("ANTHROPIC_API_KEY")
 
     config = %{
-      model: "claude-sonnet-4-20250514",
+      model: Kudzu.Brain.Claude.default_model(),
       api_key: api_key,
       max_turns: 10,
       budget_limit_monthly: 100.0

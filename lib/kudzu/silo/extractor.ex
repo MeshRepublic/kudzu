@@ -90,7 +90,7 @@ defmodule Kudzu.Silo.Extractor do
 
   ## Options
 
-    * `:model` — Claude model id (default `"claude-sonnet-4-6"`)
+    * `:model` — Claude model id (default `Kudzu.Brain.Claude.default_model/0`)
     * `:max_tokens` — output token budget
       (default `#{@default_max_tokens}` — raised from 1024 after the
       5-pages experiment proved 1024 truncated pages >40 KB to zero
@@ -99,7 +99,7 @@ defmodule Kudzu.Silo.Extractor do
   @spec extract_claude(String.t(), String.t(), keyword()) ::
           {:ok, list({String.t(), String.t(), String.t()})} | {:error, term()}
   def extract_claude(text, api_key, opts \\ []) do
-    model = Keyword.get(opts, :model, "claude-sonnet-4-6")
+    model = Keyword.get(opts, :model, Claude.default_model())
     max_tokens = Keyword.get(opts, :max_tokens, @default_max_tokens)
     message = @extraction_prompt <> text
 

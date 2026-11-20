@@ -41,9 +41,16 @@ defmodule Kudzu.Brain.Claude do
 
   @api_url ~c"https://api.anthropic.com/v1/messages"
   @api_version "2023-06-01"
-  @default_model "claude-sonnet-4-6"
+  @default_model "claude-opus-5-5"
   @default_max_tokens 4096
   @timeout 120_000
+
+  @doc """
+  The model id used when a caller does not pass `:model`. Every Claude
+  call site in Kudzu falls back to this, so a model change is one edit.
+  """
+  @spec default_model() :: String.t()
+  def default_model, do: @default_model
 
   # ── Structs ─────────────────────────────────────────────────────────
 
@@ -226,18 +233,22 @@ defmodule Kudzu.Brain.Claude do
 
   ## Options
 
-    * `:model` — model ID (default "claude-sonnet-4-20250514")
+    * `:model` — model ID (default `#{@default_model}`)
     * `:max_tokens` — max response tokens (default 4096)
   """
   @spec simple_message(String.t(), String.t(), keyword()) ::
           {:ok, String.t(), map()} | {:error, term()}
   def simple_message(api_key, prompt, opts \\ []) do
-    model = Keyword.get(opts, :model, "claude-sonnet-4-20250514")
+    model = Keyword.get(opts, :model, @default_model)
     max_tokens = Keyword.get(opts, :max_tokens, @default_max_tokens)
 
     messages = [%{role: "user", content: prompt}]
 
     case call(api_key, messages, [], model: model, max_tokens: max_tokens) do
+      # A safety-classifier decline is HTTP 200 with no usable text.
+      {:ok, %Response{stop_reason: "refusal"}} ->
+        {:error, :refusal}
+
       {:ok, %Response{text: text, usage: usage}} ->
         {:ok, text, usage}
 
