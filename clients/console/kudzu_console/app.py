@@ -191,6 +191,10 @@ class KudzuConsole(App):
             self.notify_copy(path)
 
     # --- palette ----------------------------------------------------------
+    async def on_palette_command(self, message: PaletteCommand) -> None:
+        """PaletteCommand never reaches the views, so hand it to the chat view."""
+        await self.query_one(ChatView).run_command(message.name)
+
     def run_palette_command(self, name: str) -> None:
         if name == "quit":
             self.exit()

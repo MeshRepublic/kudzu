@@ -5,3 +5,22 @@ Screen { layout: vertical; }
 #views > Widget { height: 1fr; }
 #footer-hints { height: 1; padding: 0 1; background: $surface; color: $text-muted; }
 /* Below 80 columns the app gets the `narrow` class; views stack their columns vertically against it. */
+
+/* Chat view */
+ChatView { layout: horizontal; }
+#chat-sidebar { width: 30; border-right: tall $primary-darken-2; padding: 0 1; }
+#chat-sidebar-title { text-style: bold; }
+#backends { height: 1fr; }
+#backends Checkbox { height: 1; width: 100%; padding: 0; border: none; }
+#chat-meta { height: 1; color: $text-muted; }
+#chat-main { width: 1fr; }
+#conversation { height: 1fr; padding: 0 1; }
+#conversation > Static, #conversation > Markdown { height: auto; }
+#conversation .user { text-style: bold; margin-top: 1; }
+#conversation .label { color: $accent; text-style: bold; }
+#conversation .status, #conversation .note, #conversation .welcome { color: $text-muted; }
+#conversation .error { color: $error; }
+#chat-input { height: auto; min-height: 3; max-height: 8; }
+.narrow ChatView { layout: vertical; }
+.narrow #chat-sidebar { width: 100%; height: 8; border-right: none; border-bottom: tall $primary-darken-2; }
+.narrow #chat-main { height: 1fr; width: 100%; }

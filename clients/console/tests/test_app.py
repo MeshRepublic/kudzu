@@ -34,6 +34,7 @@ class RecordingConsole(KudzuConsole):
 
     def on_palette_command(self, message: PaletteCommand) -> None:
         self.commands.append(message.name)
+        message.prevent_default()  # record only: don't forward to the chat view (it would hit the network)
 
 
 def make(api=None, **kw):
