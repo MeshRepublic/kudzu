@@ -479,3 +479,51 @@ async def test_drag_across_verdict_copies_text():
         await pilot.mouse_up(verdict, offset=(11, 0))
         await pilot.pause()
         assert app.clipboard_log == ["✓ PERMITTED"]
+
+
+async def _vote_fail_then_redisplay(err):
+    api = PAPI()
+    api.vote_error = err
+    app = PConsole(api)
+    return api, app
+
+
+@pytest.mark.parametrize("err,expected", [
+    (KudzuAPIError(409, "already_voted", {}), "already voted"),
+    (KudzuAPIError(404, "not_found", {}), "not_found"),
+    (KudzuAPIError(422, "not_votable", {}), "not_votable"),
+    (KudzuAPIError(422, "invalid_vote", {}), "invalid_vote"),
+])
+async def test_terminal_vote_failure_stays_closed_after_history_redisplay(err, expected):
+    api, app = await _vote_fail_then_redisplay(err)
+    async with app.run_test(size=(150, 45)) as pilot:
+        await open_view(app, pilot)
+        await evaluate(app, pilot, "first law")
+        await pilot.click("#vote-yes")
+        await settle(app, pilot)
+        await evaluate(app, pilot, "second law")
+        history = app.query_one("#history", ListView)
+        await pilot.click(history.children[1])  # first proposal
+        await pilot.pause()
+        assert disabled(app, "#vote-yes") and disabled(app, "#vote-no")
+        assert expected in text_of(app, "#vote-status")
+        await pilot.click(history.children[0])
+        await pilot.pause()
+        assert not disabled(app, "#vote-yes")  # the other proposal is unaffected
+        assert text_of(app, "#vote-status") == ""
+
+
+@pytest.mark.parametrize("err", [KudzuAPIError(503, "ledger_unavailable", {}),
+                                 KudzuAPIError(None, "unreachable", {})])
+async def test_retryable_vote_failure_reenabled_after_history_redisplay(err):
+    api, app = await _vote_fail_then_redisplay(err)
+    async with app.run_test(size=(150, 45)) as pilot:
+        await open_view(app, pilot)
+        await evaluate(app, pilot, "first law")
+        await pilot.click("#vote-yes")
+        await settle(app, pilot)
+        await evaluate(app, pilot, "second law")
+        history = app.query_one("#history", ListView)
+        await pilot.click(history.children[1])
+        await pilot.pause()
+        assert not disabled(app, "#vote-yes") and not disabled(app, "#vote-no")

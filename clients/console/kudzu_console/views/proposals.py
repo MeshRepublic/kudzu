@@ -14,6 +14,7 @@ from .proposals_format import (BANNER_TEXT, decision_of, history_label, stage_ro
                                verdict_text, vote_status)
 
 HISTORY_MIN_WIDTH = 140
+TERMINAL_VOTE_ERRORS = ("already_voted", "not_found", "not_votable", "invalid_vote")
 EVALUATE_LABEL = "Evaluate"
 EVALUATING_LABEL = "evaluating…"
 
@@ -60,6 +61,7 @@ class ProposalsView(Widget):
         self._current: dict | None = None  # proposal on display
         self._session: dict[str, dict] = {}  # id -> proposal, this session only
         self._accumulated: dict[str, float] = {}
+        self._vote_closed: dict[str, str] = {}  # id -> inline status of a terminal vote failure
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="proposals-body"):
@@ -227,14 +229,14 @@ class ProposalsView(Widget):
                 continue
             row.update(stage_row(stage))
             row.set_class(stage.get("outcome") == "not_reached", "dim")
+        pid = str(p.get("id"))
         self.query_one("#vote-status", Static).update(
-            vote_status(p, self._accumulated.get(str(p.get("id")))))
+            self._vote_closed.get(pid) or vote_status(p, self._accumulated.get(pid)))
         self._set_vote_buttons(self._votable(p))
 
-    @staticmethod
-    def _votable(p: dict) -> bool:
+    def _votable(self, p: dict) -> bool:
         token = p.get("token")
-        return (decision_of(p).get("kind") == "permitted_with_weight" and p.get("vote") is None
+        return (str(p.get("id")) not in self._vote_closed and decision_of(p).get("kind") == "permitted_with_weight" and p.get("vote") is None
                 and isinstance(token, dict) and token.get("spent") is False)
 
     def _set_vote_buttons(self, enabled: bool) -> None:
@@ -287,9 +289,11 @@ class ProposalsView(Widget):
             if showing:
                 self._show(message.proposal)
             return
+        code = message.error.code
+        if code in TERMINAL_VOTE_ERRORS:  # remembered so a history re-display stays closed
+            self._vote_closed[pid] = "already voted" if code == "already_voted" else f"✗ {code}"
         if not showing:
             return
-        code = message.error.code
         status = self.query_one("#vote-status", Static)
         if code == "ledger_unavailable":
             status.update("ledger unavailable — try again")
