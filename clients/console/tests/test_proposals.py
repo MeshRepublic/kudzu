@@ -4,9 +4,10 @@ import pytest
 from textual.widgets import Button, Input, ListView, Select, Static
 
 from kudzu_console.api import KudzuAPIError
+from kudzu_console.background import wait_idle
 from kudzu_console.app import KudzuConsole, LedgerChanged
 from kudzu_console.views import proposals_format as fmt
-from test_app import SETTINGS
+from test_app import SETTINGS, run_and_quit, wait_until
 
 PRINCIPLES = [f"Principle {i}" for i in range(1, 14)]
 
@@ -62,10 +63,10 @@ class PAPI:
         self.evaluated, self.votes, self.threads = [], [], []
         self.n = 0
 
-    def health(self):
+    def health(self, timeout=None):
         return {"status": "ok", "holograms": 1}
 
-    def governance_status(self):
+    def governance_status(self, timeout=None):
         if self.status_error:
             raise self.status_error
         return {"silos": {"expertise": 1, "rejection": 1, "contested": 1}, "model": "m", "principles": self.principles}
@@ -102,7 +103,7 @@ class PConsole(KudzuConsole):
 
 
 async def settle(app, pilot):
-    await app.query_one("#view-proposals").workers.wait_for_complete()
+    await wait_idle(app.query_one("#view-proposals"))
     await pilot.pause()
     await pilot.pause()
 
@@ -527,3 +528,28 @@ async def test_retryable_vote_failure_reenabled_after_history_redisplay(err):
         await pilot.click(history.children[1])
         await pilot.pause()
         assert not disabled(app, "#vote-yes") and not disabled(app, "#vote-no")
+
+
+def test_quit_returns_promptly_while_evaluation_blocked():
+    api = PAPI()
+    api.gate = threading.Event()
+    app = PConsole(api)
+
+    def drive(app):
+        app.call_from_thread(app.action_show_tab, "proposals")
+        view = app.query_one("#view-proposals")
+        wait_until(lambda: bool(view._principles))
+
+        def start():
+            app.query_one("#proposal-input", Input).value = "Ban all widgets"
+            app.query_one("#principle-select", Select).value = PRINCIPLES[0]
+            view._start_evaluate()
+        app.call_from_thread(start)
+        wait_until(lambda: bool(api.evaluated))
+
+    try:
+        elapsed = run_and_quit(app, drive)
+        assert not api.gate.is_set()  # the evaluation is still blocked
+        assert elapsed < 2
+    finally:
+        api.gate.set()

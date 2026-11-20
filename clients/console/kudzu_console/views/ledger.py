@@ -8,9 +8,9 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static
-from textual.worker import get_current_worker
 
 from ..api import KudzuAPIError
+from ..background import run_in_background
 from . import ledger_format as fmt
 
 NARROW_WIDTH = 80  # same breakpoint as the App's `narrow` class
@@ -74,10 +74,10 @@ class LedgerView(Widget):
         self.refresh_ledger()
 
     def refresh_ledger(self) -> None:
-        """Load the ledger in a thread worker (one `api.ledger()` call per call)."""
+        """Load the ledger in a background thread (one `api.ledger()` call per call)."""
         self._seq += 1
         seq = self._seq
-        self.run_worker(lambda: self._load(seq), thread=True, exclusive=True, group="ledger")
+        run_in_background(self, lambda: self._load(seq), name="kudzu-ledger")
 
     def ledger_changed(self) -> None:
         """A vote was recorded. A hidden view refreshes when shown, so only a shown one loads now."""
@@ -94,8 +94,8 @@ class LedgerView(Widget):
             error = exc.code
         except Exception:
             error = "error"
-        if get_current_worker().is_cancelled:
-            return
+        if seq != self._seq:
+            return  # a newer load has started; its result is the one to show
         try:
             self.post_message(LedgerLoaded(seq, parsed, error))
         except Exception:

@@ -6,7 +6,7 @@ from textual.widgets import Checkbox, Static
 from kudzu_console.app import KudzuConsole
 from kudzu_console.backends import BACKENDS, Event, PipelineResult
 from kudzu_console.views import chat as chat_mod
-from test_app import FakeAPI, SETTINGS
+from test_app import FakeAPI, SETTINGS, run_and_quit, wait_until
 
 
 class ChatConsole(KudzuConsole):
@@ -268,3 +268,27 @@ async def test_palette_clear_works_from_another_tab(stub):
         app.run_palette_command("clear")
         await pilot.pause()
         assert log_text(app) == ""
+
+
+def test_quit_returns_promptly_while_pipeline_blocked(monkeypatch):
+    gate, entered = threading.Event(), threading.Event()
+
+    class Blocked(Stub):
+        def __call__(self, *a):
+            entered.set()
+            return super().__call__(*a)
+
+    monkeypatch.setattr(chat_mod, "run_pipeline", Blocked(gate=gate))
+    app = ChatConsole()
+
+    def drive(app):
+        view = app.query_one("#view-chat")
+        app.call_from_thread(view.post_message, chat_mod.ChatInput.Submitted("hello"))
+        wait_until(entered.is_set)
+
+    try:
+        elapsed = run_and_quit(app, drive)
+        assert not gate.is_set()  # the pipeline is still blocked
+        assert elapsed < 2
+    finally:
+        gate.set()

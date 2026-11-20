@@ -7,9 +7,9 @@ from textual.containers import Grid, Horizontal, VerticalScroll
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Static
-from textual.worker import get_current_worker
 
 from ..api import KudzuAPIError
+from ..background import run_in_background
 from ..presets import PRESETS
 from . import antitrust_format as fmt
 
@@ -84,7 +84,7 @@ class AntitrustView(Widget):
         if self._loading:
             return
         self._loading = True
-        self.run_worker(self._defaults_worker, thread=True, group="defaults")
+        run_in_background(self, self._defaults_worker, name="kudzu-defaults")
 
     def _defaults_worker(self) -> None:
         try:
@@ -92,8 +92,6 @@ class AntitrustView(Widget):
             defaults = {"share": fmt.num(float(d["share"])), "satisfaction_drop": fmt.num(float(d["satisfaction_drop"]))}
         except Exception:
             defaults = None
-        if get_current_worker().is_cancelled:
-            return
         self._post(DefaultsLoaded(defaults))
 
     def on_defaults_loaded(self, message: DefaultsLoaded) -> None:
@@ -173,7 +171,7 @@ class AntitrustView(Widget):
         button.label = EVALUATING_LABEL
         button.disabled = True
         seq = self._seq
-        self.run_worker(lambda: self._evaluate_worker(seq, body), thread=True, group="evaluate")
+        run_in_background(self, lambda: self._evaluate_worker(seq, body), name="kudzu-antitrust")
 
     def _evaluate_worker(self, seq: int, body: dict) -> None:
         text = error = None
@@ -185,8 +183,8 @@ class AntitrustView(Widget):
             error = exc
         except Exception:
             error = "bad_response"
-        if get_current_worker().is_cancelled:
-            return
+        if seq != self._seq:
+            return  # superseded; on_antitrust_evaluated would drop it anyway
         self._post(AntitrustEvaluated(seq, text, error))
 
     def on_antitrust_evaluated(self, message: AntitrustEvaluated) -> None:

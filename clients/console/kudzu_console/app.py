@@ -11,9 +11,9 @@ from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.message import Message
 from textual.timer import Timer
 from textual.widgets import ContentSwitcher, Static, Tab, Tabs
-from textual.worker import Worker, get_current_worker
 
 from .api import KudzuAPI, KudzuAPIError
+from .background import Job, run_in_background
 from .clipboard import copy_text
 from .config import Settings
 from .views.antitrust import AntitrustView
@@ -30,6 +30,7 @@ TABS = [
     ("antitrust", "Antitrust", "view-antitrust"),
     ("ledger", "Ledger", "view-ledger"),
 ]
+STATUS_TIMEOUT = (3, 5)  # connect, read seconds: the poll must not hang on a dead network
 PALETTE_COMMANDS = ("status", "progress", "traces", "clear", "quit")
 
 
@@ -129,17 +130,16 @@ class KudzuConsole(App):
             self.query_one(ContentSwitcher).current = f"view-{event.tab.id.removeprefix('tab-')}"
 
     # --- status polling ---------------------------------------------------
-    def poll(self) -> Worker:
-        """Refresh the header in a thread worker; returns the worker (await `.wait()` in tests)."""
+    def poll(self) -> Job:
+        """Refresh the header in a background thread; returns the job (await `.wait()` in tests)."""
         self._poll_seq += 1
-        return self.run_worker(
-            lambda seq=self._poll_seq: self._fetch_status(seq),
-            thread=True, exclusive=True, group="status")
+        seq = self._poll_seq
+        return run_in_background(self, lambda: self._fetch_status(seq), name="kudzu-status")
 
     def _fetch_status(self, seq: int) -> None:
         try:
-            health = self.api.health()
-            gov = self.api.governance_status()
+            health = self.api.health(timeout=STATUS_TIMEOUT)
+            gov = self.api.governance_status(timeout=STATUS_TIMEOUT)
             silos = gov["silos"]
             host = urlparse(self.settings.kudzu_host).hostname or self.settings.kudzu_host
             state = ("empty ⚠" if silos.get("expertise", 0) == 0 else
@@ -152,8 +152,8 @@ class KudzuConsole(App):
             text = "Kudzu ── disconnected ✗ (bad_response)"
         except Exception:  # never let an unexpected error kill the worker and the app
             text = "Kudzu ── disconnected ✗ (error)"
-        if get_current_worker().is_cancelled:
-            return
+        if seq != self._poll_seq:
+            return  # a newer poll has started; its result is the one to show
         try:
             # post_message is thread-safe and non-blocking; it drops the message if the app is gone.
             self.post_message(StatusResult(seq, text))

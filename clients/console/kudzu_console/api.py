@@ -25,12 +25,12 @@ class KudzuAPI:
         self._session = session if session is not None else requests.Session()
 
     def _call(self, method: str, path: str, body: dict | None = None, *, auth: bool = True,
-              prefix: str = "/api/v1") -> dict:
+              prefix: str = "/api/v1", timeout: tuple[float, float] | None = None) -> dict:
         url = f"{self._settings.kudzu_host}{prefix}{path}"
         headers = {"Accept": "application/json"}
         if auth:
             headers["Authorization"] = f"Bearer {self._settings.kudzu_api_key}"
-        kwargs: dict[str, Any] = {"headers": headers, "timeout": TIMEOUT}
+        kwargs: dict[str, Any] = {"headers": headers, "timeout": timeout or TIMEOUT}
         if body is not None:
             kwargs["json"] = body
         try:
@@ -55,11 +55,11 @@ class KudzuAPI:
         code = "server_error" if resp.status_code >= 500 else "http_error"
         raise KudzuAPIError(resp.status_code, code, {})
 
-    def health(self) -> dict:
-        return self._call("GET", "/health", auth=False, prefix="")
+    def health(self, timeout: tuple[float, float] | None = None) -> dict:
+        return self._call("GET", "/health", auth=False, prefix="", timeout=timeout)
 
-    def governance_status(self) -> dict:
-        return self._call("GET", "/governance/status")
+    def governance_status(self, timeout: tuple[float, float] | None = None) -> dict:
+        return self._call("GET", "/governance/status", timeout=timeout)
 
     def evaluate_proposal(self, text: str, principle: str) -> dict:
         return self._call("POST", "/governance/proposals/evaluate", {"text": text, "principle": principle})

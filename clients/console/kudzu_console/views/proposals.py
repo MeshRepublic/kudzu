@@ -7,9 +7,9 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, ListItem, ListView, Select, Static
-from textual.worker import get_current_worker
 
 from ..api import KudzuAPIError
+from ..background import run_in_background
 from .proposals_format import (BANNER_TEXT, decision_of, history_label, stage_row,
                                verdict_text, vote_status)
 
@@ -106,15 +106,13 @@ class ProposalsView(Widget):
         if self._loading:
             return
         self._loading = True
-        self.run_worker(self._principles_worker, thread=True, group="principles")
+        run_in_background(self, self._principles_worker, name="kudzu-principles")
 
     def _principles_worker(self) -> None:
         try:
             names = [str(p) for p in self.api.governance_status()["principles"]]
         except Exception:
             names = None
-        if get_current_worker().is_cancelled:
-            return
         self._post(PrinciplesLoaded(names))
 
     def on_principles_loaded(self, message: PrinciplesLoaded) -> None:
@@ -168,7 +166,7 @@ class ProposalsView(Widget):
         button.label = EVALUATING_LABEL
         button.disabled = True
         seq = self._eval_seq
-        self.run_worker(lambda: self._evaluate_worker(seq, text, principle), thread=True, group="evaluate")
+        run_in_background(self, lambda: self._evaluate_worker(seq, text, principle), name="kudzu-evaluate")
 
     def _evaluate_worker(self, seq: int, text: str, principle: str) -> None:
         proposal = error = None
@@ -180,8 +178,8 @@ class ProposalsView(Widget):
             error = "server unreachable" if exc.code == "unreachable" else exc.code
         except Exception:
             error = "bad_response"
-        if get_current_worker().is_cancelled:
-            return
+        if seq != self._eval_seq:
+            return  # superseded; on_proposal_evaluated would drop it anyway
         self._post(ProposalEvaluated(seq, proposal, error))
 
     async def on_proposal_evaluated(self, message: ProposalEvaluated) -> None:
@@ -260,7 +258,7 @@ class ProposalsView(Widget):
         self._set_vote_buttons(False)  # before the request: one vote per proposal
         self.query_one("#vote-status", Static).update("voting…")
         pid = str(p.get("id"))
-        self.run_worker(lambda: self._vote_worker(pid, vote), thread=True, group="vote")
+        run_in_background(self, lambda: self._vote_worker(pid, vote), name="kudzu-vote")
 
     def _vote_worker(self, pid: str, vote: str) -> None:
         proposal = accumulated = error = None
@@ -273,8 +271,6 @@ class ProposalsView(Widget):
             error = exc
         except Exception:
             error = KudzuAPIError(None, "bad_response", {})
-        if get_current_worker().is_cancelled:
-            return
         self._post(VoteCast(pid, proposal, accumulated, error))
 
     def on_vote_cast(self, message: VoteCast) -> None:

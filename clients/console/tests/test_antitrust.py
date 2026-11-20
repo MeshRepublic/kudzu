@@ -4,6 +4,7 @@ import pytest
 from textual.widgets import Button, Input, Static
 
 from kudzu_console.api import KudzuAPIError
+from kudzu_console.background import wait_idle
 from kudzu_console.app import KudzuConsole
 from kudzu_console.presets import PRESETS
 from kudzu_console.views import antitrust_format as fmt
@@ -33,10 +34,10 @@ class AAPI:
         self.gate = None
         self.sent, self.threads, self.status_calls = [], [], 0
 
-    def health(self):
+    def health(self, timeout=None):
         return {"status": "ok", "holograms": 1}
 
-    def governance_status(self):
+    def governance_status(self, timeout=None):
         self.status_calls += 1
         if self.status_error:
             raise self.status_error
@@ -63,7 +64,7 @@ class AConsole(KudzuConsole):
 
 
 async def settle(app, pilot):
-    await app.query_one("#view-antitrust").workers.wait_for_complete()
+    await wait_idle(app.query_one("#view-antitrust"))
     await pilot.pause()
     await pilot.pause()
 

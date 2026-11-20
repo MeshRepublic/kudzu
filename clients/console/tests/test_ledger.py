@@ -3,6 +3,7 @@ import threading
 from textual.widgets import Static
 
 from kudzu_console.api import KudzuAPIError
+from kudzu_console.background import wait_idle
 from kudzu_console.app import KudzuConsole, LedgerChanged
 from kudzu_console.views import ledger_format as fmt
 from test_app import SETTINGS
@@ -28,10 +29,10 @@ class LAPI:
         self.gate = None
         self.threads = []
 
-    def health(self):
+    def health(self, timeout=None):
         return {"status": "ok", "holograms": 1}
 
-    def governance_status(self):
+    def governance_status(self, timeout=None):
         return {"silos": {"expertise": 1, "rejection": 1, "contested": 1}, "model": "m"}
 
     def ledger(self):
@@ -54,7 +55,7 @@ class LConsole(KudzuConsole):
 
 
 async def settle(app, pilot):
-    await app.query_one("#view-ledger").workers.wait_for_complete()
+    await wait_idle(app.query_one("#view-ledger"))
     await pilot.pause()
     await pilot.pause()
 

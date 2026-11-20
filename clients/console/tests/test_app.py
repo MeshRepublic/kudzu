@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import time
 
 import pytest
 from textual.widgets import Tabs
@@ -16,12 +17,12 @@ class FakeAPI:
         self.silos = {"expertise": expertise, "rejection": rejection, "contested": contested}
         self.fail = None
 
-    def health(self):
+    def health(self, timeout=None):
         if self.fail:
             raise self.fail
         return {"status": "ok", "holograms": 9}
 
-    def governance_status(self):
+    def governance_status(self, timeout=None):
         if self.fail:
             raise self.fail
         return {"silos": self.silos, "model": "claude-opus-5-5"}
@@ -179,7 +180,7 @@ class GatedAPI(FakeAPI):
         self.entered = []
         self.results = []
 
-    def governance_status(self):
+    def governance_status(self, timeout=None):
         n = len(self.gates)
         gate, entered = threading.Event(), threading.Event()
         self.gates.append(gate)
@@ -212,7 +213,7 @@ async def test_stale_poll_does_not_overwrite_newer():
     async with app.run_test() as pilot:
         await pilot.pause()
         assert api.entered[0].wait(5)  # poll A (from mount) blocked
-        # exclusive worker B cancels A's worker, but A's thread keeps running
+        # poll B starts while A's thread is still blocked; A's result is now stale
         wb = app.poll()
         for _ in range(100):
             if len(api.entered) > 1:
@@ -238,3 +239,71 @@ async def test_unexpected_exception_shows_error_and_app_survives():
         await pilot.pause()
         assert "disconnected ✗ (error)" in header(app)
         assert app.is_running
+
+
+def wait_until(predicate, timeout=5.0):
+    """Block the calling (helper) thread until `predicate()` is true."""
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "condition never became true"
+        time.sleep(0.01)
+
+
+def run_and_quit(app, drive, timeout=10.0):
+    """Run `app` for real, as `main()` does (`App.run`), headless.
+
+    `drive(app)` runs in a helper thread once the app is running; it starts a blocking fake-api
+    call (using `app.call_from_thread`) and returns once that call is blocked. The helper then
+    requests quit. Returns the seconds from the quit request until `App.run()` returned.
+    """
+    marks = {}
+
+    def driver():
+        deadline = time.monotonic() + timeout
+        while not app.is_running and time.monotonic() < deadline:
+            time.sleep(0.01)
+        time.sleep(0.2)  # let mount finish
+        drive(app)
+        marks["quit"] = time.monotonic()
+        app.call_from_thread(app.exit)
+
+    helper = threading.Thread(target=driver, daemon=True)
+    helper.start()
+    app.run(headless=True, size=(100, 30))
+    returned = time.monotonic()
+    helper.join(2)
+    assert "quit" in marks, "the drive step never finished"
+    return returned - marks["quit"]
+
+
+def test_quit_returns_promptly_while_poll_blocked():
+    """Quitting never waits for a blocked network call (daemon threads, not executor workers)."""
+    api = GatedAPI()
+    app = make(api)
+    try:
+        elapsed = run_and_quit(app, lambda app: wait_until(lambda: api.entered and api.entered[0].is_set()))
+        assert api.entered and not api.gates[0].is_set()  # the call is still blocked
+        assert elapsed < 2
+    finally:
+        for gate in api.gates:
+            gate.set()
+    time.sleep(0.2)  # the released thread hands off to the finished app; must not raise
+
+
+async def test_poll_passes_short_timeout():
+    seen = []
+
+    class TimeoutAPI(FakeAPI):
+        def health(self, timeout=None):
+            seen.append(("health", timeout))
+            return super().health()
+
+        def governance_status(self, timeout=None):
+            seen.append(("status", timeout))
+            return super().governance_status()
+
+    app = make(TimeoutAPI())
+    async with app.run_test() as pilot:
+        await app.poll().wait()
+        await pilot.pause()
+    assert ("health", (3, 5)) in seen and ("status", (3, 5)) in seen

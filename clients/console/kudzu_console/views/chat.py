@@ -7,8 +7,8 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Checkbox, Markdown, Static, TextArea
-from textual.worker import get_current_worker
 
+from ..background import run_in_background, wait_idle
 from ..backends import BACKENDS, Event, PipelineResult, run_pipeline
 from ..commands import run_command
 
@@ -126,15 +126,16 @@ class ChatView(Widget):
         return "\n".join(parts)
 
     async def wait_idle(self) -> None:
-        await self.workers.wait_for_complete()
+        await wait_idle(self)
 
     async def run_command(self, name: str, args: list[str] | None = None) -> None:
         """Palette / slash entry point for clear, status, progress, traces."""
         if name == "clear":
             await self._clear()
         elif name in SLASH_COMMANDS:
-            self.run_worker(lambda e=self._epoch: self._command_worker(e, name, args or []),
-                            thread=True, group="command")
+            epoch = self._epoch
+            run_in_background(self, lambda: self._command_worker(epoch, name, args or []),
+                              name="kudzu-command")
 
     # --- input ------------------------------------------------------------
     @staticmethod
@@ -161,8 +162,8 @@ class ChatView(Widget):
         self._open = {}
         await self._add(Static(f"You: {text}", classes="user", markup=False))
         enabled = self.enabled_backends()
-        self.run_worker(lambda e=self._epoch: self._pipeline_worker(e, text, enabled),
-                        thread=True, group="pipeline")
+        epoch = self._epoch
+        run_in_background(self, lambda: self._pipeline_worker(epoch, text, enabled), name="kudzu-pipeline")
 
     async def _slash(self, text: str) -> None:
         parts = text.split()
@@ -175,7 +176,7 @@ class ChatView(Widget):
             await self._add(Static(f"Unknown command: /{name}. Try /status /progress /traces /clear /quit",
                              classes="note", markup=False))
 
-    # --- workers (thread) -------------------------------------------------
+    # --- background threads -------------------------------------------------
     def _post(self, message: Message) -> None:
         try:
             self.post_message(message)  # thread-safe; dropped if the app is going away
@@ -190,8 +191,6 @@ class ChatView(Widget):
         except Exception as exc:  # never let a worker error kill the app
             on_event(Event("Pipeline", "error", f"{type(exc).__name__}: {exc}"))
             result = PipelineResult()
-        if get_current_worker().is_cancelled:
-            return
         self._post(PipelineFinished(epoch, result))
 
     def _command_worker(self, epoch: int, name: str, args: list[str]) -> None:
@@ -199,8 +198,8 @@ class ChatView(Widget):
             text = run_command(name, self.settings, args)
         except Exception as exc:
             text = f"{name} error: {exc}"
-        if get_current_worker().is_cancelled:
-            return
+        if epoch != self._epoch:
+            return  # cleared meanwhile
         self._post(CommandOutput(epoch, text))
 
     # --- results (UI thread) ----------------------------------------------

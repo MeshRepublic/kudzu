@@ -154,3 +154,12 @@ def test_vote_rejects_empty_and_dot_segment_ids(pid):
     assert e.value.status is None
     assert e.value.code == "invalid_id"
     assert session.calls == []
+
+
+@pytest.mark.parametrize("method", ["health", "governance_status"])
+def test_status_calls_accept_a_short_timeout(method):
+    api, session = make()
+    getattr(api, method)(timeout=(3, 5))
+    assert session.calls[0][2]["timeout"] == (3, 5)
+    getattr(api, method)()
+    assert session.calls[1][2]["timeout"] == (10, 120)
