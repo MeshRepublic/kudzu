@@ -29,7 +29,8 @@ defmodule Kudzu.Brain.ClaudeTest do
 
   test "build_request without optional fields" do
     body = Claude.build_request([%{role: "user", content: "Hi"}])
-    assert body["model"] == "claude-sonnet-4-6"
+    assert body["model"] == Claude.default_model()
+    assert body["model"] == "claude-opus-5-5"
     refute Map.has_key?(body, "system")
     refute Map.has_key?(body, "tools")
   end

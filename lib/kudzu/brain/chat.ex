@@ -15,6 +15,7 @@ defmodule Kudzu.Brain.Chat do
 
   alias Kudzu.Brain
   alias Kudzu.Brain.Budget
+  alias Kudzu.Brain.Claude
   alias Kudzu.Brain.Learning
   alias Kudzu.Brain.Reasoning
   alias Kudzu.Brain.Reflexes
@@ -653,14 +654,14 @@ defmodule Kudzu.Brain.Chat do
           end
         end
 
-        case Kudzu.Brain.Claude.reason(
+        case Claude.reason(
                api_key,
                system_prompt,
                message,
                tools,
                executor,
                max_turns: state.config[:max_turns] || 10,
-               model: state.config[:model] || "claude-sonnet-4-20250514"
+               model: state.config[:model] || Claude.default_model()
              ) do
           {:ok, response_text, usage} ->
             tool_calls = Process.get(:chat_tool_calls) |> Enum.reverse()
@@ -761,7 +762,7 @@ defmodule Kudzu.Brain.Chat do
           end
         end
 
-        case Kudzu.Brain.Claude.reason_stream(
+        case Claude.reason_stream(
                api_key,
                system_prompt,
                message,
@@ -769,7 +770,7 @@ defmodule Kudzu.Brain.Chat do
                executor,
                stream_to: stream_to,
                max_turns: state.config[:max_turns] || 10,
-               model: state.config[:model] || "claude-sonnet-4-20250514"
+               model: state.config[:model] || Claude.default_model()
              ) do
           {:ok, response_text, usage} ->
             tool_calls = Process.get(:chat_tool_calls) |> Enum.reverse()

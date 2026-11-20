@@ -267,7 +267,7 @@ defmodule Kudzu.Brain.Reasoning do
                tools,
                executor,
                max_turns: state.config[:max_turns] || 10,
-               model: state.config[:model] || "claude-sonnet-4-20250514"
+               model: state.config[:model] || Kudzu.Brain.Claude.default_model()
              ) do
           {:ok, response_text, usage} ->
             Logger.info(

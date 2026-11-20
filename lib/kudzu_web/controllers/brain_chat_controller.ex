@@ -16,6 +16,7 @@ defmodule KudzuWeb.BrainChatController do
   import Plug.Conn
   require Logger
 
+  alias Kudzu.Brain.Claude
   alias KudzuWeb.Plugs.APIAuth
 
   @doc """
@@ -72,6 +73,7 @@ defmodule KudzuWeb.BrainChatController do
           status: state.status,
           cycle_count: state.cycle_count,
           hologram_id: state.hologram_id,
+          model: state.config[:model] || Claude.default_model(),
           desires: state.desires,
           budget: %{
             estimated_cost_usd: state.budget.estimated_cost_usd,

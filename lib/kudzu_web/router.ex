@@ -37,6 +37,9 @@ defmodule KudzuWeb.Router do
     pipe_through(:api_read)
 
     post("/constitutions/:name/check", ConstitutionController, :check_permission)
+
+    post("/governance/proposals/evaluate", GovernanceController, :evaluate)
+    post("/governance/antitrust/evaluate", GovernanceController, :antitrust)
   end
 
   # API v1
@@ -55,6 +58,13 @@ defmodule KudzuWeb.Router do
       put("/constitution", HologramController, :set_constitution)
       get("/desires", HologramController, :get_desires)
       post("/desires", HologramController, :add_desire)
+    end
+
+    # Governance: votes, ledger, status
+    scope "/governance" do
+      post("/proposals/:id/vote", GovernanceController, :vote)
+      get("/ledger", GovernanceController, :ledger)
+      get("/status", GovernanceController, :status)
     end
 
     # Trace operations

@@ -59,3 +59,55 @@ defmodule Kudzu.Constitution.AIJudgeTest do
     end
   end
 end
+
+defmodule Kudzu.Constitution.AIJudgeSamplesTest do
+  # Not async: judge_detailed/1 reads ANTHROPIC_API_KEY, which this test mutates.
+  use ExUnit.Case, async: false
+
+  alias Kudzu.Constitution.AIJudge
+
+  describe "sample_tally/1" do
+    test "counts samples by verdict" do
+      samples = [
+        {:advances, 0.9, "speech", "r1", []},
+        {:retards, 0.6, "speech", "r2", []},
+        {:advances, 0.8, "speech", "r3", []}
+      ]
+
+      assert %{advances: 2, retards: 1, ambiguous: 0} = AIJudge.sample_tally(samples)
+      assert AIJudge.sample_tally(samples) == %{advances: 2, retards: 1, ambiguous: 0}
+    end
+
+    test "empty list yields all zeros" do
+      assert AIJudge.sample_tally([]) == %{advances: 0, retards: 0, ambiguous: 0}
+    end
+
+    test "unknown verdicts and malformed samples are ignored, never raised on" do
+      samples = [
+        {:advances, 0.9, "speech", "r1", []},
+        {:bogus, 0.5, "speech", "r2", []},
+        :not_a_tuple,
+        {},
+        "junk",
+        {:ambiguous, 0.5, "speech", "r3", []}
+      ]
+
+      assert AIJudge.sample_tally(samples) == %{advances: 1, retards: 0, ambiguous: 1}
+      assert AIJudge.sample_tally(:not_a_list) == %{advances: 0, retards: 0, ambiguous: 0}
+    end
+  end
+
+  describe "judge_detailed/1" do
+    test "returns :missing_api_key when the key is unset, like judge/1" do
+      original = System.get_env("ANTHROPIC_API_KEY")
+      System.delete_env("ANTHROPIC_API_KEY")
+
+      on_exit(fn ->
+        if original, do: System.put_env("ANTHROPIC_API_KEY", original)
+      end)
+
+      assert {:error, :missing_api_key} = AIJudge.judge_detailed(%{})
+      assert {:error, :missing_api_key} = AIJudge.judge(%{})
+    end
+  end
+end

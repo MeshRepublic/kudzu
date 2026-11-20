@@ -32,9 +32,14 @@ config :kudzu,
 # KUDZU_MCP_PORT / SECRET_KEY_BASE (the production node runs `mix run` in
 # :dev, so prod-only handling was ignored). NEVER add a literal secret here:
 # this file is compiled into the build.
+#
+# Cowboy's idle_timeout (default 60 s) is not reset while a handler is silent;
+# a judged proposal evaluation takes 3 to 5 sequential judge samples of up to
+# 120 s each, so allow 300 s. runtime.exs's `http: [ip:, port:]` deep-merges
+# with this keyword list and keeps the protocol options.
 config :kudzu, KudzuWeb.MCP.Endpoint,
   url: [host: "localhost"],
-  http: [ip: {127, 0, 0, 1}, port: 4001],
+  http: [ip: {127, 0, 0, 1}, port: 4001, protocol_options: [idle_timeout: 300_000]],
   server: true,
   pubsub_server: Kudzu.PubSub
 

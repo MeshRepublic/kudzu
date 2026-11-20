@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kudzu-console"
+version = "0.1.0"
+description = "Terminal console for the Kudzu governance and brain APIs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "textual==8.2.8",
+    "requests==2.34.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
+]
+
+[project.scripts]
+kudzu = "kudzu_console.app:main"
+
+[tool.setuptools.packages.find]
+include = ["kudzu_console*"]
+
+[tool.setuptools.package-data]
+kudzu_console = ["app.tcss"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

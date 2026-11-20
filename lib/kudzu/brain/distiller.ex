@@ -80,7 +80,10 @@ defmodule Kudzu.Brain.Distiller do
   `ANTHROPIC_API_KEY` is set, the higher-quality Claude-backed
   `Kudzu.Silo.Extractor.extract_claude/3` is consulted first. The local
   Ollama path remains the default and is also used as fallback when the
-  Claude call returns no triples or errors out.
+  Claude call returns no triples or errors out — unless
+  `:kudzu, :distiller_claude_only` is true, in which case an empty or
+  failed Claude extraction yields `[]` (used by the constitution
+  distillation, where local-model guesses would pollute the silos).
   """
   def extract_chains(text) when is_binary(text) do
     if use_claude_extractor?() do
@@ -90,11 +93,19 @@ defmodule Kudzu.Brain.Distiller do
           chains
 
         other ->
-          Logger.debug(
-            "[Distiller] Claude extractor unavailable/empty (#{inspect(other) |> String.slice(0, 200)}), falling back to Ollama"
-          )
+          if Application.get_env(:kudzu, :distiller_claude_only, false) do
+            Logger.debug(
+              "[Distiller] Claude extractor unavailable/empty (#{inspect(other) |> String.slice(0, 200)}); Claude-only mode, no fallback"
+            )
 
-          extract_chains_via_ollama(text)
+            []
+          else
+            Logger.debug(
+              "[Distiller] Claude extractor unavailable/empty (#{inspect(other) |> String.slice(0, 200)}), falling back to Ollama"
+            )
+
+            extract_chains_via_ollama(text)
+          end
       end
     else
       extract_chains_via_ollama(text)
