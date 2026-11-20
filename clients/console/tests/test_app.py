@@ -136,7 +136,7 @@ async def test_footer_hints_and_copy_notice():
         assert footer() == hints
 
 
-async def test_palette_lists_exactly_five_and_posts_command():
+async def test_palette_lists_exactly_six_and_posts_command():
     app = make()
     async with app.run_test() as pilot:
         await pilot.press("ctrl+k")
@@ -147,7 +147,8 @@ async def test_palette_lists_exactly_five_and_posts_command():
         assert isinstance(palette, CommandPalette)
         await pilot.pause(0.3)
         opts = palette.query_one(OptionList)
-        assert opts.option_count == 5
+        assert opts.option_count == 6
+        assert [str(o.prompt) for o in opts._options] == ["status", "progress", "traces", "clear", "copy", "quit"]
         await pilot.press(*"traces", "enter")
         await pilot.pause(0.3)
         assert app.commands == ["traces"]

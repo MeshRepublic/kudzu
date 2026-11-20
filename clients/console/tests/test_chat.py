@@ -334,3 +334,41 @@ async def test_palette_clear_during_chunk_delivery_leaves_empty_conversation(mon
         await pilot.pause()
         assert app.is_running
         assert log_text(app) == ""
+
+
+def footer(app):
+    return str(app.query_one("#footer-hints").render())
+
+
+async def test_palette_and_slash_copy_the_last_answer(monkeypatch):
+    monkeypatch.delenv("KUDZU_CLIPBOARD", raising=False)  # OSC 52 path: recorded, never the real clipboard
+    s = Stub([Event("Kudzu Brain", "chunk", "first **answer**"), Event("Web (SearXNG)", "chunk", "web part"),
+              Event("Web (SearXNG)", "status", "done")])
+    monkeypatch.setattr(chat_mod, "run_pipeline", s)
+    app = ChatConsole()
+    async with app.run_test() as pilot:
+        await send(app, pilot, "q")
+        app.run_palette_command("copy")
+        await pilot.pause()
+        await pilot.pause()
+        assert app.clipboard_log == ["web part"]
+        assert footer(app) == "copied (osc52)"
+        s.events = [Event("Kudzu Brain", "chunk", "second answer")]
+        await send(app, pilot, "again")
+        await send(app, pilot, "/copy")
+        assert app.clipboard_log == ["web part", "second answer"]
+        assert "/copy" not in log_text(app) and "Unknown command" not in log_text(app)
+
+
+async def test_copy_with_no_answer_says_nothing_to_copy(monkeypatch, stub):
+    monkeypatch.delenv("KUDZU_CLIPBOARD", raising=False)
+    app = ChatConsole()
+    async with app.run_test() as pilot:
+        await send(app, pilot, "/copy")
+        assert app.clipboard_log == [] and footer(app) == "nothing to copy"
+        await send(app, pilot, "hello")
+        await send(app, pilot, "/clear")
+        app.run_palette_command("copy")
+        await pilot.pause()
+        await pilot.pause()
+        assert app.clipboard_log == [] and footer(app) == "nothing to copy"

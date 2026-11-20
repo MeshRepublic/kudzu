@@ -10,10 +10,11 @@ from textual.widgets import Checkbox, Markdown, Static, TextArea
 
 from ..background import run_in_background, wait_idle
 from ..backends import BACKENDS, Event, PipelineResult, run_pipeline
+from ..clipboard import copy_text
 from ..commands import run_command
 
 WELCOME = ("Kudzu Chat. Space toggles a backend, Tab moves between sidebar and input, "
-           "Enter sends, Shift+Enter adds a line.\nCommands: /status /progress /traces /clear /quit")
+           "Enter sends, Shift+Enter adds a line.\nCommands: /status /progress /traces /clear /copy /quit")
 SLASH_COMMANDS = ("status", "progress", "traces")
 
 
@@ -143,9 +144,11 @@ class ChatView(Widget):
         await self.run_command(message.name, message.args)
 
     async def run_command(self, name: str, args: list[str] | None = None) -> None:
-        """Palette / slash entry point for clear, status, progress, traces."""
+        """Palette / slash entry point for clear, copy, status, progress, traces."""
         if name == "clear":
             await self._clear()
+        elif name == "copy":
+            self._copy_last_answer()
         elif name in SLASH_COMMANDS:
             epoch = self._epoch
             run_in_background(self, lambda: self._command_worker(epoch, name, args or []),
@@ -184,10 +187,10 @@ class ChatView(Widget):
         name = parts[0][1:].lower()
         if name in ("quit", "exit"):
             self.app.exit()
-        elif name == "clear" or name in SLASH_COMMANDS:
+        elif name in ("clear", "copy") or name in SLASH_COMMANDS:
             self.post_message(ChatCommand(name, parts[1:]))
         else:
-            await self._add(Static(f"Unknown command: /{name}. Try /status /progress /traces /clear /quit",
+            await self._add(Static(f"Unknown command: /{name}. Try /status /progress /traces /clear /copy /quit",
                              classes="note", markup=False))
 
     # --- background threads -------------------------------------------------
@@ -257,6 +260,19 @@ class ChatView(Widget):
 
     def _scroll_end(self) -> None:
         self.query_one("#conversation").scroll_end(animate=False)
+
+    def _copy_last_answer(self) -> None:
+        """Copy the plain text of the most recent backend answer, with the footer notices."""
+        answers = [w for w in self.query_one("#conversation").children if isinstance(w, Markdown)]
+        text = answers[-1].source if answers else ""
+        if not text.strip():
+            self.app.notify_nothing_to_copy()
+            return
+        path = copy_text(self.app, text)
+        if path == "none":
+            self.app.notify_copy_failed()
+        else:
+            self.app.notify_copy(path)
 
     async def _clear(self) -> None:
         self._epoch += 1

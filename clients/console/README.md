@@ -62,7 +62,7 @@ Below the headline are a concentration line and a satisfaction line, each marked
 | Ctrl+K | Command palette |
 | Ctrl+Q | Quit |
 
-Command palette commands: `status`, `progress`, `traces`, `clear`, `quit`. The first four act on the Chat view's conversation.
+Command palette commands: `status`, `progress`, `traces`, `clear`, `copy`, `quit`. The first five act on the Chat view's conversation; `copy` copies the most recent answer (see Copying text).
 
 In the chat input: Enter sends; Shift+Enter or Ctrl+J adds a new line; Up and Down at the first or last line walk through messages you sent earlier; Tab moves between the sidebar and the input. Slash commands typed in the input:
 
@@ -70,13 +70,16 @@ In the chat input: Enter sends; Shift+Enter or Ctrl+J adds a new line; Up and Do
 - `/progress` — the brain's progress report.
 - `/traces [purpose] [count]` — recent traces; count defaults to 5.
 - `/clear` — empty the conversation.
+- `/copy` — copy the most recent answer in the conversation.
 - `/quit` (or `/exit`) — leave the app.
 
-The old app's `/copy`, `/help` and `/growth` are not part of this app.
+The old app's `/help` and `/growth` are not part of this app.
 
 ## Copying text
 
 Highlight text with the mouse (drag over it); it is copied when you release the button. The footer then shows `copied (osc52)` or `copied (local)` for two seconds.
+
+From the keyboard, `/copy` in the chat input or `copy` in the command palette copies the most recent answer in the Chat conversation, with the same footer notice; when there is no answer yet the footer shows `nothing to copy`.
 
 By default the copy uses the OSC 52 terminal escape sequence, so it reaches the clipboard of the machine you are sitting at, even over SSH. The app cannot detect whether your terminal supports OSC 52; it assumes so.
 

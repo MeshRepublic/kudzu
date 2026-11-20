@@ -31,7 +31,7 @@ TABS = [
     ("ledger", "Ledger", "view-ledger"),
 ]
 STATUS_TIMEOUT = (3, 5)  # connect, read seconds: the poll must not hang on a dead network
-PALETTE_COMMANDS = ("status", "progress", "traces", "clear", "quit")
+PALETTE_COMMANDS = ("status", "progress", "traces", "clear", "copy", "quit")
 
 
 class PaletteCommand(Message):
@@ -182,6 +182,9 @@ class KudzuConsole(App):
     def notify_copy_failed(self) -> None:
         """Show how to fall back to the terminal's own selection, then restore the hints."""
         self._show_footer("copy failed — hold Shift and drag to use the terminal's selection")
+
+    def notify_nothing_to_copy(self) -> None:
+        self._show_footer("nothing to copy")
 
     def on_text_selected(self, event: events.TextSelected) -> None:
         """Mouse released after a drag: copy the highlighted text (Shift+drag never reaches us)."""
