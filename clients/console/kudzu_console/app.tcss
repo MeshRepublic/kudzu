@@ -66,8 +66,8 @@ ChatView { layout: horizontal; }
 /* Ledger view */
 #view-ledger { padding: 0 1; }
 #ledger-message { height: auto; }
-#totals { layout: horizontal; height: auto; overflow-x: auto; }
-#totals .total { width: auto; margin-right: 2; padding: 0 1; background: $surface; }
+#totals { layout: grid; grid-size: 1; grid-gutter: 0 2; grid-rows: 1; height: auto; max-height: 33%; overflow-y: auto; overflow-x: hidden; }
+#totals .total { width: 100%; padding: 0 1; background: $surface; }
 #totals .total:focus { background: $primary; }
 #totals .total.over { color: $error; text-style: bold; }
 #totals .total.active { background: $primary-darken-1; text-style: underline; }
@@ -77,5 +77,3 @@ ChatView { layout: horizontal; }
 #entries-head .head:focus { background: $primary; }
 #entries-rows { height: 1fr; }
 #entries-rows .row { height: 1; width: auto; }
-.narrow #totals { layout: vertical; }
-.narrow #totals .total { width: 100%; }

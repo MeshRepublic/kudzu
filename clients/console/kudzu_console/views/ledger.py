@@ -131,6 +131,7 @@ class LedgerView(Widget):
         await self._render_rows()
 
     async def on_resize(self, event: events.Resize) -> None:
+        self._fit_totals()
         narrow = event.size.width < NARROW_WIDTH
         if narrow != self._narrow:
             self._narrow = narrow
@@ -144,12 +145,24 @@ class LedgerView(Widget):
             return
         _, totals, tau = self._data
         cells = []
-        for principle in sorted(totals):
+        for principle in fmt.ordered_principles(totals, tau):
             cell = Cell(fmt.total_label(principle, totals[principle], tau), "filter", principle, classes="total")
             cell.set_class(fmt.is_over(totals[principle], tau), "over")
             cell.set_class(principle == self._filter, "active")
             cells.append(cell)
         await box.mount_all(cells)
+        self._fit_totals()
+
+    def _fit_totals(self) -> None:
+        """Wrapping grid: as many equal columns as fit the width (at least one)."""
+        if self._data is None or not self._data[1]:
+            return
+        _, totals, tau = self._data
+        cell_w = max(len(fmt.total_label(p, totals[p], tau)) for p in totals) + 2  # cell padding
+        gutter = 2
+        avail = max(self.size.width - 2 - 2, 1)  # view padding, scrollbar
+        cols = max(1, (avail + gutter) // (cell_w + gutter))
+        self.query_one("#totals", Vertical).styles.grid_size_columns = cols
 
     async def _render_rows(self) -> None:
         cols = fmt.columns(self._narrow)

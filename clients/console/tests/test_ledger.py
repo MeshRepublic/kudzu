@@ -97,6 +97,10 @@ def test_sort_weight_is_numeric_time_chronological():
     assert fmt.sort_entries(es, None) == es
 
 
+def test_ordered_principles_over_first():
+    assert fmt.ordered_principles({"b": 0.5, "a": 0.2, "z": 1.5, "y": 2.0}, 1.0) == ["y", "z", "a", "b"]
+
+
 def test_unparseable_time_sorts_last_and_filter():
     es = [entry("a", "x", 1.0, "junk"), entry("b", "y", 1.0, "2026-01-01T00:00:00Z")]
     assert [e["proposal_id"] for e in fmt.sort_entries(es, "time")] == ["b", "a"]
@@ -118,8 +122,8 @@ async def test_renders_rows_and_totals_with_over_class():
         assert len(rows(app)) == 3
         assert "2026-11-20 10:00:00" in rows(app)[0] and "0.40" in rows(app)[0] and "p-3" in rows(app)[0]
         ts = totals(app)
-        assert [str(t.render()) for t in ts] == ["autonomy  0.90 / 1.00", "fairness  1.10 / 1.00"]
-        assert [t.has_class("over") for t in ts] == [False, True]
+        assert [str(t.render()) for t in ts] == ["fairness  1.10 / 1.00", "autonomy  0.90 / 1.00"]
+        assert [t.has_class("over") for t in ts] == [True, False]
         assert app.query_one("#ledger-message").render().plain == ""
         assert app.api.threads[0] is not threading.main_thread()
 
@@ -154,11 +158,11 @@ async def test_keyboard_sort_and_filter():
         await pilot.press("space")
         await pilot.pause()
         assert [r.split()[3] for r in rows(app)] == ["0.90", "0.70", "0.40"]
-        totals(app)[1].focus()  # fairness
+        totals(app)[0].focus()  # fairness
         await pilot.press("enter")
         await pilot.pause()
         assert principles(app) == ["fairness", "fairness"]
-        assert totals(app)[1].has_class("active")
+        assert totals(app)[0].has_class("active")
 
 
 async def test_total_filters_composes_with_sort_and_toggles_off():
@@ -166,13 +170,13 @@ async def test_total_filters_composes_with_sort_and_toggles_off():
     async with app.run_test() as pilot:
         await open_view(app, pilot)
         await pilot.click("#head-weight")
-        await pilot.click(totals(app)[1])
+        await pilot.click(totals(app)[0])
         await pilot.pause()
         assert [r.split()[3] for r in rows(app)] == ["0.40", "0.70"]
-        assert totals(app)[1].has_class("active") and not totals(app)[0].has_class("active")
-        await pilot.click(totals(app)[1])
+        assert totals(app)[0].has_class("active") and not totals(app)[1].has_class("active")
+        await pilot.click(totals(app)[0])
         await pilot.pause()
-        assert len(rows(app)) == 3 and not totals(app)[1].has_class("active")
+        assert len(rows(app)) == 3 and not totals(app)[0].has_class("active")
 
 
 async def test_empty_ledger_shows_empty_text():
@@ -243,12 +247,12 @@ async def test_refresh_keeps_sort_and_filter_or_clears_missing_filter():
     async with app.run_test() as pilot:
         await open_view(app, pilot)
         await pilot.click("#head-weight")
-        await pilot.click(totals(app)[1])
+        await pilot.click(totals(app)[0])
         await pilot.pause()
         app.post_message(LedgerChanged())
         await settle(app, pilot)
         assert [r.split()[3] for r in rows(app)] == ["0.40", "0.70"]
-        assert totals(app)[1].has_class("active")
+        assert totals(app)[0].has_class("active")
         api.ledger_data = {"entries": [E2], "totals": {"autonomy": 0.9}, "tau_a": 1.0}
         app.post_message(LedgerChanged())
         await settle(app, pilot)
@@ -285,7 +289,7 @@ async def test_drag_across_total_copies_its_text():
     app = LConsole(LAPI())
     async with app.run_test() as pilot:
         await open_view(app, pilot)
-        cell = totals(app)[0]
+        cell = totals(app)[1]
         await pilot.mouse_down(cell, offset=(1, 0))
         await pilot.hover(cell, offset=(8, 0))
         await pilot.mouse_up(cell, offset=(8, 0))
@@ -293,13 +297,36 @@ async def test_drag_across_total_copies_its_text():
         assert app.clipboard_log and app.clipboard_log[0].startswith("autonomy")
 
 
-async def test_narrow_wraps_totals_and_drops_proposal_id():
+async def test_narrow_fits_totals_and_drops_proposal_id():
     app = LConsole(LAPI())
     async with app.run_test(size=(70, 24)) as pilot:
         await open_view(app, pilot)
         assert app.has_class("narrow")
         a, b = totals(app)
-        assert a.region.y != b.region.y and a.region.height == 1
+        assert a.region.height == 1 and b.region.right <= 70  # two short cells fit side by side
         assert not app.query_one("#head-proposal").display
         assert all("p-3" not in r for r in rows(app)) and len(rows(app)) == 3
         assert app.query_one("#head-weight").region.right <= 70
+
+
+PRINCIPLES = ["non_aggression", "bodily_autonomy", "property_in_labor", "property_in_commons", "free_speech",
+              "free_assembly", "free_press", "freedom_from_unreasonable_search", "due_process",
+              "self_governance", "limited_government", "separation_of_powers", "federalism"]
+
+
+async def test_many_principles_wrap_and_over_first_at_every_size():
+    tot = {p: 0.3 for p in PRINCIPLES}
+    tot["self_governance"] = 1.4
+    es = [entry(f"p-{i}", p, 0.3, "2026-11-20T10:00:00Z") for i, p in enumerate(PRINCIPLES)]
+    for size in [(80, 24), (120, 40), (70, 24)]:
+        app = LConsole(LAPI({"entries": es, "totals": tot, "tau_a": 1.0}))
+        async with app.run_test(size=size) as pilot:
+            await open_view(app, pilot)
+            box = app.query_one("#view-ledger #totals")
+            cells = totals(app)
+            assert len(cells) == 13
+            assert all(c.region.right <= box.region.right for c in cells), size
+            first = cells[0]
+            assert first.has_class("over") and "self_governance" in str(first.render())
+            assert box.region.contains_region(first.region), size
+            assert app.query_one("#view-ledger #entries").region.height >= 5, size

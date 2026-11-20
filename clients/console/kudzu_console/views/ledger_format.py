@@ -44,6 +44,11 @@ def is_over(total: float, tau_a: float) -> bool:
     return float(total) > float(tau_a)
 
 
+def ordered_principles(totals: dict[str, float], tau_a: float) -> list[str]:
+    """Principles over tau_a first, then the rest; each group sorted by name."""
+    return sorted(totals, key=lambda p: (not is_over(totals[p], tau_a), p))
+
+
 def header_label(key: str, label: str, sort_key: str | None, descending: bool) -> str:
     return f"{label} {ARROWS[descending]}" if key == sort_key else label
 
