@@ -21,21 +21,22 @@ REFUSAL_TEXT = "Claude declined to answer"
 @dataclass(frozen=True)
 class Backend:
     key: str
-    label: str
+    label: str  # display label (sidebar, conversation entries)
     default_on: bool = False
+    context_key: str = ""  # key in the accumulated context; exactly what the old chat used
 
 
 # Pipeline order. Ollama entries are the ones the old chat listed.
 BACKENDS: list[Backend] = [
-    Backend("kudzu", "Kudzu Brain", True),
-    Backend("ollama:llama4:scout", "Ollama: llama4:scout"),
-    Backend("ollama:llama3.1:latest", "Ollama: llama3.1"),
-    Backend("ollama:deepseek-r1:latest", "Ollama: deepseek-r1"),
-    Backend("ollama:mistral:latest", "Ollama: mistral"),
-    Backend("ollama:gemma3:latest", "Ollama: gemma3"),
-    Backend("ollama:qwen:latest", "Ollama: qwen"),
-    Backend("web", "Web (SearXNG)"),
-    Backend("claude", "Claude API"),
+    Backend("kudzu", "Kudzu Brain", True, "Kudzu Brain"),
+    Backend("ollama:llama4:scout", "Ollama: llama4:scout", False, "Ollama: llama4:scout"),
+    Backend("ollama:llama3.1:latest", "Ollama: llama3.1", False, "Ollama: llama3.1:latest"),
+    Backend("ollama:deepseek-r1:latest", "Ollama: deepseek-r1", False, "Ollama: deepseek-r1:latest"),
+    Backend("ollama:mistral:latest", "Ollama: mistral", False, "Ollama: mistral:latest"),
+    Backend("ollama:gemma3:latest", "Ollama: gemma3", False, "Ollama: gemma3:latest"),
+    Backend("ollama:qwen:latest", "Ollama: qwen", False, "Ollama: qwen:latest"),
+    Backend("web", "Web (SearXNG)", False, "Web"),
+    Backend("claude", "Claude API", False, "Claude API"),
 ]
 
 
@@ -308,7 +309,7 @@ def run_pipeline(message: str, enabled: list[str], settings,
             emit("error", f"{type(exc).__name__}: {exc}")
             continue
         if text:
-            context[label] = text
+            context[backend.context_key] = text
     if len(context) > 1 or (context and "Kudzu Brain" not in context):
         store_knowledge(message, context, settings)
     return result

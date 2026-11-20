@@ -207,7 +207,7 @@ def test_knowledge_stored_when_more_than_brain_ran(net):
     assert len(posts) == 1
     data = posts[0][2]["json"]["data"]
     assert data["source"] == "chat_pipeline" and data["query"] == "find it"
-    assert data["backends"] == ["Kudzu Brain", "Web (SearXNG)"]
+    assert data["backends"] == ["Kudzu Brain", "Web"]
     assert "T: C" in data["summary"]
 
 
@@ -244,3 +244,22 @@ def test_command_errors_are_text_not_exceptions(net):
     net.routes["/brain/status"] = boom
     assert commands.run_command("status", SETTINGS).startswith("Status error:")
     assert commands.run_command("traces", SETTINGS).startswith("Traces error:")
+
+
+def test_stage_prompt_matches_old_build_prompt_exactly(net):
+    net.routes["/brain/chat"] = kudzu_ok("BRAIN")
+    net.routes["/search"] = Resp(json_data={"results": [{"title": "T", "content": "C"}]})
+    net.routes["anthropic"] = Resp(lines=[])
+    run_pipeline("Q?", ["kudzu", "web", "claude"], SETTINGS, lambda e: None)
+    prompt = net.urls("anthropic")[0][2]["json"]["messages"][0]["content"]
+    # what the old _build_prompt produced for {"Kudzu Brain": ..., "Web": ...}
+    assert prompt == ("Question: Q?\n\nContext from previous sources:\n\n[Kudzu Brain]:\nBRAIN"
+                      "\n\n[Web]:\nT: C\n\nPlease answer the question using the above context where relevant.")
+
+
+def test_claude_stage_sees_old_ollama_key(net):
+    net.routes["/api/chat"] = ollama_ok("OL")
+    net.routes["anthropic"] = Resp(lines=[])
+    run_pipeline("Q", ["ollama:llama3.1:latest", "claude"], SETTINGS, lambda e: None)
+    prompt = net.urls("anthropic")[0][2]["json"]["messages"][0]["content"]
+    assert "\n[Ollama: llama3.1:latest]:\nOL" in prompt

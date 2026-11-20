@@ -256,3 +256,15 @@ async def test_worker_error_never_crashes(monkeypatch):
         assert "kaboom" in log_text(app)
         await send(app, pilot, "again")  # still alive and not stuck busy
         assert log_text(app).count("You:") == 2
+
+
+async def test_palette_clear_works_from_another_tab(stub):
+    app = ChatConsole()
+    async with app.run_test() as pilot:
+        await send(app, pilot, "hello")
+        await pilot.press("f4")
+        await pilot.pause()
+        assert app.query_one("#view-ledger").display
+        app.run_palette_command("clear")
+        await pilot.pause()
+        assert log_text(app) == ""
