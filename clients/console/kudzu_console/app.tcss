@@ -41,3 +41,24 @@ ChatView { layout: horizontal; }
 #vote-status { height: auto; }
 #history { width: 44; border-left: tall $primary-darken-2; }
 .narrow #proposals-body { layout: vertical; }
+
+/* Antitrust view */
+#antitrust-body { height: 1fr; }
+#scenario { width: 1fr; padding: 0 1; }
+#result-panel { width: 1fr; padding: 0 1; border-left: tall $primary-darken-2; }
+#presets-title { text-style: bold; }
+#presets { height: auto; grid-size: 2; grid-rows: 1; grid-gutter: 0 1; }
+#presets Button { width: 100%; }
+.field-row { height: 1; }
+.field-label { width: 16; }
+.field-row Input { width: 1fr; }
+.field-row Input.invalid { background: $error 30%; }
+.field-error { width: 22; color: $error; padding-left: 1; }
+#defaults-note { height: auto; color: $warning; }
+#antitrust-body #evaluate { margin-top: 1; }
+#antitrust-body #message { color: $error; height: auto; }
+#result { height: auto; text-style: bold; }
+.narrow #antitrust-body { layout: vertical; }
+.narrow #scenario, .narrow #result-panel { width: 100%; }
+.narrow #scenario { height: 2fr; }
+.narrow #result-panel { height: 1fr; border-left: none; border-top: tall $primary-darken-2; }
