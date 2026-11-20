@@ -192,7 +192,10 @@ class ProposalsView(Widget):
         self.query_one("#evaluate", Button).label = EVALUATE_LABEL
         self._refresh_evaluate()
         if message.proposal is None:
-            self._set_message(f"✗ evaluation failed: {message.error}")
+            if message.error == "text_too_long":
+                self._set_message("✗ proposal too long (20,000 characters max)")
+            else:
+                self._set_message(f"✗ evaluation failed: {message.error}")
             return
         p = message.proposal
         self._session[str(p.get("id"))] = p

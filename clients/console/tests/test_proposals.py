@@ -635,3 +635,17 @@ async def test_history_redisplay_shows_that_entrys_own_text():
         await pilot.click(history.children[1])
         await pilot.pause()
         assert evaluated_text(app) == f"Proposal: first law\nPrinciple: {PRINCIPLES[0]}"
+
+
+async def test_text_too_long_is_shown_inline_without_a_verdict():
+    api = PAPI("denied")
+    app = PConsole(api)
+    async with app.run_test() as pilot:
+        await open_view(app, pilot)
+        await evaluate(app, pilot, "first law")
+        assert "DENIED" in text_of(app, "#verdict")
+        api.eval_error = KudzuAPIError(422, "text_too_long", {"error": "text_too_long", "max_length": 20000})
+        await evaluate(app, pilot, "x" * 20001)
+        assert text_of(app, "#message") == "✗ proposal too long (20,000 characters max)"
+        assert text_of(app, "#verdict") == "" and text_of(app, "#evaluated") == ""
+        assert all(disabled(app, b) for b in ("#vote-yes", "#vote-no"))

@@ -64,6 +64,24 @@ defmodule Kudzu.Governance.ProposalsTest do
     assert {:error, :unknown_principle} = Proposals.evaluate("Ban assemblies", "general", [])
   end
 
+  test "text up to 20,000 characters is accepted; longer is refused before the judge runs" do
+    text = String.duplicate("Ünïcödé 自由 ", 2_000) |> String.slice(0, 20_000)
+    assert String.length(text) == 20_000 and byte_size(text) > 20_000
+    assert {:ok, _} = Proposals.evaluate(text, "free_assembly", config: config(weighted()))
+
+    test_pid = self()
+
+    judge = fn _ ->
+      send(test_pid, :judge_called)
+      {:ok, {:ambiguous, 0.55, "free_speech", "unclear", []}}
+    end
+
+    assert {:error, :text_too_long} =
+             Proposals.evaluate(text <> "x", "free_assembly", config: config(judge))
+
+    refute_received :judge_called
+  end
+
   test "yes vote writes one ledger entry and spends the token" do
     p = eval_weighted()
     {:ok, voted} = Proposals.vote(p.id, :yes)

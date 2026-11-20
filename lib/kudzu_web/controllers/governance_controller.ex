@@ -44,6 +44,11 @@ defmodule KudzuWeb.GovernanceController do
       {:ok, proposal} ->
         json(conn, %{proposal: proposal_json(proposal)})
 
+      {:error, :text_too_long} ->
+        conn
+        |> put_status(422)
+        |> json(%{error: "text_too_long", max_length: Proposals.max_text_length()})
+
       {:error, reason} when reason in [:empty_text, :unknown_principle] ->
         conn
         |> put_status(422)

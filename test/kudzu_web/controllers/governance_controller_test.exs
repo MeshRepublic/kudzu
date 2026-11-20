@@ -136,6 +136,15 @@ defmodule KudzuWeb.GovernanceControllerTest do
       assert {200, %{"proposal" => _}} = evaluate(text)
     end
 
+    test "a 20,001-character proposal gives 422 text_too_long with the limit" do
+      inject_judge(weighted())
+      text = String.duplicate("Ünïcödé 自由 assembly ", 1_001) |> String.slice(0, 20_001)
+      assert String.length(text) == 20_001
+
+      assert {422, %{"error" => "text_too_long", "max_length" => 20_000} = body} = evaluate(text)
+      refute Map.has_key?(body, "proposal")
+    end
+
     test "a read-scoped key may evaluate" do
       inject_judge(weighted())
 

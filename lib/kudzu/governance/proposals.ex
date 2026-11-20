@@ -23,6 +23,7 @@ defmodule Kudzu.Governance.Proposals do
   alias Kudzu.Constitution.WeightLedger
 
   @max_proposals 500
+  @max_text_length 20_000
 
   @typedoc "A stored proposal as returned to callers (the vector stays internal)."
   @type proposal :: %{
@@ -47,12 +48,15 @@ defmodule Kudzu.Governance.Proposals do
   @doc """
   Evaluates `text` against `principle` and stores the result.
 
-  `opts[:config]` is passed as the evaluation `state.config`.
+  `opts[:config]` is passed as the evaluation `state.config`. Text longer than
+  `max_text_length/0` characters is refused with `{:error, :text_too_long}`
+  before it is encoded or judged.
   """
   @spec evaluate(String.t(), String.t(), keyword()) ::
-          {:ok, proposal()} | {:error, :empty_text | :unknown_principle}
+          {:ok, proposal()} | {:error, :empty_text | :unknown_principle | :text_too_long}
   def evaluate(text, principle, opts \\ []) do
     with :ok <- check_principle(principle),
+         :ok <- check_length(text),
          {:ok, vector} <- encode(text) do
       action = {:propose, %{vector: vector, principle: principle, proposal_text: text}}
       state = %{config: Keyword.get(opts, :config, %{})}
@@ -87,6 +91,10 @@ defmodule Kudzu.Governance.Proposals do
   def vote(id, choice) when choice in [:yes, :no] do
     GenServer.call(__MODULE__, {:vote, id, choice})
   end
+
+  @doc "Longest accepted proposal text, in characters (`String.length/1`)."
+  @spec max_text_length() :: pos_integer()
+  def max_text_length, do: @max_text_length
 
   @spec get(String.t()) :: {:ok, proposal()} | {:error, :not_found}
   def get(id), do: GenServer.call(__MODULE__, {:get, id})
@@ -193,6 +201,10 @@ defmodule Kudzu.Governance.Proposals do
 
   defp check_principle(principle) do
     if principle in SovereigntyFilter.principles(), do: :ok, else: {:error, :unknown_principle}
+  end
+
+  defp check_length(text) do
+    if String.length(text) > @max_text_length, do: {:error, :text_too_long}, else: :ok
   end
 
   defp encode(text) when is_binary(text) do
