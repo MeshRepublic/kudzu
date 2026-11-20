@@ -81,6 +81,20 @@ defmodule Kudzu.Constitution.AIJudgeSamplesTest do
     test "empty list yields all zeros" do
       assert AIJudge.sample_tally([]) == %{advances: 0, retards: 0, ambiguous: 0}
     end
+
+    test "unknown verdicts and malformed samples are ignored, never raised on" do
+      samples = [
+        {:advances, 0.9, "speech", "r1", []},
+        {:bogus, 0.5, "speech", "r2", []},
+        :not_a_tuple,
+        {},
+        "junk",
+        {:ambiguous, 0.5, "speech", "r3", []}
+      ]
+
+      assert AIJudge.sample_tally(samples) == %{advances: 1, retards: 0, ambiguous: 1}
+      assert AIJudge.sample_tally(:not_a_list) == %{advances: 0, retards: 0, ambiguous: 0}
+    end
   end
 
   describe "judge_detailed/1" do

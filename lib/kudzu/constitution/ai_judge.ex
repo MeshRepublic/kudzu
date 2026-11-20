@@ -65,17 +65,31 @@ defmodule Kudzu.Constitution.AIJudge do
 
   @doc """
   Count samples by verdict.
+
+  Only the three known verdicts are counted; anything else (an unknown verdict
+  from an injected judge, a malformed sample) is ignored. Called from the
+  decision path, so it never raises.
   """
-  @spec sample_tally([judgment()]) :: %{
+  @spec sample_tally(term()) :: %{
           advances: non_neg_integer(),
           retards: non_neg_integer(),
           ambiguous: non_neg_integer()
         }
-  def sample_tally(samples) do
-    Enum.reduce(samples, %{advances: 0, retards: 0, ambiguous: 0}, fn sample, acc ->
-      Map.update!(acc, elem(sample, 0), &(&1 + 1))
+  def sample_tally(samples) when is_list(samples) do
+    Enum.reduce(samples, %{advances: 0, retards: 0, ambiguous: 0}, fn
+      sample, acc when is_tuple(sample) and tuple_size(sample) > 0 ->
+        verdict = elem(sample, 0)
+
+        if verdict in [:advances, :retards, :ambiguous],
+          do: Map.update!(acc, verdict, &(&1 + 1)),
+          else: acc
+
+      _other, acc ->
+        acc
     end)
   end
+
+  def sample_tally(_not_a_list), do: %{advances: 0, retards: 0, ambiguous: 0}
 
   defp run_adaptive(api_key, context) do
     case sample_until_decision(api_key, context, [], @min_samples) do
