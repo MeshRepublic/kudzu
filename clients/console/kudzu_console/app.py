@@ -11,7 +11,7 @@ from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.message import Message
 from textual.timer import Timer
 from textual.widgets import ContentSwitcher, Static, Tab, Tabs
-from textual.worker import Worker
+from textual.worker import Worker, get_current_worker
 
 from .api import KudzuAPI, KudzuAPIError
 from .config import Settings
@@ -38,6 +38,15 @@ class PaletteCommand(Message):
     def __init__(self, name: str) -> None:
         super().__init__()
         self.name = name
+
+
+class StatusResult(Message):
+    """Header text produced by a poll, tagged with the sequence number of that poll."""
+
+    def __init__(self, seq: int, text: str) -> None:
+        super().__init__()
+        self.seq = seq
+        self.text = text
 
 
 class ConsoleCommands(Provider):
@@ -81,6 +90,8 @@ class KudzuConsole(App):
         self.poll_interval = poll_interval
         self.copy_notice_seconds = copy_notice_seconds
         self._copy_timer: Timer | None = None
+        self._poll_seq = 0  # sequence of the latest poll started
+        self._applied_seq = 0  # sequence of the latest result shown
 
     def compose(self) -> ComposeResult:
         yield Static("Kudzu ── connecting…", id="status-header", markup=False)
@@ -115,9 +126,12 @@ class KudzuConsole(App):
     # --- status polling ---------------------------------------------------
     def poll(self) -> Worker:
         """Refresh the header in a thread worker; returns the worker (await `.wait()` in tests)."""
-        return self.run_worker(self._fetch_status, thread=True, exclusive=True, group="status")
+        self._poll_seq += 1
+        return self.run_worker(
+            lambda seq=self._poll_seq: self._fetch_status(seq),
+            thread=True, exclusive=True, group="status")
 
-    def _fetch_status(self) -> None:
+    def _fetch_status(self, seq: int) -> None:
         try:
             health = self.api.health()
             gov = self.api.governance_status()
@@ -131,10 +145,21 @@ class KudzuConsole(App):
             text = f"Kudzu ── disconnected ✗ ({exc.code})"
         except (KeyError, TypeError, ValueError):
             text = "Kudzu ── disconnected ✗ (bad_response)"
-        self.call_from_thread(self._set_header, text)
+        except Exception:  # never let an unexpected error kill the worker and the app
+            text = "Kudzu ── disconnected ✗ (error)"
+        if get_current_worker().is_cancelled:
+            return
+        try:
+            # post_message is thread-safe and non-blocking; it drops the message if the app is gone.
+            self.post_message(StatusResult(seq, text))
+        except Exception:
+            pass  # app shutting down: drop the result silently
 
-    def _set_header(self, text: str) -> None:
-        self.query_one("#status-header", Static).update(text)
+    def on_status_result(self, message: StatusResult) -> None:
+        if message.seq < self._applied_seq:
+            return  # older poll finished after a newer one; never show stale status
+        self._applied_seq = message.seq
+        self.query_one("#status-header", Static).update(message.text)
 
     # --- footer -----------------------------------------------------------
     def notify_copy(self, path: str) -> None:

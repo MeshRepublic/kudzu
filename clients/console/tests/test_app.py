@@ -1,3 +1,6 @@
+import asyncio
+import threading
+
 import pytest
 from textual.widgets import Tabs
 
@@ -164,3 +167,73 @@ async def test_ctrl_q_quits():
         await pilot.press("ctrl+q")
         await pilot.pause()
     assert app._exit
+
+
+class GatedAPI(FakeAPI):
+    """Each governance_status call blocks until its gate is set; calls are numbered."""
+
+    def __init__(self):
+        super().__init__()
+        self.gates = []
+        self.entered = []
+        self.results = []
+
+    def governance_status(self):
+        n = len(self.gates)
+        gate, entered = threading.Event(), threading.Event()
+        self.gates.append(gate)
+        self.entered.append(entered)
+        entered.set()
+        gate.wait(5)
+        r = self.results[n] if n < len(self.results) else None
+        if isinstance(r, Exception):
+            raise r
+        return {"silos": self.silos, "model": r or "m"}
+
+
+async def test_quit_while_poll_in_flight():
+    api = GatedAPI()
+    app = make(api)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert api.entered[0].wait(5)
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+    api.gates[0].set()
+    await asyncio.sleep(0.3)  # let the released worker thread finish and try to hand off
+    assert app._exit
+
+
+async def test_stale_poll_does_not_overwrite_newer():
+    api = GatedAPI()
+    api.results = ["model-A", "model-B"]
+    app = make(api)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert api.entered[0].wait(5)  # poll A (from mount) blocked
+        # exclusive worker B cancels A's worker, but A's thread keeps running
+        wb = app.poll()
+        for _ in range(100):
+            if len(api.entered) > 1:
+                break
+            await pilot.pause(0.02)
+        assert api.entered[1].wait(5)
+        api.gates[1].set()
+        await wb.wait()
+        await pilot.pause()
+        assert "model-B" in header(app)
+        api.gates[0].set()
+        await pilot.pause(0.3)
+        assert "model-B" in header(app)
+        assert "model-A" not in header(app)
+
+
+async def test_unexpected_exception_shows_error_and_app_survives():
+    api = FakeAPI()
+    app = make(api)
+    async with app.run_test() as pilot:
+        api.fail = RuntimeError("boom")
+        await app.poll().wait()
+        await pilot.pause()
+        assert "disconnected ✗ (error)" in header(app)
+        assert app.is_running
