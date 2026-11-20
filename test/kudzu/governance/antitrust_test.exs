@@ -3,6 +3,30 @@ defmodule Kudzu.Governance.AntitrustTest do
 
   alias Kudzu.Governance.Antitrust
 
+  # Keep in step with test_presets_are_four_fictional_triples in
+  # clients/console/tests/test_antitrust.py (the console's PRESETS): change both together.
+  @console_presets [
+    {"Triggered", {62, 81, 68}, :triggered},
+    {"Watch", {55, 80, 78}, :watch},
+    {"Not triggered", {22, 75, 72}, :not_triggered},
+    {"Boundary", {40, 80, 72}, :watch}
+  ]
+
+  test "the four console presets classify as their labels say" do
+    for {label, {share, baseline, current}, expected} <- @console_presets do
+      assert {:ok, %{result: ^expected}} =
+               Antitrust.evaluate(
+                 %{
+                   market_share: share,
+                   baseline_satisfaction: baseline,
+                   current_satisfaction: current
+                 },
+                 %{}
+               ),
+             label
+    end
+  end
+
   test "both metrics met triggers" do
     assert {:ok, %{result: :triggered, satisfaction: %{drop_pct: 16.05}}} =
              Antitrust.evaluate(

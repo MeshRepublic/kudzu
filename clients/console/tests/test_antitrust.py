@@ -19,7 +19,7 @@ WATCH = {"result": "watch",
          "satisfaction": {"baseline": 80.0, "current": 78.0, "drop_pct": 2.5, "threshold": 10.0, "met": False}}
 NOT = {"result": "not_triggered",
        "concentration": {"share": 22.0, "threshold": 40.0, "met": False},
-       "satisfaction": {"baseline": 75.0, "current": 60.0, "drop_pct": 20.0, "threshold": 10.0, "met": True}}
+       "satisfaction": {"baseline": 75.0, "current": 72.0, "drop_pct": 4.0, "threshold": 10.0, "met": False}}
 RISE = {"result": "not_triggered",
         "concentration": {"share": 22.5, "threshold": 40.0, "met": False},
         "satisfaction": {"baseline": 80.0, "current": 90.0, "drop_pct": -12.5, "threshold": 10.0, "met": False}}
@@ -103,8 +103,11 @@ async def run_eval(app, pilot):
 
 # --- pure helpers -------------------------------------------------------------
 def test_presets_are_four_fictional_triples():
+    # Keep in step with "the four console presets classify as their labels say" in
+    # test/kudzu/governance/antitrust_test.exs: change both together.
     assert [(p["market_share"], p["baseline_satisfaction"], p["current_satisfaction"]) for p in PRESETS] == [
-        (62, 81, 68), (55, 80, 78), (22, 75, 60), (40, 80, 72)]
+        (62, 81, 68), (55, 80, 78), (22, 75, 72), (40, 80, 72)]
+    assert [p["label"] for p in PRESETS] == ["Triggered", "Watch", "Not triggered", "Boundary"]
     for p in PRESETS:
         assert set(p) == {"label", "company", "vertical", "market_share", "baseline_satisfaction", "current_satisfaction"}
 

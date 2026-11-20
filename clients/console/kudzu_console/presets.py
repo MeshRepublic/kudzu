@@ -7,7 +7,7 @@ PRESETS: list[dict] = [
     {"label": "Watch", "company": "Northwind Streaming Ltd.", "vertical": "video streaming",
      "market_share": 55, "baseline_satisfaction": 80, "current_satisfaction": 78},
     {"label": "Not triggered", "company": "Brightwater Mapping Inc.", "vertical": "online maps",
-     "market_share": 22, "baseline_satisfaction": 75, "current_satisfaction": 60},
+     "market_share": 22, "baseline_satisfaction": 75, "current_satisfaction": 72},
     {"label": "Boundary", "company": "Quillfeather Search GmbH", "vertical": "web search",
      "market_share": 40, "baseline_satisfaction": 80, "current_satisfaction": 72},
 ]
