@@ -199,6 +199,10 @@ class KudzuConsole(App):
         """PaletteCommand never reaches the views, so hand it to the chat view."""
         await self.query_one(ChatView).run_command(message.name)
 
+    def on_ledger_changed(self, message: LedgerChanged) -> None:
+        """LedgerChanged never reaches the views, so forward it to the ledger view."""
+        self.query_one(LedgerView).ledger_changed()
+
     def run_palette_command(self, name: str) -> None:
         if name == "quit":
             self.exit()

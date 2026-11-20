@@ -62,3 +62,20 @@ ChatView { layout: horizontal; }
 .narrow #scenario, .narrow #result-panel { width: 100%; }
 .narrow #scenario { height: 2fr; }
 .narrow #result-panel { height: 1fr; border-left: none; border-top: tall $primary-darken-2; }
+
+/* Ledger view */
+#view-ledger { padding: 0 1; }
+#ledger-message { height: auto; }
+#totals { layout: horizontal; height: auto; overflow-x: auto; }
+#totals .total { width: auto; margin-right: 2; padding: 0 1; background: $surface; }
+#totals .total:focus { background: $primary; }
+#totals .total.over { color: $error; text-style: bold; }
+#totals .total.active { background: $primary-darken-1; text-style: underline; }
+#entries { height: 1fr; margin-top: 1; }
+#entries-head { height: 1; }
+#entries-head .head { margin-right: 2; text-style: bold; }
+#entries-head .head:focus { background: $primary; }
+#entries-rows { height: 1fr; }
+#entries-rows .row { height: 1; width: auto; }
+.narrow #totals { layout: vertical; }
+.narrow #totals .total { width: 100%; }
