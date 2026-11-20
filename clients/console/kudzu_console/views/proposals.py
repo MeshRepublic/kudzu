@@ -6,12 +6,13 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import Button, Input, Label, ListItem, ListView, Select, Static
+from textual.widgets import Button, Label, ListItem, ListView, Select, Static, TextArea
 
 from ..api import KudzuAPIError
 from ..background import run_in_background
-from .proposals_format import (BANNER_TEXT, decision_of, history_label, stage_row,
-                               verdict_text, vote_status)
+from .chat import ChatInput
+from .proposals_format import (BANNER_TEXT, decision_of, evaluated_text, history_label,
+                               stage_row, verdict_text, vote_status)
 
 HISTORY_MIN_WIDTH = 140
 TERMINAL_VOTE_ERRORS = ("already_voted", "not_found", "not_votable", "invalid_vote")
@@ -66,10 +67,12 @@ class ProposalsView(Widget):
     def compose(self) -> ComposeResult:
         with Horizontal(id="proposals-body"):
             with VerticalScroll(id="proposals-main"):
-                yield Input(placeholder="Proposed law…", id="proposal-input")
+                # multi-line: pasted newlines are kept; Enter evaluates, Shift+Enter / Ctrl+J add a line
+                yield ChatInput(id="proposal-input", placeholder="Proposed law…")
                 yield Select([], prompt="Constitutional principle", id="principle-select")
                 yield Button(EVALUATE_LABEL, id="evaluate", disabled=True)
                 yield Static("", id="message", markup=False)
+                yield Static("", id="evaluated", markup=False)
                 yield Static(BANNER_TEXT, id="banner", markup=False)
                 yield Static("", id="verdict", markup=False)
                 with Vertical(id="stages"):
@@ -131,19 +134,19 @@ class ProposalsView(Widget):
     # --- evaluate ---------------------------------------------------------
     def _valid(self) -> bool:
         select = self.query_one("#principle-select", Select)
-        return (bool(self.query_one("#proposal-input", Input).value.strip())
+        return (bool(self.query_one("#proposal-input", TextArea).text.strip())
                 and not select.is_blank() and select.value in self._principles)
 
     def _refresh_evaluate(self) -> None:
         self.query_one("#evaluate", Button).disabled = self._busy or not self._valid()
 
-    def on_input_changed(self, event: Input.Changed) -> None:
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
         self._refresh_evaluate()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         self._refresh_evaluate()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         event.stop()
         self._start_evaluate()
 
@@ -157,7 +160,7 @@ class ProposalsView(Widget):
     def _start_evaluate(self) -> None:
         if self._busy or not self._valid():
             return
-        text = self.query_one("#proposal-input", Input).value.strip()
+        text = self.query_one("#proposal-input", TextArea).text.strip()
         principle = str(self.query_one("#principle-select", Select).value)
         self._busy = True
         self._eval_seq += 1
@@ -204,6 +207,7 @@ class ProposalsView(Widget):
     def _clear_display(self) -> None:
         self._current = None
         self._set_message("")
+        self.query_one("#evaluated", Static).update("")
         self.query_one("#banner").display = False
         self.query_one("#verdict", Static).update("")
         self.query_one("#vote-status", Static).update("")
@@ -217,6 +221,8 @@ class ProposalsView(Widget):
         self._clear_display()
         self._current = p
         d = decision_of(p)
+        # what the server evaluated, not what the input holds now
+        self.query_one("#evaluated", Static).update(evaluated_text(p))
         self.query_one("#banner").display = bool(p.get("silos_empty"))
         self.query_one("#verdict", Static).update(verdict_text(d))
         stages = {s.get("stage"): s for s in p.get("stages") or [] if isinstance(s, dict)}

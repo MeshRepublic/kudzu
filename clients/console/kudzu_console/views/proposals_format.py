@@ -118,3 +118,8 @@ def vote_status(proposal: dict, accumulated) -> str:
     if vote not in ("yes", "no"):
         return ""
     return f"voted {vote} · accumulated {proposal.get('principle')}: {num(accumulated)}"
+
+
+def evaluated_text(p: dict) -> str:
+    """Heading of the verdict pane: the text and principle the server evaluated."""
+    return f"Proposal: {p.get('text', '')}\nPrinciple: {p.get('principle', '')}"

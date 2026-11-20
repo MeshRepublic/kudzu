@@ -1,7 +1,8 @@
 import threading
 
 import pytest
-from textual.widgets import Button, Input, ListView, Select, Static
+from textual import events
+from textual.widgets import Button, ListView, Select, Static, TextArea
 
 from kudzu_console.api import KudzuAPIError
 from kudzu_console.background import wait_idle
@@ -114,7 +115,7 @@ async def open_view(app, pilot):
 
 
 async def evaluate(app, pilot, text="Ban all widgets", principle=PRINCIPLES[0]):
-    app.query_one("#proposal-input", Input).value = text
+    app.query_one("#proposal-input", TextArea).text = text
     app.query_one("#principle-select", Select).value = principle
     await pilot.pause()
     await pilot.click("#evaluate")
@@ -180,11 +181,11 @@ async def test_evaluate_disabled_until_text_and_principle():
     async with app.run_test() as pilot:
         await open_view(app, pilot)
         assert disabled(app, "#evaluate")
-        app.query_one("#proposal-input", Input).value = "   "
+        app.query_one("#proposal-input", TextArea).text = "   "
         app.query_one("#principle-select", Select).value = PRINCIPLES[0]
         await pilot.pause()
         assert disabled(app, "#evaluate")
-        app.query_one("#proposal-input", Input).value = "a law"
+        app.query_one("#proposal-input", TextArea).text = "a law"
         await pilot.pause()
         assert not disabled(app, "#evaluate")
         app.query_one("#principle-select", Select).clear()
@@ -345,13 +346,13 @@ async def test_evaluate_runs_in_worker_shows_evaluating_and_ignores_extra_presse
     app = PConsole(api)
     async with app.run_test() as pilot:
         await open_view(app, pilot)
-        app.query_one("#proposal-input", Input).value = "a law"
+        app.query_one("#proposal-input", TextArea).text = "a law"
         app.query_one("#principle-select", Select).value = PRINCIPLES[0]
         await pilot.pause()
         await pilot.click("#evaluate")
         await pilot.pause()
         assert str(app.query_one("#evaluate", Button).label) == "evaluating…"
-        app.query_one("#proposal-input", Input).focus()
+        app.query_one("#proposal-input", TextArea).focus()
         await pilot.press("enter")
         await pilot.pause()
         api.gate.set()
@@ -367,7 +368,7 @@ async def test_enter_in_input_evaluates_when_valid_and_tab_order():
     app = PConsole(api)
     async with app.run_test() as pilot:
         await open_view(app, pilot)
-        inp = app.query_one("#proposal-input", Input)
+        inp = app.query_one("#proposal-input", TextArea)
         inp.focus()
         await pilot.press("enter")  # invalid: nothing happens
         await pilot.pause()
@@ -409,7 +410,7 @@ async def test_principles_failure_disables_evaluate_and_retries_on_show():
         await pilot.press("f2")
         await settle(app, pilot)
         assert "principles could not be loaded" in text_of(app, "#message")
-        app.query_one("#proposal-input", Input).value = "a law"
+        app.query_one("#proposal-input", TextArea).text = "a law"
         await pilot.pause()
         assert disabled(app, "#evaluate")
         assert all(v is Select.NULL for _, v in app.query_one("#principle-select", Select)._options)
@@ -541,7 +542,7 @@ def test_quit_returns_promptly_while_evaluation_blocked():
         wait_until(lambda: bool(view._principles))
 
         def start():
-            app.query_one("#proposal-input", Input).value = "Ban all widgets"
+            app.query_one("#proposal-input", TextArea).text = "Ban all widgets"
             app.query_one("#principle-select", Select).value = PRINCIPLES[0]
             view._start_evaluate()
         app.call_from_thread(start)
@@ -553,3 +554,84 @@ def test_quit_returns_promptly_while_evaluation_blocked():
         assert elapsed < 2
     finally:
         api.gate.set()
+
+
+# --- multi-line proposal text and the evaluated-text heading --------------------
+async def test_pasted_multiline_text_is_kept_and_sent_whole():
+    api = PAPI("denied")
+    app = PConsole(api)
+    law = "Article 1. No widgets.\nArticle 2. No gadgets.\nArticle 3. No gizmos."
+    async with app.run_test() as pilot:
+        await open_view(app, pilot)
+        inp = app.query_one("#proposal-input", TextArea)
+        inp.focus()
+        app.post_message(events.Paste(law))  # as the driver delivers it: the app forwards it to the focus
+        await pilot.pause()
+        assert inp.text == law and inp.document.line_count == 3
+        app.query_one("#principle-select", Select).value = PRINCIPLES[0]
+        await pilot.pause()
+        inp.focus()
+        await pilot.press("enter")
+        await settle(app, pilot)
+        assert api.evaluated == [(law, PRINCIPLES[0])]
+
+
+async def test_shift_enter_and_ctrl_j_insert_newlines_enter_evaluates():
+    api = PAPI("denied")
+    app = PConsole(api)
+    async with app.run_test() as pilot:
+        await open_view(app, pilot)
+        app.query_one("#principle-select", Select).value = PRINCIPLES[0]
+        inp = app.query_one("#proposal-input", TextArea)
+        inp.focus()
+        await pilot.press("a", "shift+enter", "b", "ctrl+j", "c")
+        await pilot.pause()
+        assert inp.text == "a\nb\nc" and api.evaluated == []
+        await pilot.press("enter")
+        await settle(app, pilot)
+        assert api.evaluated == [("a\nb\nc", PRINCIPLES[0])]
+
+
+def evaluated_text(app):
+    return text_of(app, "#evaluated")
+
+
+async def test_verdict_pane_is_headed_by_the_servers_text_and_principle():
+    class EchoAPI(PAPI):
+        def evaluate_proposal(self, text, principle):
+            self.evaluated.append((text, principle))
+            self.n += 1
+            return {"proposal": make_proposal("denied", pid=f"p{self.n}", text="Server's own text\nline two",
+                                              principle=PRINCIPLES[2])}
+
+    app = PConsole(EchoAPI())
+    async with app.run_test() as pilot:
+        await open_view(app, pilot)
+        await evaluate(app, pilot, "what I typed")
+        assert evaluated_text(app) == f"Proposal: Server's own text\nline two\nPrinciple: {PRINCIPLES[2]}"
+        assert app.query_one("#evaluated").region.y < app.query_one("#verdict").region.y
+
+
+async def test_editing_input_after_verdict_keeps_evaluated_text():
+    app = PConsole(PAPI("denied"))
+    async with app.run_test() as pilot:
+        await open_view(app, pilot)
+        await evaluate(app, pilot, "the evaluated law")
+        app.query_one("#proposal-input", TextArea).text = "a different law"
+        await pilot.pause()
+        assert evaluated_text(app).startswith("Proposal: the evaluated law\n")
+        assert "DENIED" in text_of(app, "#verdict")
+
+
+async def test_history_redisplay_shows_that_entrys_own_text():
+    api = PAPI("denied")
+    app = PConsole(api)
+    async with app.run_test(size=(150, 40)) as pilot:
+        await open_view(app, pilot)
+        await evaluate(app, pilot, "first law")
+        await evaluate(app, pilot, "second law", PRINCIPLES[1])
+        assert evaluated_text(app) == f"Proposal: second law\nPrinciple: {PRINCIPLES[1]}"
+        history = app.query_one("#history", ListView)
+        await pilot.click(history.children[1])
+        await pilot.pause()
+        assert evaluated_text(app) == f"Proposal: first law\nPrinciple: {PRINCIPLES[0]}"

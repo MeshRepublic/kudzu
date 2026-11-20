@@ -28,7 +28,8 @@ ChatView { layout: horizontal; }
 /* Proposals view */
 #proposals-body { height: 1fr; }
 #proposals-main { width: 1fr; padding: 0 1; }
-#proposal-input { width: 100%; }
+#proposal-input { width: 100%; height: auto; min-height: 3; max-height: 6; }
+#evaluated { height: auto; margin-top: 1; }
 #principle-select { width: 100%; }
 #message { color: $error; height: auto; }
 #banner { height: auto; background: $warning; color: $text; padding: 0 1; text-style: bold; }
