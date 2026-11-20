@@ -85,6 +85,16 @@ def test_fmt_time_utc_and_fallback():
     assert fmt.fmt_time("yesterday") == "yesterday"
 
 
+def test_fmt_time_extreme_null_and_non_string():
+    assert fmt.fmt_time("0001-01-01T00:00:00+05:00") == "0001-01-01T00:00:00+05:00"  # UTC overflows
+    assert fmt.fmt_time(None) == "—"
+    assert fmt.fmt_time(12345) == "12345"
+    assert fmt.fmt_time(["2026"]) == "['2026']"
+    es = [entry("a", "x", 1.0, None), entry("b", "x", 1.0, "0001-01-01T00:00:00+05:00"),
+          entry("c", "x", 1.0, "2026-01-01T00:00:00Z")]
+    assert fmt.sort_entries(es, "time")[0]["proposal_id"] == "c"  # unparseable ones sort last, no raise
+
+
 def test_total_label_and_over():
     assert fmt.total_label("fairness", 1.1, 1.0) == "fairness  1.10 / 1.00"
     assert fmt.is_over(1.1, 1.0) and not fmt.is_over(1.0, 1.0)
@@ -127,6 +137,21 @@ async def test_renders_rows_and_totals_with_over_class():
         assert [t.has_class("over") for t in ts] == [True, False]
         assert app.query_one("#ledger-message").render().plain == ""
         assert app.api.threads[0] is not threading.main_thread()
+
+
+async def test_extreme_and_null_times_render_without_crashing():
+    data = {"entries": [entry("p-9", "fairness", 0.5, "0001-01-01T00:00:00+05:00"),
+                        entry("p-8", "fairness", 0.5, None)],
+            "totals": {"fairness": 1.0}, "tau_a": 1.0}
+    app = LConsole(LAPI(data))
+    async with app.run_test() as pilot:
+        await open_view(app, pilot)
+        await pilot.click("#head-time")
+        await pilot.pause()
+        assert app.is_running
+        texts = rows(app)
+        assert any("0001-01-01T00:00:00+05:00" in t for t in texts)
+        assert any(t.startswith("—") for t in texts) and not any("None" in t for t in texts)
 
 
 async def test_weight_header_sorts_ascending_then_descending_with_arrow():

@@ -15,19 +15,27 @@ def columns(narrow: bool) -> list[tuple[str, str]]:
     return [c for c in COLUMNS if not (narrow and c[0] == "proposal")]
 
 
+NO_TIME = "—"
+
+
 def parse_time(raw) -> datetime | None:
+    """UTC datetime, or None when `raw` is missing, malformed or out of range. Never raises."""
+    if raw is None:
+        return None
     try:
         text = str(raw).strip()
         if text.endswith(("Z", "z")):
             text = text[:-1] + "+00:00"
         dt = datetime.fromisoformat(text)
-    except ValueError:
+        return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except (ValueError, OverflowError, TypeError):  # e.g. year 1 with a positive offset overflows
         return None
-    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def fmt_time(raw) -> str:
-    """`YYYY-MM-DD HH:MM:SS` in UTC; the raw string when it cannot be parsed."""
+    """`YYYY-MM-DD HH:MM:SS` in UTC; `—` when null; the raw string when it cannot be parsed."""
+    if raw is None:
+        return NO_TIME
     dt = parse_time(raw)
     return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else str(raw)
 
