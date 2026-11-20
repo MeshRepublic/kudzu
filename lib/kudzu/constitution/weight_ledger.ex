@@ -101,6 +101,17 @@ defmodule Kudzu.Constitution.WeightLedger do
     |> Enum.map(fn {_id, entry} -> entry end)
   end
 
+  @doc """
+  Every stored entry, newest first.
+  """
+  @spec entries() :: [Entry.t()]
+  def entries do
+    @ets_table
+    |> :ets.tab2list()
+    |> Enum.map(fn {_id, entry} -> entry end)
+    |> Enum.sort_by(& &1.recorded_at, {:desc, DateTime})
+  end
+
   @doc false
   def clear_for_test do
     GenServer.call(__MODULE__, :clear_for_test)

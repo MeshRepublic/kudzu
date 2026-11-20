@@ -87,6 +87,21 @@ defmodule Kudzu.Constitution.WeightLedgerTest do
     end
   end
 
+  describe "entries/0" do
+    test "returns every stored entry newest first and is empty after clear" do
+      v = test_vector("entries")
+      :ok = WeightLedger.record("e1", v, 0.4, "free_speech", :yes_with_weight)
+      :ok = WeightLedger.record("e2", v, 0.3, "free_speech", :yes_with_weight)
+
+      entries = WeightLedger.entries()
+      assert length(entries) == 2
+      assert Enum.map(entries, & &1.proposal_id) == ["e2", "e1"]
+
+      :ok = WeightLedger.clear_for_test()
+      assert WeightLedger.entries() == []
+    end
+  end
+
   describe "PubSub broadcast" do
     test "broadcasts {:weight_recorded, proposal_id, principle} on record" do
       Phoenix.PubSub.subscribe(Kudzu.PubSub, "traces:weight_ledger")
