@@ -14,6 +14,7 @@ from textual.widgets import ContentSwitcher, Static, Tab, Tabs
 from textual.worker import Worker, get_current_worker
 
 from .api import KudzuAPI, KudzuAPIError
+from .clipboard import copy_text
 from .config import Settings
 from .views.antitrust import AntitrustView
 from .views.chat import ChatView
@@ -164,12 +165,30 @@ class KudzuConsole(App):
     # --- footer -----------------------------------------------------------
     def notify_copy(self, path: str) -> None:
         """Show `copied (<path>)` in the footer, then restore the key hints."""
+        self._show_footer(f"copied ({path})")
+
+    def _show_footer(self, text: str) -> None:
         footer = self.query_one("#footer-hints", Static)
-        footer.update(f"copied ({path})")
+        footer.update(text)
         if self._copy_timer is not None:
             self._copy_timer.stop()
         self._copy_timer = self.set_timer(
             self.copy_notice_seconds, lambda: footer.update(FOOTER_HINTS))
+
+    def notify_copy_failed(self) -> None:
+        """Show how to fall back to the terminal's own selection, then restore the hints."""
+        self._show_footer("copy failed — hold Shift and drag to use the terminal's selection")
+
+    def on_text_selected(self, event: events.TextSelected) -> None:
+        """Mouse released after a drag: copy the highlighted text (Shift+drag never reaches us)."""
+        text = self.screen.get_selected_text()
+        if text is None or not text.strip():
+            return
+        path = copy_text(self, text)
+        if path == "none":
+            self.notify_copy_failed()
+        else:
+            self.notify_copy(path)
 
     # --- palette ----------------------------------------------------------
     def run_palette_command(self, name: str) -> None:
