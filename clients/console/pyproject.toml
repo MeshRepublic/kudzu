@@ -25,6 +25,10 @@ kudzu = "kudzu_console.app:main"
 [tool.setuptools.packages.find]
 include = ["kudzu_console*"]
 
+[tool.setuptools.package-data]
+kudzu_console = ["app.tcss"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]

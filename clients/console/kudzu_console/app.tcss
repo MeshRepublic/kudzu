@@ -1,0 +1,7 @@
+Screen { layout: vertical; }
+#status-header { height: 1; padding: 0 1; background: $primary-darken-2; color: $text; text-style: bold; }
+#tabs { height: 3; }
+#views { height: 1fr; }
+#views > Widget { height: 1fr; }
+#footer-hints { height: 1; padding: 0 1; background: $surface; color: $text-muted; }
+/* Below 80 columns the app gets the `narrow` class; views stack their columns vertically against it. */
