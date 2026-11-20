@@ -137,12 +137,25 @@ defmodule Kudzu.Governance.ProposalsTest do
 
   defmodule DownLedger do
     @moduledoc false
-    def record(_id, _vector, _weight, _principle, _outcome), do: exit(:noproc)
+    def has_entry?(_id), do: exit(:noproc)
+    def record(_id, _vector, _weight, _principle, _outcome, _timeout), do: exit(:noproc)
   end
 
   defmodule RefusingLedger do
     @moduledoc false
-    def record(_id, _vector, _weight, _principle, _outcome), do: {:error, :nope}
+    def has_entry?(_id), do: false
+    def record(_id, _vector, _weight, _principle, _outcome, _timeout), do: {:error, :nope}
+  end
+
+  defmodule SlowLedger do
+    @moduledoc false
+    # Calls a registered process that never replies, with the timeout it was given.
+    def has_entry?(_id), do: false
+
+    def record(_id, _vector, _weight, _principle, _outcome, timeout) do
+      send(:proposals_test_runner, {:ledger_timeout, timeout})
+      GenServer.call(:silent_ledger, :record, timeout)
+    end
   end
 
   for {name, stub} <- [down: DownLedger, refusing: RefusingLedger] do
@@ -164,6 +177,40 @@ defmodule Kudzu.Governance.ProposalsTest do
       assert [%{proposal_id: id}] = WeightLedger.entries()
       assert id == p.id
     end
+  end
+
+  test "a slow ledger gives ledger_unavailable within the caller's timeout; a late write is honoured" do
+    p = eval_weighted()
+    pid = Process.whereis(Proposals)
+    Process.register(self(), :proposals_test_runner)
+    silent = spawn(fn -> Process.sleep(:infinity) end)
+    Process.register(silent, :silent_ledger)
+
+    Application.put_env(:kudzu, :proposals_ledger, SlowLedger)
+
+    on_exit(fn ->
+      Application.delete_env(:kudzu, :proposals_ledger)
+      Process.exit(silent, :kill)
+    end)
+
+    {micros, result} = :timer.tc(fn -> Proposals.vote(p.id, :yes) end)
+    assert result == {:error, :ledger_unavailable}
+    assert micros < 5_000_000
+    assert_received {:ledger_timeout, 2_000}
+    assert Process.whereis(Proposals) == pid
+    assert {:ok, %{vote: nil, token: %{spent: false}}} = Proposals.get(p.id)
+
+    # The slow ledger wrote the yes after all: a later vote must not contradict it.
+    Application.delete_env(:kudzu, :proposals_ledger)
+    vector = Kudzu.Constitution.Vectors.encode_text(@assembly)
+    :ok = WeightLedger.record(p.id, vector, 0.45, p.principle, :yes_with_weight)
+
+    assert {:error, :already_voted} = Proposals.vote(p.id, :no)
+    assert {:ok, %{vote: :yes, token: %{spent: true}}} = Proposals.get(p.id)
+    assert [%{proposal_id: id}] = WeightLedger.entries()
+    assert id == p.id
+    assert {:error, :already_voted} = Proposals.vote(p.id, :yes)
+    assert length(WeightLedger.entries()) == 1
   end
 
   test "unknown id" do

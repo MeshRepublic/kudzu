@@ -305,7 +305,9 @@ class ProposalsView(Widget):
             self._set_vote_buttons(True)  # still votable server-side
         elif code == "unreachable":
             status.update("✗ server unreachable — try again")
-            self._set_vote_buttons(True)  # request never reached the server
+            # Connection failure or read timeout: the request may or may not have reached the
+            # server. Retrying is safe: if the vote landed, the server answers 409 already_voted.
+            self._set_vote_buttons(True)
         elif code == "already_voted":
             status.update("already voted")
         else:

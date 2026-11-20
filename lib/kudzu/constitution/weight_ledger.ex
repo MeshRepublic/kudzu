@@ -61,9 +61,35 @@ defmodule Kudzu.Constitution.WeightLedger do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @spec record(String.t(), Kudzu.HRR.vector(), float(), String.t(), :yes_with_weight | :no) :: :ok
-  def record(proposal_id, vector, weight, principle, vote_outcome) do
-    GenServer.call(__MODULE__, {:record, proposal_id, vector, weight, principle, vote_outcome})
+  @doc """
+  Records a vote outcome. `timeout` bounds the call to the ledger process
+  (default 5 s); on timeout the caller exits as with any `GenServer.call/3`.
+  """
+  @spec record(
+          String.t(),
+          Kudzu.HRR.vector(),
+          float(),
+          String.t(),
+          :yes_with_weight | :no,
+          timeout()
+        ) :: :ok
+  def record(proposal_id, vector, weight, principle, vote_outcome, timeout \\ 5_000) do
+    GenServer.call(
+      __MODULE__,
+      {:record, proposal_id, vector, weight, principle, vote_outcome},
+      timeout
+    )
+  end
+
+  @doc """
+  True when an entry for `proposal_id` is stored. False when there is none or
+  the ledger is not running.
+  """
+  @spec has_entry?(String.t()) :: boolean()
+  def has_entry?(proposal_id) do
+    :ets.member(@ets_table, proposal_id)
+  rescue
+    ArgumentError -> false
   end
 
   @spec accumulated_weight(Kudzu.HRR.vector(), String.t()) :: {Kudzu.HRR.vector(), float()}

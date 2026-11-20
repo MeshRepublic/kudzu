@@ -24,6 +24,9 @@ defmodule Kudzu.Governance.Proposals do
 
   @max_proposals 500
   @max_text_length 20_000
+  # Shorter than the 5 s GenServer.call into this store, so a slow ledger is
+  # reported as :ledger_unavailable instead of timing out the caller.
+  @ledger_timeout 2_000
 
   @typedoc "A stored proposal as returned to callers (the vector stays internal)."
   @type proposal :: %{
@@ -82,8 +85,14 @@ defmodule Kudzu.Governance.Proposals do
   Casts the proposal's single vote, spending its token.
 
   Returns `{:error, :ledger_unavailable}` when the weight ledger cannot record
-  the vote (down, restarting, timed out or a non-`:ok` reply). The proposal is
-  left unchanged (token unspent, no vote) so the vote can be retried.
+  the vote (down, restarting, timed out after 2 s or a non-`:ok` reply). The
+  proposal is left unchanged (token unspent, no vote) so the vote can be
+  retried.
+
+  A timed-out ledger may still write the entry afterwards. So before recording,
+  the ledger is checked for an entry with this proposal id; if there is one,
+  the earlier yes did land: the proposal is marked voted yes with its token
+  spent, and `{:error, :already_voted}` is returned.
   """
   @spec vote(String.t(), :yes | :no) ::
           {:ok, proposal()}
@@ -158,33 +167,45 @@ defmodule Kudzu.Governance.Proposals do
          choice
        ) do
     outcome = if choice == :yes, do: :yes_with_weight, else: :no
+    ledger = Application.get_env(:kudzu, :proposals_ledger, WeightLedger)
 
-    case record_vote(id, vector, weight, proposal.principle, outcome) do
-      :ok ->
-        voted = %{proposal | vote: choice, token: %{proposal.token | spent: true}}
-        :ets.insert(table, {id, seq, voted, vector})
-        {:ok, voted}
-
-      :error ->
-        {:error, :ledger_unavailable}
+    if ledger_has_entry?(ledger, id) do
+      # An earlier yes reached the ledger after its call timed out.
+      mark_voted(table, id, seq, proposal, vector, :yes)
+      {:error, :already_voted}
+    else
+      case record_vote(ledger, id, vector, weight, proposal.principle, outcome) do
+        :ok -> {:ok, mark_voted(table, id, seq, proposal, vector, choice)}
+        :error -> {:error, :ledger_unavailable}
+      end
     end
   end
 
   defp cast_vote(_table, _id, _seq, _proposal, _vector, _choice), do: {:error, :not_votable}
 
+  defp mark_voted(table, id, seq, proposal, vector, choice) do
+    voted = %{proposal | vote: choice, token: %{proposal.token | spent: true}}
+    :ets.insert(table, {id, seq, voted, vector})
+    voted
+  end
+
+  # A ledger that cannot answer has no entry we can see; recording then fails
+  # and reports :ledger_unavailable.
+  defp ledger_has_entry?(ledger, id) do
+    ledger.has_entry?(id) == true
+  catch
+    :exit, _reason -> false
+  end
+
   # A ledger that is down, restarting or slow must not take the store down with
   # it: report it and leave the proposal untouched so the vote can be retried.
-  defp record_vote(id, vector, weight, principle, outcome) do
-    ledger = Application.get_env(:kudzu, :proposals_ledger, WeightLedger)
-
-    try do
-      case ledger.record(id, vector, weight, principle, outcome) do
-        :ok -> :ok
-        _other -> :error
-      end
-    catch
-      :exit, _reason -> :error
+  defp record_vote(ledger, id, vector, weight, principle, outcome) do
+    case ledger.record(id, vector, weight, principle, outcome, @ledger_timeout) do
+      :ok -> :ok
+      _other -> :error
     end
+  catch
+    :exit, _reason -> :error
   end
 
   defp evict(table) do

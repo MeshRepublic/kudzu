@@ -220,7 +220,8 @@ defmodule KudzuWeb.GovernanceControllerTest do
 
     defmodule DownLedger do
       @moduledoc false
-      def record(_id, _vector, _weight, _principle, _outcome), do: exit(:noproc)
+      def has_entry?(_id), do: exit(:noproc)
+      def record(_id, _vector, _weight, _principle, _outcome, _timeout), do: exit(:noproc)
     end
 
     test "an unavailable ledger gives 503 ledger_unavailable" do
